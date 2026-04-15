@@ -20,7 +20,7 @@ impl Output {
     }
 
     /// Add a single serializable item.
-    pub fn item<T: serde::Serialize + Send + 'static>(mut self, item: T) -> Self {
+    pub fn item<T: serde::Serialize>(mut self, item: T) -> Self {
         if let Ok(v) = serde_json::to_value(item) {
             self.items.push(v);
         }
@@ -28,7 +28,7 @@ impl Output {
     }
 
     /// Add multiple serializable items.
-    pub fn items<T: serde::Serialize + Send + 'static>(mut self, items: Vec<T>) -> Self {
+    pub fn items<T: serde::Serialize>(mut self, items: Vec<T>) -> Self {
         for item in items {
             if let Ok(v) = serde_json::to_value(item) {
                 self.items.push(v);
