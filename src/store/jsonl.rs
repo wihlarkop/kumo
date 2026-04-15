@@ -40,7 +40,7 @@ impl ItemStore for JsonlStore {
         let json = serde_json::to_string(item)
             .map_err(|e| KumoError::Store(e.to_string()))?;
         let mut writer = self.writer.lock().unwrap();
-        writeln!(writer, "{}", json).map_err(|e| KumoError::Store(e.to_string()))?;
+        writeln!(writer, "{json}").map_err(|e| KumoError::Store(e.to_string()))?;
         Ok(())
     }
 
