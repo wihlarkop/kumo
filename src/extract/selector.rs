@@ -145,7 +145,10 @@ mod tests {
     #[test]
     fn element_list_first_returns_first() {
         let list = ElementList {
-            elements: vec![make_element("<span>first</span>"), make_element("<span>second</span>")],
+            elements: vec![
+                make_element("<span>first</span>"),
+                make_element("<span>second</span>"),
+            ],
         };
         assert_eq!(list.first().unwrap().text(), "first");
     }

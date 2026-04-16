@@ -76,43 +76,71 @@ mod tests {
 
     #[test]
     fn no_robots_txt_allows_all() {
-        assert!(RobotsCache::robot_allows("kumo", None, "https://example.com/anything"));
+        assert!(RobotsCache::robot_allows(
+            "kumo",
+            None,
+            "https://example.com/anything"
+        ));
     }
 
     #[test]
     fn disallow_all_blocks_all_paths() {
         let txt = "User-agent: *\nDisallow: /\n";
-        assert!(!RobotsCache::robot_allows("kumo", Some(txt), "https://example.com/page"));
+        assert!(!RobotsCache::robot_allows(
+            "kumo",
+            Some(txt),
+            "https://example.com/page"
+        ));
     }
 
     #[test]
     fn disallow_specific_path_blocks_that_path() {
         let txt = "User-agent: *\nDisallow: /private/\n";
-        assert!(!RobotsCache::robot_allows("kumo", Some(txt), "https://example.com/private/secret"));
+        assert!(!RobotsCache::robot_allows(
+            "kumo",
+            Some(txt),
+            "https://example.com/private/secret"
+        ));
     }
 
     #[test]
     fn disallow_specific_path_allows_other_paths() {
         let txt = "User-agent: *\nDisallow: /private/\n";
-        assert!(RobotsCache::robot_allows("kumo", Some(txt), "https://example.com/public/page"));
+        assert!(RobotsCache::robot_allows(
+            "kumo",
+            Some(txt),
+            "https://example.com/public/page"
+        ));
     }
 
     #[test]
     fn allow_all_explicit() {
         let txt = "User-agent: *\nDisallow:\n";
-        assert!(RobotsCache::robot_allows("kumo", Some(txt), "https://example.com/anything"));
+        assert!(RobotsCache::robot_allows(
+            "kumo",
+            Some(txt),
+            "https://example.com/anything"
+        ));
     }
 
     #[test]
     fn malformed_robots_txt_allows_all() {
         let txt = "this is not a valid robots.txt !!!@#$";
         // parse error → default allow
-        assert!(RobotsCache::robot_allows("kumo", Some(txt), "https://example.com/page"));
+        assert!(RobotsCache::robot_allows(
+            "kumo",
+            Some(txt),
+            "https://example.com/page"
+        ));
     }
 
     #[test]
     fn specific_user_agent_disallow_does_not_block_other_agents() {
         let txt = "User-agent: badbot\nDisallow: /\n";
-        assert!(RobotsCache::robot_allows("kumo", Some(txt), "https://example.com/page"));
+        assert!(RobotsCache::robot_allows(
+            "kumo",
+            Some(txt),
+            "https://example.com/page"
+        ));
     }
 }
