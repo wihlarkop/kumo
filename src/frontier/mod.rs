@@ -14,4 +14,9 @@ pub trait Frontier: Send + Sync {
 
     /// Number of URLs waiting in the queue.
     async fn len(&self) -> usize;
+
+    /// Returns `true` if the queue is empty.
+    async fn is_empty(&self) -> bool {
+        self.len().await == 0
+    }
 }
