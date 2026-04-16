@@ -4,6 +4,7 @@ pub mod extract;
 pub mod fetch;
 pub mod frontier;
 pub mod middleware;
+pub mod robots;
 pub mod spider;
 pub mod store;
 

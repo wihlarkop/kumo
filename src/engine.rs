@@ -7,6 +7,7 @@ use crate::{
     fetch::{http::HttpFetcher, Fetcher},
     frontier::{memory::MemoryFrontier, Frontier},
     middleware::{Middleware, Request},
+    robots::RobotsCache,
     spider::Spider,
     store::ItemStore,
 };
@@ -38,6 +39,7 @@ pub struct CrawlEngine {
     crawl_delay: Option<Duration>,
     max_retries: u32,
     retry_base_delay: Duration,
+    robots_cache: Option<Arc<RobotsCache>>,
 }
 
 impl CrawlEngine {
@@ -111,9 +113,9 @@ impl CrawlEngineBuilder {
         self
     }
 
-    /// Whether to respect robots.txt (stored for future use; not yet implemented).
-    pub fn respect_robots_txt(self, _v: bool) -> Self {
-        // TODO: implement robots.txt parsing in a follow-up task
+    /// Whether to respect robots.txt (default: true).
+    pub fn respect_robots_txt(mut self, v: bool) -> Self {
+        self.respect_robots = v;
         self
     }
 
@@ -126,6 +128,14 @@ impl CrawlEngineBuilder {
             .store
             .unwrap_or_else(|| Arc::new(crate::store::stdout::StdoutStore));
 
+        let robots_cache = if self.respect_robots {
+            Some(Arc::new(RobotsCache::new(
+                concat!("kumo/", env!("CARGO_PKG_VERSION"))
+            )))
+        } else {
+            None
+        };
+
         let engine = CrawlEngine {
             concurrency: self.concurrency,
             middleware: self.middleware,
@@ -133,6 +143,7 @@ impl CrawlEngineBuilder {
             crawl_delay: self.crawl_delay,
             max_retries: self.max_retries,
             retry_base_delay: self.retry_base_delay,
+            robots_cache,
         };
 
         engine.execute(spider).await
@@ -150,6 +161,7 @@ impl CrawlEngine {
         let concurrency = self.concurrency;
         let max_retries = self.max_retries;
         let retry_base_delay = self.retry_base_delay;
+        let robots_cache = self.robots_cache.clone();
 
         // Single shared reqwest client — handles cookie jar + connection pooling.
         let client = reqwest::Client::builder()
@@ -172,6 +184,14 @@ impl CrawlEngine {
             while join_set.len() < concurrency {
                 match frontier.pop().await {
                     Some((url, depth)) => {
+                        // Check robots.txt before dispatching.
+                        if let Some(ref cache) = robots_cache {
+                            if !cache.is_allowed(&client, &url).await {
+                                tracing::debug!(url = %url, "blocked by robots.txt, skipping");
+                                continue;
+                            }
+                        }
+
                         let spider = spider.clone();
                         let store = store.clone();
                         let middleware = middleware.clone();
