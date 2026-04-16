@@ -2,6 +2,13 @@
 name = "kumo"
 version = "0.1.0"
 edition = "2024"
+description = "An async web crawling framework for Rust — Scrapy for Rust"
+license = "MIT"
+repository = "https://github.com/wihlarkop/kumo"
+homepage = "https://github.com/wihlarkop/kumo"
+readme = "README.md"
+keywords = ["web", "crawling", "scraping", "spider", "async"]
+categories = ["web-programming", "asynchronous"]
 
 [dependencies]
 async-trait = "0.1.89"
@@ -17,3 +24,6 @@ tokio = { version = "1.52.0", features = ["full"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 url = "2.5.8"
+
+[dev-dependencies]
+mockito = "1.7.2"
