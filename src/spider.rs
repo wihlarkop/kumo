@@ -86,3 +86,68 @@ pub trait Spider: Send + Sync {
         vec![]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Serialize;
+
+    #[derive(Serialize)]
+    struct Item {
+        value: i32,
+    }
+
+    #[test]
+    fn new_output_is_empty() {
+        let output = Output::new();
+        assert!(output.items.is_empty());
+        assert!(output.follow.is_empty());
+    }
+
+    #[test]
+    fn default_output_is_empty() {
+        let output = Output::default();
+        assert!(output.items.is_empty());
+        assert!(output.follow.is_empty());
+    }
+
+    #[test]
+    fn item_adds_serialized_value() {
+        let output = Output::new().item(Item { value: 42 });
+        assert_eq!(output.items.len(), 1);
+        assert_eq!(output.items[0]["value"], 42);
+    }
+
+    #[test]
+    fn items_adds_multiple_values() {
+        let output = Output::new().items(vec![Item { value: 1 }, Item { value: 2 }]);
+        assert_eq!(output.items.len(), 2);
+        assert_eq!(output.items[0]["value"], 1);
+        assert_eq!(output.items[1]["value"], 2);
+    }
+
+    #[test]
+    fn follow_adds_url() {
+        let output = Output::new().follow("https://example.com/page/2");
+        assert_eq!(output.follow, vec!["https://example.com/page/2"]);
+    }
+
+    #[test]
+    fn follow_many_adds_multiple_urls() {
+        let urls = vec![
+            "https://example.com/1".to_string(),
+            "https://example.com/2".to_string(),
+        ];
+        let output = Output::new().follow_many(urls.clone());
+        assert_eq!(output.follow, urls);
+    }
+
+    #[test]
+    fn builder_is_chainable() {
+        let output = Output::new()
+            .item(Item { value: 99 })
+            .follow("https://example.com/next");
+        assert_eq!(output.items.len(), 1);
+        assert_eq!(output.follow.len(), 1);
+    }
+}
