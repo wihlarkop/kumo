@@ -1,6 +1,8 @@
+pub mod json;
 pub mod jsonl;
 pub mod stdout;
 
+pub use json::JsonStore;
 pub use jsonl::JsonlStore;
 pub use stdout::StdoutStore;
 
