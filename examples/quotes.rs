@@ -64,7 +64,7 @@ async fn main() -> Result<(), KumoError> {
         .with_env_filter("kumo=info")
         .init();
 
-    let stats = CrawlEngine::new()
+    let stats = CrawlEngine::builder()
         .concurrency(5)
         .middleware(DefaultHeaders::new().user_agent("kumo/0.1 (+https://github.com/wihlarkop/kumo)"))
         .store(JsonlStore::new("quotes.jsonl"))

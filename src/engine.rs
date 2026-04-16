@@ -4,8 +4,8 @@ use tracing::{error, info};
 
 use crate::{
     error::{ErrorPolicy, KumoError},
-    fetch::{http::HttpFetcher, Fetcher},
-    frontier::{memory::MemoryFrontier, Frontier},
+    fetch::{Fetcher, http::HttpFetcher},
+    frontier::{Frontier, memory::MemoryFrontier},
     middleware::{Middleware, Request},
     robots::RobotsCache,
     spider::Spider,
@@ -25,7 +25,7 @@ pub struct CrawlStats {
 ///
 /// # Example
 /// ```rust,ignore
-/// let stats = CrawlEngine::new()
+/// let stats = CrawlEngine::builder()
 ///     .concurrency(8)
 ///     .middleware(DefaultHeaders::new().user_agent("kumo/0.1"))
 ///     .store(JsonlStore::new("items.jsonl"))
@@ -44,7 +44,7 @@ pub struct CrawlEngine {
 
 impl CrawlEngine {
     /// Begin building a new engine. Defaults: concurrency=8, StdoutStore, no delay.
-    pub fn new() -> CrawlEngineBuilder {
+    pub fn builder() -> CrawlEngineBuilder {
         CrawlEngineBuilder::default()
     }
 }
@@ -129,9 +129,10 @@ impl CrawlEngineBuilder {
             .unwrap_or_else(|| Arc::new(crate::store::stdout::StdoutStore));
 
         let robots_cache = if self.respect_robots {
-            Some(Arc::new(RobotsCache::new(
-                concat!("kumo/", env!("CARGO_PKG_VERSION"))
-            )))
+            Some(Arc::new(RobotsCache::new(concat!(
+                "kumo/",
+                env!("CARGO_PKG_VERSION")
+            ))))
         } else {
             None
         };
@@ -185,11 +186,11 @@ impl CrawlEngine {
                 match frontier.pop().await {
                     Some((url, depth)) => {
                         // Check robots.txt before dispatching.
-                        if let Some(ref cache) = robots_cache {
-                            if !cache.is_allowed(&client, &url).await {
-                                tracing::debug!(url = %url, "blocked by robots.txt, skipping");
-                                continue;
-                            }
+                        if let Some(ref cache) = robots_cache
+                            && !cache.is_allowed(&client, &url).await
+                        {
+                            tracing::debug!(url = %url, "blocked by robots.txt, skipping");
+                            continue;
                         }
 
                         let spider = spider.clone();
@@ -231,10 +232,10 @@ impl CrawlEngine {
 
                     for (follow_url, follow_depth) in follows {
                         // Respect max_depth.
-                        if let Some(max) = spider.max_depth() {
-                            if follow_depth > max {
-                                continue;
-                            }
+                        if let Some(max) = spider.max_depth()
+                            && follow_depth > max
+                        {
+                            continue;
                         }
 
                         // Respect allowed_domains (empty list = allow all).
@@ -326,11 +327,7 @@ async fn process_url(
         item_count += 1;
     }
 
-    let follows = output
-        .follow
-        .into_iter()
-        .map(|u| (u, depth + 1))
-        .collect();
+    let follows = output.follow.into_iter().map(|u| (u, depth + 1)).collect();
 
     Ok((item_count, follows))
 }

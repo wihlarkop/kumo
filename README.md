@@ -48,7 +48,7 @@ impl Spider for QuotesSpider {
 async fn main() -> Result<(), KumoError> {
     tracing_subscriber::fmt().with_env_filter("kumo=info").init();
 
-    let stats = CrawlEngine::new()
+    let stats = CrawlEngine::builder()
         .concurrency(5)
         .middleware(DefaultHeaders::new().user_agent("kumo/0.1"))
         .store(JsonlStore::new("quotes.jsonl"))
@@ -146,7 +146,7 @@ impl Spider for MySpider {
 ## Engine Builder
 
 ```rust
-CrawlEngine::new()
+CrawlEngine::builder()
     .concurrency(8)
     .middleware(RateLimiter::per_second(5.0))
     .middleware(DefaultHeaders::new().user_agent("my-bot/1.0"))
