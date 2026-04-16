@@ -35,38 +35,14 @@ pub struct CrawlStats {
 pub struct CrawlEngine {
     concurrency: usize,
     middleware: Vec<Arc<dyn Middleware>>,
-    store: Arc<dyn ItemStore>,
-    crawl_delay: Option<Duration>,
-    max_retries: u32,
-    retry_base_delay: Duration,
-    robots_cache: Option<Arc<RobotsCache>>,
-}
-
-impl CrawlEngine {
-    /// Begin building a new engine. Defaults: concurrency=8, StdoutStore, no delay.
-    pub fn builder() -> CrawlEngineBuilder {
-        CrawlEngineBuilder::default()
-    }
-}
-
-impl Default for CrawlEngine {
-    fn default() -> Self {
-        unimplemented!("use CrawlEngine::new() to build")
-    }
-}
-
-pub struct CrawlEngineBuilder {
-    concurrency: usize,
-    middleware: Vec<Arc<dyn Middleware>>,
     store: Option<Arc<dyn ItemStore>>,
     crawl_delay: Option<Duration>,
-    #[allow(dead_code)]
     respect_robots: bool,
     max_retries: u32,
     retry_base_delay: Duration,
 }
 
-impl Default for CrawlEngineBuilder {
+impl Default for CrawlEngine {
     fn default() -> Self {
         Self {
             concurrency: 8,
@@ -80,7 +56,12 @@ impl Default for CrawlEngineBuilder {
     }
 }
 
-impl CrawlEngineBuilder {
+impl CrawlEngine {
+    /// Begin building a new engine. Defaults: concurrency=8, StdoutStore, no delay.
+    pub fn builder() -> Self {
+        Self::default()
+    }
+
     pub fn concurrency(mut self, n: usize) -> Self {
         self.concurrency = n;
         self
@@ -119,15 +100,22 @@ impl CrawlEngineBuilder {
         self
     }
 
-    /// Consume the builder, run the spider, and return crawl statistics.
+    /// Consume the engine, run the spider, and return crawl statistics.
     pub async fn run<S>(self, spider: S) -> Result<CrawlStats, KumoError>
     where
         S: Spider + 'static,
     {
+        let start = std::time::Instant::now();
+        let spider: Arc<dyn Spider> = Arc::new(spider);
+        let frontier = Arc::new(MemoryFrontier::new());
         let store = self
             .store
             .unwrap_or_else(|| Arc::new(crate::store::stdout::StdoutStore));
-
+        let middleware: Arc<Vec<Arc<dyn Middleware>>> = Arc::new(self.middleware);
+        let crawl_delay = self.crawl_delay;
+        let concurrency = self.concurrency;
+        let max_retries = self.max_retries;
+        let retry_base_delay = self.retry_base_delay;
         let robots_cache = if self.respect_robots {
             Some(Arc::new(RobotsCache::new(concat!(
                 "kumo/",
@@ -136,33 +124,6 @@ impl CrawlEngineBuilder {
         } else {
             None
         };
-
-        let engine = CrawlEngine {
-            concurrency: self.concurrency,
-            middleware: self.middleware,
-            store,
-            crawl_delay: self.crawl_delay,
-            max_retries: self.max_retries,
-            retry_base_delay: self.retry_base_delay,
-            robots_cache,
-        };
-
-        engine.execute(spider).await
-    }
-}
-
-impl CrawlEngine {
-    async fn execute<S: Spider + 'static>(self, spider: S) -> Result<CrawlStats, KumoError> {
-        let start = std::time::Instant::now();
-        let spider: Arc<dyn Spider> = Arc::new(spider);
-        let frontier = Arc::new(MemoryFrontier::new());
-        let store = self.store;
-        let middleware: Arc<Vec<Arc<dyn Middleware>>> = Arc::new(self.middleware);
-        let crawl_delay = self.crawl_delay;
-        let concurrency = self.concurrency;
-        let max_retries = self.max_retries;
-        let retry_base_delay = self.retry_base_delay;
-        let robots_cache = self.robots_cache.clone();
 
         // Single shared reqwest client — handles cookie jar + connection pooling.
         let client = reqwest::Client::builder()
@@ -256,7 +217,6 @@ impl CrawlEngine {
                             return Err(e);
                         }
                         ErrorPolicy::Retry(_) => {
-                            // TODO: implement proper retry with backoff countdown
                             error!(url = %url, error = %e, "retry not yet implemented, skipping");
                         }
                         ErrorPolicy::Skip => {
