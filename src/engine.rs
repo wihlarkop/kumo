@@ -36,6 +36,8 @@ pub struct CrawlEngine {
     middleware: Vec<Arc<dyn Middleware>>,
     store: Arc<dyn ItemStore>,
     crawl_delay: Option<Duration>,
+    max_retries: u32,
+    retry_base_delay: Duration,
 }
 
 impl CrawlEngine {
@@ -58,6 +60,8 @@ pub struct CrawlEngineBuilder {
     crawl_delay: Option<Duration>,
     #[allow(dead_code)]
     respect_robots: bool,
+    max_retries: u32,
+    retry_base_delay: Duration,
 }
 
 impl Default for CrawlEngineBuilder {
@@ -68,6 +72,8 @@ impl Default for CrawlEngineBuilder {
             store: None,
             crawl_delay: None,
             respect_robots: true,
+            max_retries: 0,
+            retry_base_delay: Duration::from_millis(500),
         }
     }
 }
@@ -96,6 +102,15 @@ impl CrawlEngineBuilder {
         self
     }
 
+    /// Retry failed fetches up to `max_attempts` times with exponential backoff.
+    ///
+    /// Delay between attempts: `base_delay * 2^attempt` (500ms, 1s, 2s, …).
+    pub fn retry(mut self, max_attempts: u32, base_delay: Duration) -> Self {
+        self.max_retries = max_attempts;
+        self.retry_base_delay = base_delay;
+        self
+    }
+
     /// Whether to respect robots.txt (stored for future use; not yet implemented).
     pub fn respect_robots_txt(self, _v: bool) -> Self {
         // TODO: implement robots.txt parsing in a follow-up task
@@ -116,6 +131,8 @@ impl CrawlEngineBuilder {
             middleware: self.middleware,
             store,
             crawl_delay: self.crawl_delay,
+            max_retries: self.max_retries,
+            retry_base_delay: self.retry_base_delay,
         };
 
         engine.execute(spider).await
@@ -131,6 +148,8 @@ impl CrawlEngine {
         let middleware: Arc<Vec<Arc<dyn Middleware>>> = Arc::new(self.middleware);
         let crawl_delay = self.crawl_delay;
         let concurrency = self.concurrency;
+        let max_retries = self.max_retries;
+        let retry_base_delay = self.retry_base_delay;
 
         // Single shared reqwest client — handles cookie jar + connection pooling.
         let client = reqwest::Client::builder()
@@ -159,9 +178,18 @@ impl CrawlEngine {
                         let client = client.clone();
 
                         join_set.spawn(async move {
-                            let result =
-                                process_url(url.clone(), depth, spider, store, middleware, client, crawl_delay)
-                                    .await;
+                            let result = process_url_with_retry(
+                                url.clone(),
+                                depth,
+                                spider,
+                                store,
+                                middleware,
+                                client,
+                                crawl_delay,
+                                max_retries,
+                                retry_base_delay,
+                            )
+                            .await;
                             (url, result)
                         });
                     }
@@ -285,4 +313,47 @@ async fn process_url(
         .collect();
 
     Ok((item_count, follows))
+}
+
+/// Wraps `process_url` with exponential-backoff retry.
+async fn process_url_with_retry(
+    url: String,
+    depth: usize,
+    spider: Arc<dyn Spider>,
+    store: Arc<dyn ItemStore>,
+    middleware: Arc<Vec<Arc<dyn Middleware>>>,
+    client: reqwest::Client,
+    crawl_delay: Option<Duration>,
+    max_retries: u32,
+    retry_base_delay: Duration,
+) -> Result<(u64, Vec<(String, usize)>), KumoError> {
+    for attempt in 0..=max_retries {
+        match process_url(
+            url.clone(),
+            depth,
+            spider.clone(),
+            store.clone(),
+            middleware.clone(),
+            client.clone(),
+            crawl_delay,
+        )
+        .await
+        {
+            Ok(result) => return Ok(result),
+            Err(e) if attempt < max_retries => {
+                let delay = retry_base_delay * 2_u32.pow(attempt);
+                tracing::warn!(
+                    url = %url,
+                    attempt = attempt + 1,
+                    max = max_retries,
+                    retry_in_ms = delay.as_millis(),
+                    error = %e,
+                    "retrying URL"
+                );
+                tokio::time::sleep(delay).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!()
 }
