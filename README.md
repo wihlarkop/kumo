@@ -93,7 +93,7 @@ cargo run --example quotes
 
 # Scrape all books from books.toscrape.com (50 pages, 1000 items)
 # Demonstrates rate limiting, retry, JsonStore
-cargo run --example news
+cargo run --example books
 ```
 
 ## Architecture
