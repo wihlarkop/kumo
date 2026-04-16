@@ -6,6 +6,31 @@ An async web crawling framework for Rust — Scrapy for Rust.
 
 **Kumo** (蜘蛛/雲 — spider/cloud) gives you a trait-based, async-first API for writing spiders that scrape, follow links, and store data. Batteries included: rate limiting, retry with backoff, robots.txt, and pluggable storage.
 
+## Features
+
+- **Async-first** — built on Tokio with a bounded `JoinSet` for controlled concurrency
+- **CSS extraction** — ergonomic `res.css(".selector")` API backed by `scraper`
+- **Rate limiting** — token-bucket `RateLimiter` middleware via `governor`
+- **Retry with backoff** — exponential backoff via `.retry(max, base_delay)`
+- **robots.txt** — per-domain fetch + cache, enabled by default
+- **Bloom filter dedup** — O(1) URL deduplication in `MemoryFrontier` (1M URLs, 0.1% FP)
+- **Pluggable storage** — `JsonlStore`, `JsonStore`, `StdoutStore`, or implement `ItemStore`
+- **Middleware chain** — `before_request` / `after_response` hooks (inject headers, rate limit, etc.)
+- **Domain filtering** — `allowed_domains()` and `max_depth()` on the `Spider` trait
+
+## Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+kumo = "0.1"
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+tracing-subscriber = "0.3"
+```
+
 ## Quick Start
 
 ```rust
@@ -60,31 +85,6 @@ async fn main() -> Result<(), KumoError> {
     println!("Done — {} items from {} pages", stats.items_scraped, stats.pages_crawled);
     Ok(())
 }
-```
-
-## Features
-
-- **Async-first** — built on Tokio with a bounded `JoinSet` for controlled concurrency
-- **CSS extraction** — ergonomic `res.css(".selector")` API backed by `scraper`
-- **Rate limiting** — token-bucket `RateLimiter` middleware via `governor`
-- **Retry with backoff** — exponential backoff via `.retry(max, base_delay)`
-- **robots.txt** — per-domain fetch + cache, enabled by default
-- **Bloom filter dedup** — O(1) URL deduplication in `MemoryFrontier` (1M URLs, 0.1% FP)
-- **Pluggable storage** — `JsonlStore`, `JsonStore`, `StdoutStore`, or implement `ItemStore`
-- **Middleware chain** — `before_request` / `after_response` hooks (inject headers, rate limit, etc.)
-- **Domain filtering** — `allowed_domains()` and `max_depth()` on the `Spider` trait
-
-## Installation
-
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-kumo = "0.1"
-async-trait = "0.1"
-serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["full"] }
-tracing-subscriber = "0.3"
 ```
 
 ## Examples

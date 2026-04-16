@@ -97,7 +97,6 @@ async fn engine_scrapes_single_page() {
 /// Spider that follows one pagination link.
 struct PaginatedSpider {
     page1: String,
-    page2: String,
 }
 
 #[async_trait::async_trait]
@@ -159,7 +158,6 @@ async fn engine_follows_pagination() {
         .store(store_clone)
         .run(PaginatedSpider {
             page1: format!("{}/page/1", base),
-            page2: format!("{}/page/2", base),
         })
         .await
         .unwrap();
