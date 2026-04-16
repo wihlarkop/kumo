@@ -16,8 +16,10 @@ pub mod store;
 pub mod prelude {
     pub use crate::engine::{CrawlEngine, CrawlStats};
     pub use crate::error::{ErrorPolicy, KumoError};
-    pub use crate::extract::{CssExtractor, Element, ElementList, Extractor, ExtractedNode, Response};
+    pub use crate::extract::{
+        CssExtractor, Element, ElementList, ExtractedNode, Extractor, Response,
+    };
     pub use crate::middleware::{DefaultHeaders, RateLimiter};
     pub use crate::spider::{Output, Spider};
-    pub use crate::store::{JsonlStore, JsonStore, StdoutStore};
+    pub use crate::store::{JsonStore, JsonlStore, StdoutStore};
 }

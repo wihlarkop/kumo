@@ -1,9 +1,6 @@
-use std::{
-    path::PathBuf,
-    sync::Mutex,
-};
-use crate::error::KumoError;
 use super::ItemStore;
+use crate::error::KumoError;
+use std::{path::PathBuf, sync::Mutex};
 
 /// Accumulates all scraped items in memory and writes a pretty-printed
 /// JSON array to disk on `flush()` (called automatically by the engine).
@@ -18,11 +15,11 @@ pub struct JsonStore {
 impl JsonStore {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         let path = path.into();
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)
-                    .unwrap_or_else(|e| panic!("failed to create directory: {}", e));
-            }
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)
+                .unwrap_or_else(|e| panic!("failed to create directory: {}", e));
         }
         Self {
             path,
@@ -40,10 +37,9 @@ impl ItemStore for JsonStore {
 
     async fn flush(&self) -> Result<(), KumoError> {
         let items = self.items.lock().unwrap();
-        let json = serde_json::to_string_pretty(&*items)
-            .map_err(|e| KumoError::Store(e.to_string()))?;
-        std::fs::write(&self.path, json)
-            .map_err(|e| KumoError::Store(e.to_string()))?;
+        let json =
+            serde_json::to_string_pretty(&*items).map_err(|e| KumoError::Store(e.to_string()))?;
+        std::fs::write(&self.path, json).map_err(|e| KumoError::Store(e.to_string()))?;
         Ok(())
     }
 }

@@ -1,7 +1,7 @@
+use super::Frontier;
 use bloomfilter::Bloom;
 use std::collections::VecDeque;
 use tokio::sync::Mutex;
-use super::Frontier;
 
 /// In-memory frontier: a FIFO queue + Bloom filter for O(1) URL deduplication.
 ///
@@ -16,7 +16,9 @@ impl MemoryFrontier {
     pub fn new() -> Self {
         Self {
             queue: Mutex::new(VecDeque::new()),
-            seen: Mutex::new(Bloom::new_for_fp_rate(1_000_000, 0.001).expect("valid bloom filter parameters")),
+            seen: Mutex::new(
+                Bloom::new_for_fp_rate(1_000_000, 0.001).expect("valid bloom filter parameters"),
+            ),
         }
     }
 }

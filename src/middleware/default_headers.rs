@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use reqwest::header::{HeaderName, HeaderValue};
-use crate::error::KumoError;
 use super::{Middleware, Request};
+use crate::error::KumoError;
+use reqwest::header::{HeaderName, HeaderValue};
+use std::collections::HashMap;
 
 /// Injects a fixed set of HTTP headers into every request.
 ///

@@ -33,28 +33,23 @@ impl ExtractedNode {
 /// Future crates can implement XPath or LLM-based extraction without touching
 /// core kumo code.
 pub trait Extractor: Send + Sync {
-    fn extract(
-        &self,
-        html: &str,
-        selector: &str,
-    ) -> Result<Vec<ExtractedNode>, KumoError>;
+    fn extract(&self, html: &str, selector: &str) -> Result<Vec<ExtractedNode>, KumoError>;
 }
 
 /// Default CSS-selector extractor backed by the `scraper` crate.
 pub struct CssExtractor;
 
 impl Extractor for CssExtractor {
-    fn extract(
-        &self,
-        html: &str,
-        selector: &str,
-    ) -> Result<Vec<ExtractedNode>, KumoError> {
+    fn extract(&self, html: &str, selector: &str) -> Result<Vec<ExtractedNode>, KumoError> {
         let document = scraper::Html::parse_document(html);
-        let sel = scraper::Selector::parse(selector)
-            .map_err(|e| KumoError::Parse(format!("invalid CSS selector '{}': {:?}", selector, e)))?;
+        let sel = scraper::Selector::parse(selector).map_err(|e| {
+            KumoError::Parse(format!("invalid CSS selector '{}': {:?}", selector, e))
+        })?;
         let nodes = document
             .select(&sel)
-            .map(|el| ExtractedNode { outer_html: el.html() })
+            .map(|el| ExtractedNode {
+                outer_html: el.html(),
+            })
             .collect();
         Ok(nodes)
     }

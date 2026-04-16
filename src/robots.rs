@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::Mutex;
 use texting_robots::Robot;
+use tokio::sync::Mutex;
 
 /// Fetches and caches robots.txt for each domain encountered during a crawl.
 ///
@@ -29,11 +29,7 @@ impl RobotsCache {
             Err(_) => return true,
         };
 
-        let origin = format!(
-            "{}://{}",
-            parsed.scheme(),
-            parsed.host_str().unwrap_or("")
-        );
+        let origin = format!("{}://{}", parsed.scheme(), parsed.host_str().unwrap_or(""));
 
         // Return cached result if available.
         if let Some(entry) = self.cache.lock().await.get(&origin).cloned() {
@@ -56,7 +52,8 @@ impl RobotsCache {
         };
 
         let entry: Option<Arc<String>> = txt.map(Arc::new);
-        let allowed = Self::robot_allows(&self.user_agent, entry.as_deref().map(|s| s.as_str()), url);
+        let allowed =
+            Self::robot_allows(&self.user_agent, entry.as_deref().map(|s| s.as_str()), url);
         self.cache.lock().await.insert(origin, entry);
         allowed
     }

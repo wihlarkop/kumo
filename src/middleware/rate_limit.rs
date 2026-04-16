@@ -1,12 +1,12 @@
+use super::{Middleware, Request};
+use crate::error::KumoError;
 use governor::{
+    Quota, RateLimiter as GovernorLimiter,
     clock::DefaultClock,
     middleware::NoOpMiddleware,
     state::{InMemoryState, NotKeyed},
-    Quota, RateLimiter as GovernorLimiter,
 };
 use std::num::NonZeroU32;
-use crate::error::KumoError;
-use super::{Middleware, Request};
 
 /// Token-bucket rate limiter middleware.
 ///

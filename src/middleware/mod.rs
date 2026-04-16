@@ -4,8 +4,8 @@ pub mod rate_limit;
 pub use default_headers::DefaultHeaders;
 pub use rate_limit::RateLimiter;
 
-use reqwest::header::HeaderMap;
 use crate::{error::KumoError, extract::Response};
+use reqwest::header::HeaderMap;
 
 /// A pending HTTP request, passed through the middleware chain before fetching.
 pub struct Request {

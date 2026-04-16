@@ -193,24 +193,18 @@ impl CrawlEngine {
                             continue;
                         }
 
-                        let spider = spider.clone();
-                        let store = store.clone();
-                        let middleware = middleware.clone();
-                        let client = client.clone();
+                        let ctx = TaskContext {
+                            spider: spider.clone(),
+                            store: store.clone(),
+                            middleware: middleware.clone(),
+                            client: client.clone(),
+                            crawl_delay,
+                            max_retries,
+                            retry_base_delay,
+                        };
 
                         join_set.spawn(async move {
-                            let result = process_url_with_retry(
-                                url.clone(),
-                                depth,
-                                spider,
-                                store,
-                                middleware,
-                                client,
-                                crawl_delay,
-                                max_retries,
-                                retry_base_delay,
-                            )
-                            .await;
+                            let result = process_url_with_retry(url.clone(), depth, ctx).await;
                             (url, result)
                         });
                     }
@@ -292,38 +286,45 @@ impl CrawlEngine {
     }
 }
 
-/// Fetch, run middleware, parse, and store items for a single URL.
-/// Returns (items_stored, follow_urls_with_depth).
-async fn process_url(
-    url: String,
-    depth: usize,
+/// Shared context cloned into each spawned task.
+struct TaskContext {
     spider: Arc<dyn Spider>,
     store: Arc<dyn ItemStore>,
     middleware: Arc<Vec<Arc<dyn Middleware>>>,
     client: reqwest::Client,
     crawl_delay: Option<Duration>,
+    max_retries: u32,
+    retry_base_delay: Duration,
+}
+
+/// Fetch, run middleware, parse, and store items for a single URL.
+/// Returns (items_stored, follow_urls_with_depth).
+async fn process_url(
+    url: &str,
+    depth: usize,
+    ctx: &TaskContext,
 ) -> Result<(u64, Vec<(String, usize)>), KumoError> {
-    if let Some(delay) = crawl_delay {
+    if let Some(delay) = ctx.crawl_delay {
         tokio::time::sleep(delay).await;
     }
 
-    let mut request = Request::new(&url, depth);
-    for mw in middleware.iter() {
+    let mut request = Request::new(url, depth);
+    for mw in ctx.middleware.iter() {
         mw.before_request(&mut request).await?;
     }
 
-    let fetcher = HttpFetcher::new(client);
+    let fetcher = HttpFetcher::new(ctx.client.clone());
     let mut response = fetcher.fetch(&request).await?;
 
-    for mw in middleware.iter() {
+    for mw in ctx.middleware.iter() {
         mw.after_response(&mut response).await?;
     }
 
-    let output = spider.parse(response).await?;
+    let output = ctx.spider.parse(response).await?;
 
     let mut item_count = 0u64;
     for item in &output.items {
-        store.store(item).await?;
+        ctx.store.store(item).await?;
         item_count += 1;
     }
 
@@ -336,33 +337,17 @@ async fn process_url(
 async fn process_url_with_retry(
     url: String,
     depth: usize,
-    spider: Arc<dyn Spider>,
-    store: Arc<dyn ItemStore>,
-    middleware: Arc<Vec<Arc<dyn Middleware>>>,
-    client: reqwest::Client,
-    crawl_delay: Option<Duration>,
-    max_retries: u32,
-    retry_base_delay: Duration,
+    ctx: TaskContext,
 ) -> Result<(u64, Vec<(String, usize)>), KumoError> {
-    for attempt in 0..=max_retries {
-        match process_url(
-            url.clone(),
-            depth,
-            spider.clone(),
-            store.clone(),
-            middleware.clone(),
-            client.clone(),
-            crawl_delay,
-        )
-        .await
-        {
+    for attempt in 0..=ctx.max_retries {
+        match process_url(&url, depth, &ctx).await {
             Ok(result) => return Ok(result),
-            Err(e) if attempt < max_retries => {
-                let delay = retry_base_delay * 2_u32.pow(attempt);
+            Err(e) if attempt < ctx.max_retries => {
+                let delay = ctx.retry_base_delay * 2_u32.pow(attempt);
                 tracing::warn!(
                     url = %url,
                     attempt = attempt + 1,
-                    max = max_retries,
+                    max = ctx.max_retries,
                     retry_in_ms = delay.as_millis(),
                     error = %e,
                     "retrying URL"

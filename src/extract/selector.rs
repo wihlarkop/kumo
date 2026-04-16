@@ -56,7 +56,9 @@ impl Element {
         };
         let elements = fragment
             .select(&sel)
-            .map(|el| Element { outer_html: el.html() })
+            .map(|el| Element {
+                outer_html: el.html(),
+            })
             .collect();
         ElementList { elements }
     }

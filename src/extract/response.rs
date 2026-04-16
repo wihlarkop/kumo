@@ -1,6 +1,6 @@
-use reqwest::header::HeaderMap;
-use crate::error::KumoError;
 use super::selector::{Element, ElementList};
+use crate::error::KumoError;
+use reqwest::header::HeaderMap;
 
 /// Wraps an HTTP response and provides ergonomic extraction methods.
 pub struct Response {
@@ -19,7 +19,9 @@ impl Response {
         };
         let elements = document
             .select(&sel)
-            .map(|el| Element { outer_html: el.html() })
+            .map(|el| Element {
+                outer_html: el.html(),
+            })
             .collect();
         ElementList { elements }
     }

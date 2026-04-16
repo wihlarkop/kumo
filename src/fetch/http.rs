@@ -1,6 +1,6 @@
-use reqwest::Client;
-use crate::{error::KumoError, extract::Response, middleware::Request};
 use super::Fetcher;
+use crate::{error::KumoError, extract::Response, middleware::Request};
+use reqwest::Client;
 
 /// HTTP fetcher backed by `reqwest`. Handles TLS, redirects, and cookies
 /// via the shared `Client` (which carries the cookie jar internally).
