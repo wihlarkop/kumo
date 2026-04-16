@@ -1,5 +1,7 @@
 # Kumo
 
+[![CI](https://github.com/wihlarkop/kumo/actions/workflows/ci.yml/badge.svg)](https://github.com/wihlarkop/kumo/actions/workflows/ci.yml)
+
 An async web crawling framework for Rust — Scrapy for Rust.
 
 **Kumo** (蜘蛛/雲 — spider/cloud) gives you a trait-based, async-first API for writing spiders that scrape, follow links, and store data. Batteries included: rate limiting, retry with backoff, robots.txt, and pluggable storage.
