@@ -80,7 +80,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-kumo = { path = "." }  # until published to crates.io
+kumo = "0.1"
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
