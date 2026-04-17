@@ -24,15 +24,18 @@ impl Fetcher for HttpFetcher {
             builder = builder.header(name, value);
         }
 
+        let start = std::time::Instant::now();
         let res = builder.send().await.map_err(KumoError::Fetch)?;
         let status = res.status().as_u16();
         let headers = res.headers().clone();
         let body = res.text().await.map_err(KumoError::Fetch)?;
+        let elapsed = start.elapsed();
 
         Ok(Response {
             url: request.url.clone(),
             status,
             headers,
+            elapsed,
             body,
         })
     }

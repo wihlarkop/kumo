@@ -6,12 +6,14 @@ use sqlx::PgPool;
 pub struct PostgresStore {
     pool: PgPool,
     table: String,
+    extra_columns: Vec<String>,
 }
 
 pub struct PostgresStoreBuilder {
     database_url: String,
     table: String,
     create_table: bool,
+    extra_columns: Vec<(String, String)>,
 }
 
 impl PostgresStore {
@@ -20,12 +22,13 @@ impl PostgresStore {
         Self::builder(database_url).connect().await
     }
 
-    /// Builder for a custom table name or to skip auto-create.
+    /// Builder for a custom table name, extra columns, or to skip auto-create.
     pub fn builder(database_url: impl Into<String>) -> PostgresStoreBuilder {
         PostgresStoreBuilder {
             database_url: database_url.into(),
             table: "kumo_items".into(),
             create_table: true,
+            extra_columns: Vec::new(),
         }
     }
 }
@@ -43,6 +46,22 @@ impl PostgresStoreBuilder {
         self
     }
 
+    /// Add an extra column extracted from the scraped JSON by matching key name.
+    ///
+    /// `sql_type` is any valid Postgres type (`TEXT`, `INT`, `JSONB`, etc.).
+    /// The value is taken from the JSON field whose key matches `name`; missing
+    /// fields are stored as NULL.
+    pub fn add_column(
+        mut self,
+        name: impl Into<String>,
+        sql_type: impl Into<String>,
+    ) -> Result<Self, KumoError> {
+        let name = name.into();
+        super::validate_table_name(&name)?;
+        self.extra_columns.push((name, sql_type.into()));
+        Ok(self)
+    }
+
     /// Validate the table name, connect, optionally create the table, return the store.
     pub async fn connect(self) -> Result<PostgresStore, KumoError> {
         super::validate_table_name(&self.table)?;
@@ -52,13 +71,18 @@ impl PostgresStoreBuilder {
             .map_err(|e| KumoError::Store(e.to_string()))?;
 
         if self.create_table {
+            let extra = self
+                .extra_columns
+                .iter()
+                .map(|(name, ty)| format!(",\n                    \"{}\" {}", name, ty))
+                .collect::<String>();
             let sql = format!(
                 r#"CREATE TABLE IF NOT EXISTS "{}" (
                     id         BIGSERIAL PRIMARY KEY,
                     data       JSONB NOT NULL,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(){}
                 )"#,
-                self.table
+                self.table, extra
             );
             sqlx::query(&sql)
                 .execute(&pool)
@@ -69,6 +93,7 @@ impl PostgresStoreBuilder {
         Ok(PostgresStore {
             pool,
             table: self.table,
+            extra_columns: self.extra_columns.into_iter().map(|(n, _)| n).collect(),
         })
     }
 }
@@ -76,10 +101,33 @@ impl PostgresStoreBuilder {
 #[async_trait]
 impl ItemStore for PostgresStore {
     async fn store(&self, item: &serde_json::Value) -> Result<(), KumoError> {
-        let sql = format!(r#"INSERT INTO "{}" (data) VALUES ($1)"#, self.table);
-        sqlx::query(&sql)
-            .bind(item)
-            .execute(&self.pool)
+        let col_list: String = self
+            .extra_columns
+            .iter()
+            .map(|n| format!(", \"{}\"", n))
+            .collect();
+        let param_list: String = (2..=self.extra_columns.len() + 1)
+            .map(|i| format!(", ${}", i))
+            .collect();
+        let sql = format!(
+            r#"INSERT INTO "{}" (data{}) VALUES ($1{})"#,
+            self.table, col_list, param_list
+        );
+        let mut q = sqlx::query(&sql).bind(item);
+        for name in &self.extra_columns {
+            let val = item.get(name);
+            let bound: Option<String> = val.and_then(|v| {
+                if v.is_null() {
+                    None
+                } else if let Some(s) = v.as_str() {
+                    Some(s.to_string())
+                } else {
+                    Some(v.to_string())
+                }
+            });
+            q = q.bind(bound);
+        }
+        q.execute(&self.pool)
             .await
             .map_err(|e| KumoError::Store(e.to_string()))?;
         Ok(())

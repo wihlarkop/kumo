@@ -1,12 +1,15 @@
 use super::selector::{Element, ElementList};
 use crate::error::KumoError;
 use reqwest::header::HeaderMap;
+use std::time::Duration;
 
 /// Wraps an HTTP response and provides ergonomic extraction methods.
 pub struct Response {
     pub url: String,
     pub status: u16,
     pub headers: HeaderMap,
+    /// Wall-clock time from sending the request to reading the full body.
+    pub elapsed: Duration,
     pub(crate) body: String,
 }
 

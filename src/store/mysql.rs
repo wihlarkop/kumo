@@ -6,12 +6,14 @@ use sqlx::MySqlPool;
 pub struct MySqlStore {
     pool: MySqlPool,
     table: String,
+    extra_columns: Vec<String>,
 }
 
 pub struct MySqlStoreBuilder {
     database_url: String,
     table: String,
     create_table: bool,
+    extra_columns: Vec<(String, String)>,
 }
 
 impl MySqlStore {
@@ -22,12 +24,13 @@ impl MySqlStore {
         Self::builder(database_url).connect().await
     }
 
-    /// Builder for a custom table name or to skip auto-create.
+    /// Builder for a custom table name, extra columns, or to skip auto-create.
     pub fn builder(database_url: impl Into<String>) -> MySqlStoreBuilder {
         MySqlStoreBuilder {
             database_url: database_url.into(),
             table: "kumo_items".into(),
             create_table: true,
+            extra_columns: Vec::new(),
         }
     }
 }
@@ -45,6 +48,21 @@ impl MySqlStoreBuilder {
         self
     }
 
+    /// Add an extra column extracted from the scraped JSON by matching key name.
+    ///
+    /// `sql_type` is any valid MySQL type (`VARCHAR(255)`, `INT`, `JSON`, etc.).
+    /// Missing fields are stored as NULL.
+    pub fn add_column(
+        mut self,
+        name: impl Into<String>,
+        sql_type: impl Into<String>,
+    ) -> Result<Self, KumoError> {
+        let name = name.into();
+        super::validate_table_name(&name)?;
+        self.extra_columns.push((name, sql_type.into()));
+        Ok(self)
+    }
+
     /// Validate the table name, connect, optionally create the table, return the store.
     pub async fn connect(self) -> Result<MySqlStore, KumoError> {
         super::validate_table_name(&self.table)?;
@@ -54,13 +72,18 @@ impl MySqlStoreBuilder {
             .map_err(|e| KumoError::Store(e.to_string()))?;
 
         if self.create_table {
+            let extra = self
+                .extra_columns
+                .iter()
+                .map(|(name, ty)| format!(",\n                    `{}` {}", name, ty))
+                .collect::<String>();
             let sql = format!(
                 r#"CREATE TABLE IF NOT EXISTS `{}` (
                     id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                     data       JSON NOT NULL,
-                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP{}
                 )"#,
-                self.table
+                self.table, extra
             );
             sqlx::query(&sql)
                 .execute(&pool)
@@ -71,6 +94,7 @@ impl MySqlStoreBuilder {
         Ok(MySqlStore {
             pool,
             table: self.table,
+            extra_columns: self.extra_columns.into_iter().map(|(n, _)| n).collect(),
         })
     }
 }
@@ -78,10 +102,31 @@ impl MySqlStoreBuilder {
 #[async_trait]
 impl ItemStore for MySqlStore {
     async fn store(&self, item: &serde_json::Value) -> Result<(), KumoError> {
-        let sql = format!(r#"INSERT INTO `{}` (data) VALUES (?)"#, self.table);
-        sqlx::query(&sql)
-            .bind(item.to_string())
-            .execute(&self.pool)
+        let col_list: String = self
+            .extra_columns
+            .iter()
+            .map(|n| format!(", `{}`", n))
+            .collect();
+        let param_list: String = self.extra_columns.iter().map(|_| ", ?").collect();
+        let sql = format!(
+            r#"INSERT INTO `{}` (data{}) VALUES (?{})"#,
+            self.table, col_list, param_list
+        );
+        let mut q = sqlx::query(&sql).bind(item.to_string());
+        for name in &self.extra_columns {
+            let val = item.get(name);
+            let bound: Option<String> = val.and_then(|v| {
+                if v.is_null() {
+                    None
+                } else if let Some(s) = v.as_str() {
+                    Some(s.to_string())
+                } else {
+                    Some(v.to_string())
+                }
+            });
+            q = q.bind(bound);
+        }
+        q.execute(&self.pool)
             .await
             .map_err(|e| KumoError::Store(e.to_string()))?;
         Ok(())

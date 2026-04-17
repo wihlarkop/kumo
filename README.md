@@ -15,6 +15,7 @@ An async web crawling framework for Rust — Scrapy for Rust.
 - **Async-first** — built on Tokio with a bounded `JoinSet` for controlled concurrency
 - **CSS extraction** — ergonomic `res.css(".selector")` API backed by `scraper`
 - **Rate limiting** — token-bucket `RateLimiter` middleware via `governor`
+- **Auto-throttle** — adaptive per-target delay based on EWMA latency and 429/503 back-off
 - **Retry with backoff** — exponential backoff via `.retry(max, base_delay)`
 - **robots.txt** — per-domain fetch + cache, enabled by default
 - **Bloom filter dedup** — O(1) URL deduplication in `MemoryFrontier` (1M URLs, 0.1% FP)
@@ -114,7 +115,16 @@ kumo = { version = "0.1", features = ["postgres"] }
 ```
 
 ```rust
+// Simple — default table `kumo_items`
 let store = PostgresStore::connect("postgres://user:pass@localhost/db").await?;
+
+// Custom table + extra columns promoted out of the JSON blob
+let store = PostgresStore::builder("postgres://user:pass@localhost/db")
+    .table("quotes")
+    .add_column("author", "TEXT")?
+    .add_column("tags", "JSONB")?
+    .connect()
+    .await?;
 
 CrawlEngine::builder()
     .store(store)
@@ -122,7 +132,7 @@ CrawlEngine::builder()
     .await?;
 ```
 
-Items land in a `kumo_items` table:
+The default schema (auto-created on connect):
 
 ```sql
 CREATE TABLE kumo_items (
@@ -130,18 +140,12 @@ CREATE TABLE kumo_items (
     data       JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
--- Query scraped data with JSONB operators
-SELECT data->>'text', data->>'author' FROM kumo_items;
 ```
 
-Custom table name:
+Extra columns are populated by matching the JSON field name. Missing fields are stored as `NULL`. Query with JSONB operators or the promoted columns:
 
-```rust
-let store = PostgresStore::builder("postgres://...")
-    .table("my_quotes")
-    .connect()
-    .await?;
+```sql
+SELECT author, data->>'text' FROM quotes;
 ```
 
 ### SQLite (feature: `sqlite`)
@@ -152,9 +156,17 @@ kumo = { version = "0.1", features = ["sqlite"] }
 ```
 
 ```rust
+// Simple
 let store = SqliteStore::connect("sqlite://quotes.db").await?;
 // or in-memory:
 let store = SqliteStore::connect("sqlite::memory:").await?;
+
+// Custom table + extra columns
+let store = SqliteStore::builder("sqlite://quotes.db")
+    .table("quotes")
+    .add_column("author", "TEXT")?
+    .connect()
+    .await?;
 
 CrawlEngine::builder()
     .store(store)
@@ -162,7 +174,7 @@ CrawlEngine::builder()
     .await?;
 ```
 
-Items are stored as JSON text in `kumo_items(id, data TEXT, created_at TEXT)`.
+Items are stored as JSON text in `kumo_items(id INTEGER, data TEXT, created_at TEXT)`.
 
 ### MySQL / MariaDB (feature: `mysql`)
 
@@ -172,7 +184,15 @@ kumo = { version = "0.1", features = ["mysql"] }
 ```
 
 ```rust
+// Simple
 let store = MySqlStore::connect("mysql://user:pass@localhost/db").await?;
+
+// Custom table + extra columns
+let store = MySqlStore::builder("mysql://user:pass@localhost/db")
+    .table("quotes")
+    .add_column("author", "VARCHAR(255)")?
+    .connect()
+    .await?;
 
 CrawlEngine::builder()
     .store(store)
@@ -180,7 +200,7 @@ CrawlEngine::builder()
     .await?;
 ```
 
-Items are stored as native JSON in `kumo_items(id, data JSON, created_at DATETIME)`.
+Items are stored as native JSON in `kumo_items(id BIGINT, data JSON, created_at DATETIME)`.
 
 ## Architecture
 
@@ -234,10 +254,15 @@ impl Spider for MySpider {
 ```rust
 CrawlEngine::builder()
     .concurrency(8)
+    // Fixed rate limit — at most 5 req/s globally
     .middleware(RateLimiter::per_second(5.0))
+    // Or adaptive throttle — adjusts delay from observed latency + 429/503
+    .middleware(AutoThrottle::new()
+        .start_delay(Duration::from_millis(500))
+        .min_delay(Duration::from_millis(100))
+        .max_delay(Duration::from_secs(30)))
     .middleware(DefaultHeaders::new().user_agent("my-bot/1.0"))
     .store(JsonlStore::new("output.jsonl"))
-    .crawl_delay(Duration::from_millis(200))
     .retry(3, Duration::from_millis(500))
     .respect_robots_txt(true)
     .run(MySpider)
@@ -249,7 +274,7 @@ CrawlEngine::builder()
 | Version | Features |
 |---------|---------|
 | v0.1 (current) | Spider trait, CrawlEngine, CSS extraction, RateLimiter, retry, robots.txt, JsonlStore, JsonStore |
-| v0.2 | Redis frontier, headless browser fetcher, PostgreSQL store, S3 store, auto-throttle, proxy rotation |
+| v0.2 | PostgreSQL / SQLite / MySQL stores, auto-throttle, Redis frontier, headless browser fetcher, S3 store, proxy rotation |
 | v0.3 | CLI (`kumo run`), LLM-based extraction (Claude API), Ratatui dashboard, plugin system |
 
 ## License

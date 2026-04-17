@@ -2,6 +2,9 @@
 //!
 //! Run with:
 //!   DATABASE_URL=postgres://user:pass@localhost/db cargo run --example postgres --features postgres
+//!
+//! The example promotes `author` and `tags` into dedicated columns in addition
+//! to storing the full item as JSONB in `data`.
 
 use kumo::prelude::*;
 use kumo::store::PostgresStore;
@@ -70,7 +73,14 @@ async fn main() -> Result<(), KumoError> {
         std::process::exit(1);
     });
 
-    let store = PostgresStore::connect(&database_url).await?;
+    // Promote `author` (TEXT) and `tags` (JSONB) as dedicated queryable columns.
+    // The full item is always stored in `data` (JSONB) as well.
+    let store = PostgresStore::builder(&database_url)
+        .table("quotes")
+        .add_column("author", "TEXT")?
+        .add_column("tags", "JSONB")?
+        .connect()
+        .await?;
 
     let stats = CrawlEngine::builder()
         .concurrency(5)
@@ -85,5 +95,6 @@ async fn main() -> Result<(), KumoError> {
         "Done — scraped {} items from {} pages ({} errors)",
         stats.items_scraped, stats.pages_crawled, stats.errors
     );
+    println!("Query: SELECT author, data->>'text' FROM quotes;");
     Ok(())
 }

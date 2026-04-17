@@ -1,16 +1,12 @@
-//! Scrapes all quotes from https://quotes.toscrape.com and stores them in SQLite.
+//! Scrapes all quotes from https://quotes.toscrape.com using AutoThrottle.
 //!
 //! Run with:
-//!   DATABASE_URL=sqlite://quotes.db cargo run --example sqlite --features sqlite
+//!   cargo run --example autothrottle
 //!
-//! For an in-memory database (data lost after run):
-//!   DATABASE_URL=sqlite::memory: cargo run --example sqlite --features sqlite
-//!
-//! The example promotes `author` as a dedicated TEXT column in addition to
-//! storing the full item as JSON text in `data`.
+//! Watch the logs to see the delay adapting in real time:
+//!   RUST_LOG=kumo=debug cargo run --example autothrottle
 
 use kumo::prelude::*;
-use kumo::store::SqliteStore;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -25,7 +21,7 @@ struct QuotesSpider;
 #[async_trait::async_trait]
 impl Spider for QuotesSpider {
     fn name(&self) -> &str {
-        "quotes"
+        "quotes-autothrottle"
     }
 
     fn start_urls(&self) -> Vec<String> {
@@ -68,28 +64,21 @@ impl Spider for QuotesSpider {
 #[tokio::main]
 async fn main() -> Result<(), KumoError> {
     tracing_subscriber::fmt()
-        .with_env_filter("kumo=info")
+        .with_env_filter("kumo=debug")
         .init();
 
-    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-        eprintln!("DATABASE_URL not set. Example: sqlite://quotes.db");
-        std::process::exit(1);
-    });
-
-    // Promote `author` as a dedicated queryable TEXT column.
-    // The full item is always stored in `data` (JSON text) as well.
-    let store = SqliteStore::builder(&database_url)
-        .table("quotes")
-        .add_column("author", "TEXT")?
-        .connect()
-        .await?;
-
     let stats = CrawlEngine::builder()
-        .concurrency(5)
+        .concurrency(2)
+        .middleware(
+            AutoThrottle::new()
+                .start_delay(std::time::Duration::from_millis(500))
+                .min_delay(std::time::Duration::from_millis(100))
+                .max_delay(std::time::Duration::from_secs(30)),
+        )
         .middleware(
             DefaultHeaders::new().user_agent("kumo/0.1 (+https://github.com/wihlarkop/kumo)"),
         )
-        .store(store)
+        .store(StdoutStore)
         .run(QuotesSpider)
         .await?;
 

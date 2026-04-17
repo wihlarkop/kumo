@@ -19,7 +19,7 @@ pub mod prelude {
     pub use crate::extract::{
         CssExtractor, Element, ElementList, ExtractedNode, Extractor, Response,
     };
-    pub use crate::middleware::{DefaultHeaders, RateLimiter};
+    pub use crate::middleware::{AutoThrottle, DefaultHeaders, RateLimiter};
     pub use crate::spider::{Output, Spider};
     #[cfg(feature = "mysql")]
     pub use crate::store::MySqlStore;
