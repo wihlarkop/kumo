@@ -102,6 +102,86 @@ cargo run --example quotes
 cargo run --example books
 ```
 
+## Storage Backends
+
+Kumo ships with `StdoutStore`, `JsonlStore`, and `JsonStore` out of the box. Additional backends are opt-in via feature flags.
+
+### PostgreSQL (feature: `postgres`)
+
+```toml
+[dependencies]
+kumo = { version = "0.1", features = ["postgres"] }
+```
+
+```rust
+let store = PostgresStore::connect("postgres://user:pass@localhost/db").await?;
+
+CrawlEngine::builder()
+    .store(store)
+    .run(MySpider)
+    .await?;
+```
+
+Items land in a `kumo_items` table:
+
+```sql
+CREATE TABLE kumo_items (
+    id         BIGSERIAL PRIMARY KEY,
+    data       JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Query scraped data with JSONB operators
+SELECT data->>'text', data->>'author' FROM kumo_items;
+```
+
+Custom table name:
+
+```rust
+let store = PostgresStore::builder("postgres://...")
+    .table("my_quotes")
+    .connect()
+    .await?;
+```
+
+### SQLite (feature: `sqlite`)
+
+```toml
+[dependencies]
+kumo = { version = "0.1", features = ["sqlite"] }
+```
+
+```rust
+let store = SqliteStore::connect("sqlite://quotes.db").await?;
+// or in-memory:
+let store = SqliteStore::connect("sqlite::memory:").await?;
+
+CrawlEngine::builder()
+    .store(store)
+    .run(MySpider)
+    .await?;
+```
+
+Items are stored as JSON text in `kumo_items(id, data TEXT, created_at TEXT)`.
+
+### MySQL / MariaDB (feature: `mysql`)
+
+```toml
+[dependencies]
+kumo = { version = "0.1", features = ["mysql"] }
+```
+
+```rust
+let store = MySqlStore::connect("mysql://user:pass@localhost/db").await?;
+
+CrawlEngine::builder()
+    .store(store)
+    .run(MySpider)
+    .await?;
+```
+
+Items are stored as native JSON in `kumo_items(id, data JSON, created_at DATETIME)`.
+
 ## Architecture
 
 ```

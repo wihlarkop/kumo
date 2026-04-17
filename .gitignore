@@ -32,6 +32,3 @@ target
 docs/
 *.pdf
 
-# Crawl output files
-*.jsonl
-*.json

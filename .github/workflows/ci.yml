@@ -63,5 +63,14 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: Clippy (postgres feature)
+        run: cargo clippy --all-targets --features postgres -- -D warnings
+
+      - name: Clippy (sqlite feature)
+        run: cargo clippy --all-targets --features sqlite -- -D warnings
+
+      - name: Clippy (mysql feature)
+        run: cargo clippy --all-targets --features mysql -- -D warnings
+
       - name: Format check
         run: cargo fmt --check

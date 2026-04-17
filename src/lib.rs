@@ -21,5 +21,11 @@ pub mod prelude {
     };
     pub use crate::middleware::{DefaultHeaders, RateLimiter};
     pub use crate::spider::{Output, Spider};
+    #[cfg(feature = "mysql")]
+    pub use crate::store::MySqlStore;
+    #[cfg(feature = "postgres")]
+    pub use crate::store::PostgresStore;
+    #[cfg(feature = "sqlite")]
+    pub use crate::store::SqliteStore;
     pub use crate::store::{JsonStore, JsonlStore, StdoutStore};
 }
