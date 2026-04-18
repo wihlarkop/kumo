@@ -8,24 +8,25 @@
 
 An async web crawling framework for Rust — Scrapy for Rust.
 
-**kumo** (蜘蛛/雲 — spider/cloud) gives you a trait-based, async-first API for writing spiders that scrape, follow links, and store data. Batteries included: rate limiting, retry with backoff, robots.txt, and pluggable storage.
+**kumo** (蜘蛛/雲 — spider/cloud) gives you a trait-based, async-first API for writing spiders that scrape, follow links, and store data.
 
 ## Features
 
-- **Async-first** — built on Tokio with a bounded `JoinSet` for controlled concurrency
-- **CSS extraction** — ergonomic `res.css(".selector")` API backed by `scraper`
-- **Rate limiting** — token-bucket `RateLimiter` middleware via `governor`
-- **Auto-throttle** — adaptive per-target delay based on EWMA latency and 429/503 back-off
+- **Async-first** — Tokio-based with bounded concurrency via `JoinSet`
+- **CSS selectors** — `res.css(".selector")` backed by `scraper`
+- **Regex selectors** — `res.re(r"\d+")`, `el.re_first(r"...")`, works on `Response`, `Element`, and `ElementList`
+- **JSONPath selectors** — `res.jsonpath("$.store.books[*].title")` for JSON responses (feature: `jsonpath`)
+- **Rate limiting** — token-bucket `RateLimiter` via `governor`
+- **Auto-throttle** — adaptive delay based on EWMA latency and 429/503 back-off
 - **Retry with backoff** — exponential backoff via `.retry(max, base_delay)`
 - **robots.txt** — per-domain fetch + cache, enabled by default
-- **Bloom filter dedup** — O(1) URL deduplication in `MemoryFrontier` (1M URLs, 0.1% FP)
-- **Pluggable storage** — `JsonlStore`, `JsonStore`, `StdoutStore`, or implement `ItemStore`
-- **Middleware chain** — `before_request` / `after_response` hooks (inject headers, rate limit, etc.)
-- **Domain filtering** — `allowed_domains()` and `max_depth()` on the `Spider` trait
+- **Bloom filter dedup** — O(1) URL deduplication, 1M URLs at 0.1% false-positive rate
+- **Pluggable storage** — `JsonlStore`, `JsonStore`, `StdoutStore`, PostgreSQL, SQLite, MySQL
+- **Middleware chain** — `before_request` / `after_response` hooks
+- **Domain + depth filtering** — `allowed_domains()` and `max_depth()` on the `Spider` trait
+- **LLM extraction** — extract structured data without selectors using Claude, OpenAI, Gemini, or Ollama
 
 ## Installation
-
-Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
@@ -33,7 +34,6 @@ kumo = "0.1"
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
-tracing-subscriber = "0.3"
 ```
 
 ## Quick Start
@@ -46,7 +46,6 @@ use serde::Serialize;
 struct Quote {
     text: String,
     author: String,
-    tags: Vec<String>,
 }
 
 struct QuotesSpider;
@@ -63,7 +62,6 @@ impl Spider for QuotesSpider {
         let quotes: Vec<Quote> = res.css(".quote").iter().map(|el| Quote {
             text:   el.css(".text").first().map(|e| e.text()).unwrap_or_default(),
             author: el.css(".author").first().map(|e| e.text()).unwrap_or_default(),
-            tags:   el.css(".tag").iter().map(|e| e.text()).collect(),
         }).collect();
 
         let next = res.css("li.next a").first()
@@ -78,204 +76,39 @@ impl Spider for QuotesSpider {
 
 #[tokio::main]
 async fn main() -> Result<(), KumoError> {
-    tracing_subscriber::fmt().with_env_filter("kumo=info").init();
-
-    let stats = CrawlEngine::builder()
+    CrawlEngine::builder()
         .concurrency(5)
         .middleware(DefaultHeaders::new().user_agent("kumo/0.1"))
         .store(JsonlStore::new("quotes.jsonl"))
         .run(QuotesSpider)
         .await?;
-
-    println!("Done — {} items from {} pages", stats.items_scraped, stats.pages_crawled);
     Ok(())
 }
 ```
 
-## Examples
+For more advanced examples — rate limiting, database stores, LLM extraction, and all selector types — see the [`examples/`](examples/) folder.
 
-```bash
-# Scrape all quotes from quotes.toscrape.com (10 pages, 100 items)
-cargo run --example quotes
+## Feature Flags
 
-# Scrape all books from books.toscrape.com (50 pages, 1000 items)
-# Demonstrates rate limiting, retry, JsonStore
-cargo run --example books
-```
-
-## Storage Backends
-
-Kumo ships with `StdoutStore`, `JsonlStore`, and `JsonStore` out of the box. Additional backends are opt-in via feature flags.
-
-### PostgreSQL (feature: `postgres`)
-
-```toml
-[dependencies]
-kumo = { version = "0.1", features = ["postgres"] }
-```
-
-```rust
-// Simple — default table `kumo_items`
-let store = PostgresStore::connect("postgres://user:pass@localhost/db").await?;
-
-// Custom table + extra columns promoted out of the JSON blob
-let store = PostgresStore::builder("postgres://user:pass@localhost/db")
-    .table("quotes")
-    .add_column("author", "TEXT")?
-    .add_column("tags", "JSONB")?
-    .connect()
-    .await?;
-
-CrawlEngine::builder()
-    .store(store)
-    .run(MySpider)
-    .await?;
-```
-
-The default schema (auto-created on connect):
-
-```sql
-CREATE TABLE kumo_items (
-    id         BIGSERIAL PRIMARY KEY,
-    data       JSONB NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-```
-
-Extra columns are populated by matching the JSON field name. Missing fields are stored as `NULL`. Query with JSONB operators or the promoted columns:
-
-```sql
-SELECT author, data->>'text' FROM quotes;
-```
-
-### SQLite (feature: `sqlite`)
-
-```toml
-[dependencies]
-kumo = { version = "0.1", features = ["sqlite"] }
-```
-
-```rust
-// Simple
-let store = SqliteStore::connect("sqlite://quotes.db").await?;
-// or in-memory:
-let store = SqliteStore::connect("sqlite::memory:").await?;
-
-// Custom table + extra columns
-let store = SqliteStore::builder("sqlite://quotes.db")
-    .table("quotes")
-    .add_column("author", "TEXT")?
-    .connect()
-    .await?;
-
-CrawlEngine::builder()
-    .store(store)
-    .run(MySpider)
-    .await?;
-```
-
-Items are stored as JSON text in `kumo_items(id INTEGER, data TEXT, created_at TEXT)`.
-
-### MySQL / MariaDB (feature: `mysql`)
-
-```toml
-[dependencies]
-kumo = { version = "0.1", features = ["mysql"] }
-```
-
-```rust
-// Simple
-let store = MySqlStore::connect("mysql://user:pass@localhost/db").await?;
-
-// Custom table + extra columns
-let store = MySqlStore::builder("mysql://user:pass@localhost/db")
-    .table("quotes")
-    .add_column("author", "VARCHAR(255)")?
-    .connect()
-    .await?;
-
-CrawlEngine::builder()
-    .store(store)
-    .run(MySpider)
-    .await?;
-```
-
-Items are stored as native JSON in `kumo_items(id BIGINT, data JSON, created_at DATETIME)`.
-
-## Architecture
-
-```
-start_urls
-    │
-    ▼
-MemoryFrontier (Bloom filter dedup)
-    │
-    ▼
-Middleware chain (before_request)
-    │
-    ▼
-HttpFetcher (reqwest)
-    │
-    ▼
-Middleware chain (after_response)
-    │
-    ▼
-Spider::parse(Response) → Output { items, follow }
-    │              │
-    ▼              ▼
-ItemStore     MemoryFrontier (enqueue follow URLs)
-(JsonlStore,
- JsonStore,
- StdoutStore)
-```
-
-## Implementing a Spider
-
-```rust
-#[async_trait::async_trait]
-impl Spider for MySpider {
-    fn name(&self) -> &str { "my-spider" }
-    fn start_urls(&self) -> Vec<String> { vec!["https://example.com".into()] }
-
-    // Optional overrides:
-    fn allowed_domains(&self) -> Vec<&str> { vec!["example.com"] }
-    fn max_depth(&self) -> Option<usize> { Some(10) }
-    fn on_error(&self, _url: &str, _err: &KumoError) -> ErrorPolicy { ErrorPolicy::Skip }
-
-    async fn parse(&self, res: Response) -> Result<Output, KumoError> {
-        // res.css(), res.text(), res.json(), res.urljoin()
-        Ok(Output::new())
-    }
-}
-```
-
-## Engine Builder
-
-```rust
-CrawlEngine::builder()
-    .concurrency(8)
-    // Fixed rate limit — at most 5 req/s globally
-    .middleware(RateLimiter::per_second(5.0))
-    // Or adaptive throttle — adjusts delay from observed latency + 429/503
-    .middleware(AutoThrottle::new()
-        .start_delay(Duration::from_millis(500))
-        .min_delay(Duration::from_millis(100))
-        .max_delay(Duration::from_secs(30)))
-    .middleware(DefaultHeaders::new().user_agent("my-bot/1.0"))
-    .store(JsonlStore::new("output.jsonl"))
-    .retry(3, Duration::from_millis(500))
-    .respect_robots_txt(true)
-    .run(MySpider)
-    .await?;
-```
+| Flag | Pulls in | Purpose |
+|---|---|---|
+| _(default)_ | — | CSS + regex selectors, all stores, middleware |
+| `jsonpath` | `jsonpath-rust` | JSONPath selector on `Response` |
+| `postgres` | `sqlx` | `PostgresStore` |
+| `sqlite` | `sqlx` | `SqliteStore` |
+| `mysql` | `sqlx` | `MySqlStore` |
+| `claude` | `rig-core` | `AnthropicClient` for LLM extraction |
+| `openai` | `rig-core` | `OpenAiClient` for LLM extraction |
+| `gemini` | `rig-core` | `GeminiClient` for LLM extraction |
+| `ollama` | `rig-core` | `OllamaClient` for LLM extraction |
 
 ## Roadmap
 
-| Version | Features |
-|---------|---------|
-| v0.1 (current) | Spider trait, CrawlEngine, CSS extraction, RateLimiter, retry, robots.txt, JsonlStore, JsonStore |
-| v0.2 | PostgreSQL / SQLite / MySQL stores, auto-throttle, Redis frontier, headless browser fetcher, S3 store, proxy rotation |
-| v0.3 | CLI (`kumo run`), LLM-based extraction (Claude API), Ratatui dashboard, plugin system |
+| Version | Status | Features |
+|---------|--------|---------|
+| v0.1 | released | Spider trait, CrawlEngine, CSS extraction, RateLimiter, AutoThrottle, retry, robots.txt, JsonlStore, JsonStore, StdoutStore |
+| v0.2 | released | PostgreSQL / SQLite / MySQL stores, custom columns, LLM extraction (Claude, OpenAI, Gemini, Ollama), regex + JSONPath selectors |
+| v0.3 | planned | CLI (`kumo run`), Redis frontier, headless browser fetcher, S3 store, proxy rotation, Ratatui dashboard |
 
 ## License
 

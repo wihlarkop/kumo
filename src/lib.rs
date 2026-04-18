@@ -19,8 +19,11 @@ pub mod prelude {
     pub use crate::engine::{CrawlEngine, CrawlStats};
     pub use crate::error::{ErrorPolicy, KumoError};
     pub use crate::extract::{
-        CssExtractor, Element, ElementList, ExtractedNode, Extractor, Response,
+        CssExtractor, Element, ElementList, ExtractedNode, Extractor, RegexExtractor,
+        Response, ValueExtractor,
     };
+    #[cfg(feature = "jsonpath")]
+    pub use crate::extract::JsonPathExtractor;
     #[cfg(feature = "claude")]
     pub use crate::llm::AnthropicClient;
     #[cfg(feature = "gemini")]

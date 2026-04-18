@@ -1,4 +1,4 @@
-use crate::error::KumoError;
+use crate::{error::KumoError, extract::selector::re_matches};
 
 /// A single node extracted from an HTML document.
 ///
@@ -52,5 +52,49 @@ impl Extractor for CssExtractor {
             })
             .collect();
         Ok(nodes)
+    }
+}
+
+/// Extension trait for extractors that produce plain string values rather than HTML nodes.
+///
+/// Used by regex and JSONPath extractors where the result is not an HTML fragment.
+pub trait ValueExtractor: Send + Sync {
+    fn extract_values(&self, input: &str, selector: &str) -> Result<Vec<String>, KumoError>;
+}
+
+/// Regex-based value extractor.
+///
+/// If the pattern contains capture group 1, returns group-1 matches.
+/// Otherwise returns the full match.
+pub struct RegexExtractor;
+
+impl ValueExtractor for RegexExtractor {
+    fn extract_values(&self, input: &str, selector: &str) -> Result<Vec<String>, KumoError> {
+        regex::Regex::new(selector)
+            .map_err(|e| KumoError::Parse(format!("invalid regex '{}': {}", selector, e)))?;
+        Ok(re_matches(input, selector))
+    }
+}
+
+/// JSONPath value extractor. Parses input as JSON and evaluates the path expression.
+///
+/// Results are serialized back to JSON strings.
+#[cfg(feature = "jsonpath")]
+pub struct JsonPathExtractor;
+
+#[cfg(feature = "jsonpath")]
+impl ValueExtractor for JsonPathExtractor {
+    fn extract_values(&self, input: &str, selector: &str) -> Result<Vec<String>, KumoError> {
+        use jsonpath_rust::JsonPath;
+
+        let value: serde_json::Value = serde_json::from_str(input)
+            .map_err(|e| KumoError::Parse(format!("invalid JSON input: {e}")))?;
+        let results = value
+            .query(selector)
+            .map_err(|e| KumoError::Parse(format!("invalid JSONPath '{selector}': {e}")))?
+            .into_iter()
+            .map(|v| v.to_string())
+            .collect();
+        Ok(results)
     }
 }

@@ -1,3 +1,17 @@
+pub(crate) fn re_matches(text: &str, pattern: &str) -> Vec<String> {
+    let Ok(re) = regex::Regex::new(pattern) else {
+        return vec![];
+    };
+    re.captures_iter(text)
+        .map(|cap| {
+            cap.get(1)
+                .unwrap_or_else(|| cap.get(0).unwrap())
+                .as_str()
+                .to_string()
+        })
+        .collect()
+}
+
 /// A list of HTML elements matched by a CSS selector.
 pub struct ElementList {
     pub(crate) elements: Vec<Element>,
@@ -18,6 +32,19 @@ impl ElementList {
 
     pub fn is_empty(&self) -> bool {
         self.elements.is_empty()
+    }
+
+    /// Apply a regex pattern to the text of each element and return all matches.
+    ///
+    /// If the pattern contains capture group 1, returns group-1 matches.
+    /// Otherwise returns the full match. Returns an empty Vec on invalid pattern.
+    pub fn re(&self, pattern: &str) -> Vec<String> {
+        self.elements.iter().flat_map(|el| el.re(pattern)).collect()
+    }
+
+    /// Return the first regex match across all elements, or `None`.
+    pub fn re_first(&self, pattern: &str) -> Option<String> {
+        self.elements.iter().find_map(|el| el.re_first(pattern))
     }
 }
 
@@ -61,6 +88,19 @@ impl Element {
             })
             .collect();
         ElementList { elements }
+    }
+
+    /// Apply a regex pattern to this element's text content and return all matches.
+    ///
+    /// If the pattern contains capture group 1, returns group-1 matches.
+    /// Otherwise returns the full match. Returns an empty Vec on invalid pattern.
+    pub fn re(&self, pattern: &str) -> Vec<String> {
+        re_matches(&self.text(), pattern)
+    }
+
+    /// Return the first regex match in this element's text, or `None`.
+    pub fn re_first(&self, pattern: &str) -> Option<String> {
+        self.re(pattern).into_iter().next()
     }
 
     /// Get the inner HTML of this element (children only, no outer tag).
@@ -158,5 +198,57 @@ mod tests {
         let list = ElementList { elements: vec![] };
         assert!(list.is_empty());
         assert_eq!(list.len(), 0);
+    }
+
+    #[test]
+    fn element_re_returns_full_match_without_group() {
+        let el = make_element("<p>Price: $42</p>");
+        assert_eq!(el.re(r"\$\d+"), vec!["$42"]);
+    }
+
+    #[test]
+    fn element_re_returns_capture_group_one() {
+        let el = make_element("<p>Price: $42</p>");
+        assert_eq!(el.re(r"\$(\d+)"), vec!["42"]);
+    }
+
+    #[test]
+    fn element_re_first_returns_first_match() {
+        let el = make_element("<p>1 and 2 and 3</p>");
+        assert_eq!(el.re_first(r"\d+"), Some("1".to_string()));
+    }
+
+    #[test]
+    fn element_re_first_returns_none_when_no_match() {
+        let el = make_element("<p>no numbers here</p>");
+        assert_eq!(el.re_first(r"\d+"), None);
+    }
+
+    #[test]
+    fn element_re_invalid_pattern_returns_empty() {
+        let el = make_element("<p>text</p>");
+        assert!(el.re("(unclosed").is_empty());
+    }
+
+    #[test]
+    fn element_list_re_flattens_across_elements() {
+        let list = ElementList {
+            elements: vec![
+                make_element("<span>$10</span>"),
+                make_element("<span>$20</span>"),
+            ],
+        };
+        assert_eq!(list.re(r"\$(\d+)"), vec!["10", "20"]);
+    }
+
+    #[test]
+    fn element_list_re_first_returns_first_across_elements() {
+        let list = ElementList {
+            elements: vec![
+                make_element("<span>$10</span>"),
+                make_element("<span>$20</span>"),
+            ],
+        };
+        assert_eq!(list.re_first(r"\$(\d+)"), Some("10".to_string()));
     }
 }
