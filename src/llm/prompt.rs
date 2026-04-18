@@ -37,14 +37,12 @@ fn strip_tag(html: &str, tag: &str) -> String {
 }
 
 /// Default user message prompt. Placeholders: `{html}`.
-pub const DEFAULT_USER_PROMPT: &str =
-    "Extract structured data from the following HTML page and populate all fields \
+pub const DEFAULT_USER_PROMPT: &str = "Extract structured data from the following HTML page and populate all fields \
      according to the provided schema. Return only the extracted data — no explanation.\n\n\
      HTML:\n```\n{html}\n```";
 
 /// Default system prompt used when the caller does not supply one.
-pub const DEFAULT_SYSTEM_PROMPT: &str =
-    "You are a precise web data extraction assistant. \
+pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a precise web data extraction assistant. \
      Extract structured data from HTML exactly as specified.";
 
 /// Render the user prompt, substituting `{html}`.
@@ -60,8 +58,14 @@ mod tests {
     fn strips_script_blocks() {
         let html = r#"<html><head><script>alert(1)</script></head><body>hello</body></html>"#;
         let stripped = strip_scripts_and_styles(html);
-        assert!(!stripped.contains("<script>"), "script tag should be removed");
-        assert!(!stripped.contains("alert(1)"), "script content should be removed");
+        assert!(
+            !stripped.contains("<script>"),
+            "script tag should be removed"
+        );
+        assert!(
+            !stripped.contains("alert(1)"),
+            "script content should be removed"
+        );
         assert!(stripped.contains("hello"), "body content should remain");
     }
 
@@ -70,7 +74,10 @@ mod tests {
         let html = r#"<html><head><style>body{color:red}</style></head><body>world</body></html>"#;
         let stripped = strip_scripts_and_styles(html);
         assert!(!stripped.contains("<style>"), "style tag should be removed");
-        assert!(!stripped.contains("color:red"), "style content should be removed");
+        assert!(
+            !stripped.contains("color:red"),
+            "style content should be removed"
+        );
         assert!(stripped.contains("world"), "body content should remain");
     }
 

@@ -84,8 +84,7 @@ impl ResponseExtractExt for Response {
     {
         let schema = schemars::schema_for!(T);
         let json = client.extract_json(&schema, self.text()).await?;
-        serde_json::from_value(json)
-            .map_err(|e| KumoError::Llm(format!("schema mismatch: {e}")))
+        serde_json::from_value(json).map_err(|e| KumoError::Llm(format!("schema mismatch: {e}")))
     }
 }
 
@@ -137,7 +136,13 @@ mod tests {
         };
         let resp = make_response("<html>irrelevant</html>");
         let item: TestItem = resp.extract(&client).await.unwrap();
-        assert_eq!(item, TestItem { title: "hello".into(), count: 42 });
+        assert_eq!(
+            item,
+            TestItem {
+                title: "hello".into(),
+                count: 42
+            }
+        );
     }
 
     #[tokio::test]

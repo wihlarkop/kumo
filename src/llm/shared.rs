@@ -1,6 +1,6 @@
 use crate::error::KumoError;
-use rig::completion::AssistantContent;
 use rig::OneOrMany;
+use rig::completion::AssistantContent;
 use serde_json::Value;
 
 pub(super) fn extract_tool_input(

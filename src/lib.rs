@@ -25,12 +25,12 @@ pub mod prelude {
     pub use crate::llm::AnthropicClient;
     #[cfg(feature = "gemini")]
     pub use crate::llm::GeminiClient;
-    #[cfg(feature = "llm")]
-    pub use crate::llm::ResponseExtractExt;
     #[cfg(feature = "ollama")]
     pub use crate::llm::OllamaClient;
     #[cfg(feature = "openai")]
     pub use crate::llm::OpenAiClient;
+    #[cfg(feature = "llm")]
+    pub use crate::llm::ResponseExtractExt;
     pub use crate::middleware::{AutoThrottle, DefaultHeaders, RateLimiter};
     pub use crate::spider::{Output, Spider};
     #[cfg(feature = "mysql")]
