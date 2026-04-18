@@ -36,7 +36,10 @@ pub mod prelude {
     pub use crate::llm::OpenAiClient;
     #[cfg(feature = "llm")]
     pub use crate::llm::{ResponseExtractExt, TokenUsage};
-    pub use crate::middleware::{AutoThrottle, DefaultHeaders, RateLimiter};
+    pub use crate::middleware::{
+        AutoThrottle, DefaultHeaders, Middleware, ProxyRotator, RateLimiter, Request,
+        UserAgentRotator,
+    };
     pub use crate::spider::{Output, Spider};
     #[cfg(feature = "mysql")]
     pub use crate::store::MySqlStore;

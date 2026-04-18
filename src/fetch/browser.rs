@@ -96,7 +96,8 @@ impl BrowserConfig {
 /// opens a new tab, navigates, waits for content, and closes the tab.
 pub struct BrowserFetcher {
     browser: Arc<Browser>,
-    _handler: Arc<tokio::task::JoinHandle<()>>,
+    // Kept alive to ensure the CDP event-loop task runs for the engine lifetime.
+    _handler: tokio::task::JoinHandle<()>,
     config: BrowserConfig,
 }
 
@@ -133,7 +134,7 @@ impl BrowserFetcher {
 
         Ok(Self {
             browser: Arc::new(browser),
-            _handler: Arc::new(handler_task),
+            _handler: handler_task,
             config,
         })
     }
@@ -143,6 +144,14 @@ impl BrowserFetcher {
 impl Fetcher for BrowserFetcher {
     async fn fetch(&self, request: &Request) -> Result<Response, KumoError> {
         let start = std::time::Instant::now();
+
+        if request.proxy.is_some() {
+            tracing::warn!(
+                "BrowserFetcher does not support per-request proxy rotation. \
+                 Set a static proxy via BrowserConfig::proxy() or remove ProxyRotator \
+                 when using the browser fetcher."
+            );
+        }
 
         // Open a blank tab so we can set headers before navigation.
         let page = self

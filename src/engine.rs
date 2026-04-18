@@ -43,6 +43,8 @@ pub struct CrawlEngine {
     respect_robots: bool,
     max_retries: u32,
     retry_base_delay: Duration,
+    /// Expected unique URL count for Bloom filter sizing (default: 1_000_000).
+    max_urls: usize,
     #[cfg(feature = "browser")]
     browser: Option<BrowserConfig>,
 }
@@ -57,6 +59,7 @@ impl Default for CrawlEngine {
             respect_robots: true,
             max_retries: 0,
             retry_base_delay: Duration::from_millis(500),
+            max_urls: 1_000_000,
             #[cfg(feature = "browser")]
             browser: None,
         }
@@ -107,6 +110,14 @@ impl CrawlEngine {
         self
     }
 
+    /// Expected number of unique URLs this crawl will visit (default: 1_000_000).
+    /// Used to size the Bloom filter for URL deduplication — set lower for small
+    /// crawls to save memory, higher for large crawls to reduce false-positive skips.
+    pub fn max_urls(mut self, n: usize) -> Self {
+        self.max_urls = n;
+        self
+    }
+
     /// Use a headless/headed browser to fetch pages instead of plain HTTP.
     /// Enables JavaScript rendering for SPAs (React, Vue, etc.).
     ///
@@ -124,7 +135,7 @@ impl CrawlEngine {
     {
         let start = std::time::Instant::now();
         let spider: Arc<dyn Spider> = Arc::new(spider);
-        let frontier = Arc::new(MemoryFrontier::new());
+        let frontier = Arc::new(MemoryFrontier::new(self.max_urls));
         let store = self
             .store
             .unwrap_or_else(|| Arc::new(crate::store::stdout::StdoutStore));
@@ -164,7 +175,7 @@ impl CrawlEngine {
             frontier.push(url, 0).await;
         }
 
-        type TaskResult = (String, Result<(u64, Vec<(String, usize)>), KumoError>);
+        type TaskResult = (String, usize, Result<(u64, Vec<(String, usize)>), KumoError>);
         let mut join_set: JoinSet<TaskResult> = JoinSet::new();
         let mut stats = CrawlStats::default();
 
@@ -193,7 +204,7 @@ impl CrawlEngine {
 
                         join_set.spawn(async move {
                             let result = process_url_with_retry(url.clone(), depth, ctx).await;
-                            (url, result)
+                            (url, depth, result)
                         });
                     }
                     // Frontier currently empty — tasks may still add URLs.
@@ -208,7 +219,7 @@ impl CrawlEngine {
 
             // Wait for the next task to finish, then process its output.
             match join_set.join_next().await {
-                Some(Ok((_url, Ok((item_count, follows))))) => {
+                Some(Ok((_url, _depth, Ok((item_count, follows))))) => {
                     stats.pages_crawled += 1;
                     stats.items_scraped += item_count;
 
@@ -236,15 +247,24 @@ impl CrawlEngine {
                         frontier.push(follow_url, follow_depth).await;
                     }
                 }
-                Some(Ok((url, Err(e)))) => {
+                Some(Ok((url, depth, Err(e)))) => {
                     stats.errors += 1;
+                    // Notify all middleware of the permanent failure.
+                    for mw in middleware.iter() {
+                        mw.on_error(&url, &e).await;
+                    }
                     match spider.on_error(&url, &e) {
                         ErrorPolicy::Abort => {
                             error!(url = %url, error = %e, "aborting crawl");
                             return Err(e);
                         }
-                        ErrorPolicy::Retry(_) => {
-                            error!(url = %url, error = %e, "retry not yet implemented, skipping");
+                        ErrorPolicy::Retry(n) => {
+                            // Re-queue bypassing dedup so a previously-seen URL
+                            // that failed can be retried.
+                            tracing::warn!(url = %url, retries = n, error = %e, "re-queuing failed URL");
+                            for _ in 0..n {
+                                frontier.push_force(url.clone(), depth).await;
+                            }
                         }
                         ErrorPolicy::Skip => {
                             error!(url = %url, error = %e, "skipping URL");

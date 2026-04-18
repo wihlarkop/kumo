@@ -9,6 +9,10 @@ pub trait Frontier: Send + Sync {
     /// Returns `true` if added, `false` if it was a duplicate.
     async fn push(&self, url: String, depth: usize) -> bool;
 
+    /// Enqueue a URL unconditionally, bypassing the deduplication filter.
+    /// Used by `ErrorPolicy::Retry` to re-queue a URL that previously failed.
+    async fn push_force(&self, url: String, depth: usize);
+
     /// Dequeue the next URL. Returns `None` if the queue is currently empty.
     async fn pop(&self) -> Option<(String, usize)>;
 

@@ -1,10 +1,14 @@
 pub mod autothrottle;
 pub mod default_headers;
+pub mod proxy;
 pub mod rate_limit;
+pub mod user_agent;
 
 pub use autothrottle::AutoThrottle;
 pub use default_headers::DefaultHeaders;
+pub use proxy::ProxyRotator;
 pub use rate_limit::RateLimiter;
+pub use user_agent::UserAgentRotator;
 
 use crate::{error::KumoError, extract::Response};
 use reqwest::header::HeaderMap;
@@ -14,6 +18,9 @@ pub struct Request {
     pub url: String,
     pub headers: HeaderMap,
     pub depth: usize,
+    /// Proxy URL set by `ProxyRotator` middleware (e.g. `"http://user:pass@host:port"`).
+    /// The `HttpFetcher` reads this field to route the request through the specified proxy.
+    pub proxy: Option<String>,
 }
 
 impl Request {
@@ -22,6 +29,7 @@ impl Request {
             url: url.into(),
             headers: HeaderMap::new(),
             depth,
+            proxy: None,
         }
     }
 }
@@ -39,4 +47,9 @@ pub trait Middleware: Send + Sync {
     async fn after_response(&self, _response: &mut Response) -> Result<(), KumoError> {
         Ok(())
     }
+
+    /// Called when a URL permanently fails (after all retries are exhausted).
+    /// Use this to log failures, mark proxies as bad, emit metrics, etc.
+    /// Default implementation does nothing.
+    async fn on_error(&self, _url: &str, _error: &KumoError) {}
 }
