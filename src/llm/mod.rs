@@ -24,8 +24,8 @@ pub use openai::OpenAiClient;
 
 use crate::{error::KumoError, extract::Response};
 use schemars::Schema;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Token usage returned by a single LLM extraction call.
 #[derive(Debug, Clone, Copy, Default)]
@@ -71,10 +71,13 @@ impl UsageCounters {
 
     pub(crate) fn add(&self, usage: &TokenUsage) {
         self.input.fetch_add(usage.input_tokens, Ordering::Relaxed);
-        self.output.fetch_add(usage.output_tokens, Ordering::Relaxed);
+        self.output
+            .fetch_add(usage.output_tokens, Ordering::Relaxed);
         self.total.fetch_add(usage.total_tokens, Ordering::Relaxed);
-        self.cached_input.fetch_add(usage.cached_input_tokens, Ordering::Relaxed);
-        self.cache_creation_input.fetch_add(usage.cache_creation_input_tokens, Ordering::Relaxed);
+        self.cached_input
+            .fetch_add(usage.cached_input_tokens, Ordering::Relaxed);
+        self.cache_creation_input
+            .fetch_add(usage.cache_creation_input_tokens, Ordering::Relaxed);
     }
 
     pub(crate) fn snapshot(&self) -> TokenUsage {
@@ -206,7 +209,10 @@ mod tests {
 
     impl FakeLlm {
         fn new(returns: serde_json::Value) -> Self {
-            Self { returns, usage: TokenUsage::default() }
+            Self {
+                returns,
+                usage: TokenUsage::default(),
+            }
         }
 
         fn with_usage(mut self, input: u64, output: u64) -> Self {
@@ -243,7 +249,13 @@ mod tests {
         let client = FakeLlm::new(serde_json::json!({ "title": "hello", "count": 42 }));
         let resp = make_response("<html>irrelevant</html>");
         let item: TestItem = resp.extract(&client).await.unwrap();
-        assert_eq!(item, TestItem { title: "hello".into(), count: 42 });
+        assert_eq!(
+            item,
+            TestItem {
+                title: "hello".into(),
+                count: 42
+            }
+        );
     }
 
     #[tokio::test]
@@ -270,11 +282,17 @@ mod tests {
 
     #[tokio::test]
     async fn extract_with_usage_returns_both() {
-        let client = FakeLlm::new(serde_json::json!({ "title": "hi", "count": 7 }))
-            .with_usage(100, 50);
+        let client =
+            FakeLlm::new(serde_json::json!({ "title": "hi", "count": 7 })).with_usage(100, 50);
         let resp = make_response("<html>irrelevant</html>");
         let (item, usage) = resp.extract_with_usage::<TestItem>(&client).await.unwrap();
-        assert_eq!(item, TestItem { title: "hi".into(), count: 7 });
+        assert_eq!(
+            item,
+            TestItem {
+                title: "hi".into(),
+                count: 7
+            }
+        );
         assert_eq!(usage.input_tokens, 100);
         assert_eq!(usage.output_tokens, 50);
         assert_eq!(usage.total_tokens, 150);

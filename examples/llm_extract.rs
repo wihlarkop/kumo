@@ -78,7 +78,9 @@ async fn main() -> Result<(), KumoError> {
             DefaultHeaders::new().user_agent("kumo/0.1 (+https://github.com/wihlarkop/kumo)"),
         )
         .store(StdoutStore)
-        .run(QuotesSpider { client: Arc::clone(&client) })
+        .run(QuotesSpider {
+            client: Arc::clone(&client),
+        })
         .await?;
 
     let usage = client.total_usage();

@@ -1,4 +1,4 @@
-use super::{prompt, shared, TokenUsage, UsageCounters};
+use super::{TokenUsage, UsageCounters, prompt, shared};
 use crate::error::KumoError;
 use async_trait::async_trait;
 use rig::client::CompletionClient;

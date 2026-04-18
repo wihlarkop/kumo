@@ -1,4 +1,4 @@
-use super::selector::{re_matches, Element, ElementList};
+use super::selector::{Element, ElementList, re_matches};
 use crate::error::KumoError;
 use reqwest::header::HeaderMap;
 use std::time::Duration;

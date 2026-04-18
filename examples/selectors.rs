@@ -20,7 +20,11 @@ fn main() {
     println!("=== CSS ===");
     for item in res.css("li.item").iter() {
         let name = item.css("a").first().map(|a| a.text()).unwrap_or_default();
-        let price = item.css(".price").first().map(|p| p.text()).unwrap_or_default();
+        let price = item
+            .css(".price")
+            .first()
+            .map(|p| p.text())
+            .unwrap_or_default();
         println!("  {name} → {price}");
     }
 
@@ -68,7 +72,5 @@ fn main() {
     }
 
     #[cfg(not(feature = "jsonpath"))]
-    println!(
-        "\n[JSONPath disabled — run with: cargo run --example selectors --features jsonpath]"
-    );
+    println!("\n[JSONPath disabled — run with: cargo run --example selectors --features jsonpath]");
 }
