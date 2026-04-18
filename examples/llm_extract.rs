@@ -10,6 +10,7 @@ use kumo::llm::anthropic::models;
 use kumo::prelude::*;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 struct Quote {
@@ -22,7 +23,7 @@ struct Quote {
 }
 
 struct QuotesSpider {
-    client: AnthropicClient,
+    client: Arc<AnthropicClient>,
 }
 
 #[async_trait::async_trait]
@@ -37,7 +38,7 @@ impl Spider for QuotesSpider {
 
     async fn parse(&self, res: Response) -> Result<Output, KumoError> {
         // No CSS selectors — the LLM reads the HTML and fills in the struct.
-        let quotes: Vec<Quote> = res.extract(&self.client).await?;
+        let quotes: Vec<Quote> = res.extract(self.client.as_ref()).await?;
 
         let next_url = res
             .css("li.next a")
@@ -64,10 +65,12 @@ async fn main() -> Result<(), KumoError> {
         std::process::exit(1);
     });
 
-    let client = AnthropicClient::new(api_key)
-        .model(models::CLAUDE_HAIKU_4_5)
-        .system_prompt("Extract all quotes from this quotes listing page. Each page contains multiple quotes in .quote elements.")
-        .strip_scripts_and_styles(true);
+    let client = Arc::new(
+        AnthropicClient::new(api_key)
+            .model(models::CLAUDE_HAIKU_4_5)
+            .system_prompt("Extract all quotes from this quotes listing page. Each page contains multiple quotes in .quote elements.")
+            .strip_scripts_and_styles(true),
+    );
 
     let stats = CrawlEngine::builder()
         .concurrency(1)
@@ -75,12 +78,17 @@ async fn main() -> Result<(), KumoError> {
             DefaultHeaders::new().user_agent("kumo/0.1 (+https://github.com/wihlarkop/kumo)"),
         )
         .store(StdoutStore)
-        .run(QuotesSpider { client })
+        .run(QuotesSpider { client: Arc::clone(&client) })
         .await?;
 
+    let usage = client.total_usage();
     println!(
         "Done — scraped {} items from {} pages ({} errors)",
         stats.items_scraped, stats.pages_crawled, stats.errors
+    );
+    println!(
+        "Tokens — {} in / {} out / {} total ({} cached)",
+        usage.input_tokens, usage.output_tokens, usage.total_tokens, usage.cached_input_tokens
     );
     Ok(())
 }

@@ -1,4 +1,4 @@
-use super::{prompt, shared};
+use super::{prompt, shared, TokenUsage, UsageCounters};
 use crate::error::KumoError;
 use async_trait::async_trait;
 use rig::client::CompletionClient;
@@ -6,6 +6,7 @@ use rig::completion::{CompletionModel, ToolDefinition};
 use rig::providers::gemini;
 use schemars::Schema;
 use serde_json::Value;
+use std::sync::Arc;
 
 pub mod models {
     pub use crate::llm::models::gemini::*;
@@ -29,6 +30,7 @@ pub struct GeminiClient {
     prompt_template: Option<String>,
     strip_scripts: bool,
     max_tokens: u64,
+    usage: Arc<UsageCounters>,
 }
 
 impl GeminiClient {
@@ -45,6 +47,7 @@ impl GeminiClient {
             prompt_template: None,
             strip_scripts: false,
             max_tokens: 4096,
+            usage: UsageCounters::new(),
         }
     }
 
@@ -72,11 +75,20 @@ impl GeminiClient {
         self.max_tokens = n;
         self
     }
+
+    /// Returns the cumulative token usage across all `extract` calls on this client.
+    pub fn total_usage(&self) -> TokenUsage {
+        self.usage.snapshot()
+    }
 }
 
 #[async_trait]
 impl super::LlmClient for GeminiClient {
-    async fn extract_json(&self, schema: &Schema, html: &str) -> Result<Value, KumoError> {
+    async fn extract_json(
+        &self,
+        schema: &Schema,
+        html: &str,
+    ) -> Result<(Value, TokenUsage), KumoError> {
         let html = if self.strip_scripts {
             prompt::strip_scripts_and_styles(html)
         } else {
@@ -112,6 +124,9 @@ impl super::LlmClient for GeminiClient {
             .await
             .map_err(|e| shared::llm_err(format!("Gemini API error — {e}")))?;
 
-        shared::extract_tool_input(resp.choice, "extract")
+        let usage = TokenUsage::from_rig(&resp.usage);
+        let value = shared::extract_tool_input(resp.choice, "extract")?;
+        self.usage.add(&usage);
+        Ok((value, usage))
     }
 }

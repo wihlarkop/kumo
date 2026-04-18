@@ -33,7 +33,7 @@ pub mod prelude {
     #[cfg(feature = "openai")]
     pub use crate::llm::OpenAiClient;
     #[cfg(feature = "llm")]
-    pub use crate::llm::ResponseExtractExt;
+    pub use crate::llm::{ResponseExtractExt, TokenUsage};
     pub use crate::middleware::{AutoThrottle, DefaultHeaders, RateLimiter};
     pub use crate::spider::{Output, Spider};
     #[cfg(feature = "mysql")]

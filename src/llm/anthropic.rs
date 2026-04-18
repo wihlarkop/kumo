@@ -1,4 +1,4 @@
-use super::{prompt, shared};
+use super::{prompt, shared, TokenUsage, UsageCounters};
 use crate::error::KumoError;
 use async_trait::async_trait;
 use rig::client::CompletionClient;
@@ -6,6 +6,7 @@ use rig::completion::{CompletionModel, ToolDefinition};
 use rig::providers::anthropic;
 use schemars::Schema;
 use serde_json::Value;
+use std::sync::Arc;
 
 pub mod models {
     pub use crate::llm::models::anthropic::*;
@@ -33,6 +34,7 @@ pub struct AnthropicClient {
     prompt_template: Option<String>,
     strip_scripts: bool,
     max_tokens: u64,
+    usage: Arc<UsageCounters>,
 }
 
 impl AnthropicClient {
@@ -52,6 +54,7 @@ impl AnthropicClient {
             prompt_template: None,
             strip_scripts: false,
             max_tokens: 4096,
+            usage: UsageCounters::new(),
         }
     }
 
@@ -79,11 +82,20 @@ impl AnthropicClient {
         self.max_tokens = n;
         self
     }
+
+    /// Returns the cumulative token usage across all `extract` calls on this client.
+    pub fn total_usage(&self) -> TokenUsage {
+        self.usage.snapshot()
+    }
 }
 
 #[async_trait]
 impl super::LlmClient for AnthropicClient {
-    async fn extract_json(&self, schema: &Schema, html: &str) -> Result<Value, KumoError> {
+    async fn extract_json(
+        &self,
+        schema: &Schema,
+        html: &str,
+    ) -> Result<(Value, TokenUsage), KumoError> {
         let html = if self.strip_scripts {
             prompt::strip_scripts_and_styles(html)
         } else {
@@ -119,6 +131,9 @@ impl super::LlmClient for AnthropicClient {
             .await
             .map_err(|e| shared::llm_err(format!("Anthropic API error — {e}")))?;
 
-        shared::extract_tool_input(resp.choice, "extract")
+        let usage = TokenUsage::from_rig(&resp.usage);
+        let value = shared::extract_tool_input(resp.choice, "extract")?;
+        self.usage.add(&usage);
+        Ok((value, usage))
     }
 }
