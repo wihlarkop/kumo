@@ -19,6 +19,9 @@ pub enum KumoError {
 
     #[error("domain not allowed: {0}")]
     DomainNotAllowed(String),
+
+    #[error("llm error: {0}")]
+    Llm(String),
 }
 
 /// Determines what the engine does when Spider::parse or a fetch fails.

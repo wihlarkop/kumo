@@ -15,6 +15,11 @@ default = []
 postgres = ["dep:sqlx", "sqlx/postgres"]
 sqlite = ["dep:sqlx", "sqlx/sqlite"]
 mysql = ["dep:sqlx", "sqlx/mysql"]
+llm = ["dep:schemars", "dep:rig-core"]
+claude = ["llm"]
+openai = ["llm"]
+gemini = ["llm"]
+ollama = ["llm"]
 
 [dependencies]
 async-trait = "0.1.89"
@@ -24,13 +29,15 @@ reqwest = { version = "0.13.2", features = ["json", "cookies"] }
 scraper = "0.26.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
+schemars = { version = "1.2.1", optional = true, features = ["derive"] }
+rig-core = { version = "0.35.0", optional = true }
 sqlx = { version = "0.8.6", optional = true, features = [
   "runtime-tokio-rustls",
   "json",
 ] }
 texting_robots = "0.2.2"
 thiserror = "2.0.18"
-tokio = { version = "1.52.0", features = ["full"] }
+tokio = { version = "1.52.1", features = ["full"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 url = "2.5.8"
@@ -45,3 +52,7 @@ required-features = ["postgres"]
 [[example]]
 name = "sqlite"
 required-features = ["sqlite"]
+
+[[example]]
+name = "llm_extract"
+required-features = ["claude"]
