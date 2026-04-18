@@ -21,10 +21,15 @@ openai = ["llm"]
 gemini = ["llm"]
 ollama = ["llm"]
 jsonpath = ["dep:jsonpath-rust"]
+browser = ["dep:chromiumoxide", "dep:futures"]
 
 [dependencies]
 async-trait = "0.1.89"
 bloomfilter = "3.0.1"
+chromiumoxide = { version = "0.9", optional = true }
+futures = { version = "0.3", optional = true, default-features = false, features = [
+  "std",
+] }
 governor = "0.10.4"
 jsonpath-rust = { version = "1.0.4", optional = true }
 regex = "1.12.3"
@@ -59,3 +64,7 @@ required-features = ["sqlite"]
 [[example]]
 name = "llm_extract"
 required-features = ["claude"]
+
+[[example]]
+name = "browser"
+required-features = ["browser"]

@@ -22,6 +22,9 @@ pub enum KumoError {
 
     #[error("llm error: {0}")]
     Llm(String),
+
+    #[error("browser error: {0}")]
+    Browser(String),
 }
 
 /// Determines what the engine does when Spider::parse or a fetch fails.

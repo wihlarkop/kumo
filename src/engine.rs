@@ -12,6 +12,9 @@ use crate::{
     store::ItemStore,
 };
 
+#[cfg(feature = "browser")]
+use crate::fetch::{BrowserConfig, BrowserFetcher};
+
 /// Statistics returned by `CrawlEngine::run` after the crawl finishes.
 #[derive(Debug, Default)]
 pub struct CrawlStats {
@@ -40,6 +43,8 @@ pub struct CrawlEngine {
     respect_robots: bool,
     max_retries: u32,
     retry_base_delay: Duration,
+    #[cfg(feature = "browser")]
+    browser: Option<BrowserConfig>,
 }
 
 impl Default for CrawlEngine {
@@ -52,6 +57,8 @@ impl Default for CrawlEngine {
             respect_robots: true,
             max_retries: 0,
             retry_base_delay: Duration::from_millis(500),
+            #[cfg(feature = "browser")]
+            browser: None,
         }
     }
 }
@@ -100,6 +107,16 @@ impl CrawlEngine {
         self
     }
 
+    /// Use a headless/headed browser to fetch pages instead of plain HTTP.
+    /// Enables JavaScript rendering for SPAs (React, Vue, etc.).
+    ///
+    /// Requires the `browser` feature flag.
+    #[cfg(feature = "browser")]
+    pub fn browser(mut self, cfg: BrowserConfig) -> Self {
+        self.browser = Some(cfg);
+        self
+    }
+
     /// Consume the engine, run the spider, and return crawl statistics.
     pub async fn run<S>(self, spider: S) -> Result<CrawlStats, KumoError>
     where
@@ -125,12 +142,22 @@ impl CrawlEngine {
             None
         };
 
-        // Single shared reqwest client — handles cookie jar + connection pooling.
+        // Single shared reqwest client — used for robots.txt and plain HTTP fetching.
         let client = reqwest::Client::builder()
             .cookie_store(true)
             .user_agent(concat!("kumo/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(KumoError::Fetch)?;
+
+        // Build the fetcher: browser (CDP) if configured, otherwise plain HTTP.
+        #[cfg(not(feature = "browser"))]
+        let fetcher: Arc<dyn Fetcher> = Arc::new(HttpFetcher::new(client.clone()));
+
+        #[cfg(feature = "browser")]
+        let fetcher: Arc<dyn Fetcher> = match self.browser {
+            Some(cfg) => Arc::new(BrowserFetcher::launch(cfg).await?),
+            None => Arc::new(HttpFetcher::new(client.clone())),
+        };
 
         info!(spider = spider.name(), "starting crawl");
         for url in spider.start_urls() {
@@ -158,7 +185,7 @@ impl CrawlEngine {
                             spider: spider.clone(),
                             store: store.clone(),
                             middleware: middleware.clone(),
-                            client: client.clone(),
+                            fetcher: fetcher.clone(),
                             crawl_delay,
                             max_retries,
                             retry_base_delay,
@@ -251,7 +278,7 @@ struct TaskContext {
     spider: Arc<dyn Spider>,
     store: Arc<dyn ItemStore>,
     middleware: Arc<Vec<Arc<dyn Middleware>>>,
-    client: reqwest::Client,
+    fetcher: Arc<dyn Fetcher>,
     crawl_delay: Option<Duration>,
     max_retries: u32,
     retry_base_delay: Duration,
@@ -273,8 +300,7 @@ async fn process_url(
         mw.before_request(&mut request).await?;
     }
 
-    let fetcher = HttpFetcher::new(ctx.client.clone());
-    let mut response = fetcher.fetch(&request).await?;
+    let mut response = ctx.fetcher.fetch(&request).await?;
 
     for mw in ctx.middleware.iter() {
         mw.after_response(&mut response).await?;

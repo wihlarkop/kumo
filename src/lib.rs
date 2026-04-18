@@ -18,12 +18,14 @@ pub mod store;
 pub mod prelude {
     pub use crate::engine::{CrawlEngine, CrawlStats};
     pub use crate::error::{ErrorPolicy, KumoError};
-    pub use crate::extract::{
-        CssExtractor, Element, ElementList, ExtractedNode, Extractor, RegexExtractor,
-        Response, ValueExtractor,
-    };
     #[cfg(feature = "jsonpath")]
     pub use crate::extract::JsonPathExtractor;
+    pub use crate::extract::{
+        CssExtractor, Element, ElementList, ExtractedNode, Extractor, RegexExtractor, Response,
+        ValueExtractor,
+    };
+    #[cfg(feature = "browser")]
+    pub use crate::fetch::{BrowserConfig, BrowserFetcher};
     #[cfg(feature = "claude")]
     pub use crate::llm::AnthropicClient;
     #[cfg(feature = "gemini")]
