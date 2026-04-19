@@ -25,6 +25,11 @@ pub enum KumoError {
 
     #[error("browser error: {0}")]
     Browser(String),
+
+    /// Returned by `StatusRetry` middleware when the response status code is
+    /// in the retry set. Triggers the engine's exponential-backoff retry loop.
+    #[error("HTTP {status} from {url}")]
+    HttpStatus { status: u16, url: String },
 }
 
 /// Determines what the engine does when Spider::parse or a fetch fails.

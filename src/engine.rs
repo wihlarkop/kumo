@@ -7,10 +7,13 @@ use crate::{
     fetch::{Fetcher, http::HttpFetcher},
     frontier::{Frontier, memory::MemoryFrontier},
     middleware::{Middleware, Request},
+    pipeline::Pipeline,
     robots::RobotsCache,
     spider::Spider,
     store::ItemStore,
 };
+
+type FrontierOverride = Option<Arc<dyn Frontier>>;
 
 #[cfg(feature = "browser")]
 use crate::fetch::{BrowserConfig, BrowserFetcher};
@@ -38,13 +41,16 @@ pub struct CrawlStats {
 pub struct CrawlEngine {
     concurrency: usize,
     middleware: Vec<Arc<dyn Middleware>>,
+    pipelines: Vec<Arc<dyn Pipeline>>,
     store: Option<Arc<dyn ItemStore>>,
     crawl_delay: Option<Duration>,
     respect_robots: bool,
     max_retries: u32,
     retry_base_delay: Duration,
+    frontier: FrontierOverride,
     /// Expected unique URL count for Bloom filter sizing (default: 1_000_000).
     max_urls: usize,
+    robots_ttl: Duration,
     #[cfg(feature = "browser")]
     browser: Option<BrowserConfig>,
 }
@@ -57,9 +63,12 @@ impl Default for CrawlEngine {
             store: None,
             crawl_delay: None,
             respect_robots: true,
+            pipelines: Vec::new(),
+            frontier: None,
             max_retries: 0,
             retry_base_delay: Duration::from_millis(500),
             max_urls: 1_000_000,
+            robots_ttl: Duration::from_secs(24 * 60 * 60),
             #[cfg(feature = "browser")]
             browser: None,
         }
@@ -80,6 +89,18 @@ impl CrawlEngine {
     /// Register a middleware (applied in registration order).
     pub fn middleware(mut self, mw: impl Middleware + 'static) -> Self {
         self.middleware.push(Arc::new(mw));
+        self
+    }
+
+    /// Register an item pipeline stage (applied in registration order before the store).
+    pub fn pipeline(mut self, p: impl Pipeline + 'static) -> Self {
+        self.pipelines.push(Arc::new(p));
+        self
+    }
+
+    /// Use a custom frontier (e.g. `FileFrontier`) instead of the default in-memory frontier.
+    pub fn frontier(mut self, f: impl Frontier + 'static) -> Self {
+        self.frontier = Some(Arc::new(f));
         self
     }
 
@@ -110,6 +131,12 @@ impl CrawlEngine {
         self
     }
 
+    /// TTL for cached robots.txt entries (default: 24 hours).
+    pub fn robots_ttl(mut self, ttl: Duration) -> Self {
+        self.robots_ttl = ttl;
+        self
+    }
+
     /// Expected number of unique URLs this crawl will visit (default: 1_000_000).
     /// Used to size the Bloom filter for URL deduplication — set lower for small
     /// crawls to save memory, higher for large crawls to reduce false-positive skips.
@@ -135,20 +162,23 @@ impl CrawlEngine {
     {
         let start = std::time::Instant::now();
         let spider: Arc<dyn Spider> = Arc::new(spider);
-        let frontier = Arc::new(MemoryFrontier::new(self.max_urls));
+        let frontier: Arc<dyn Frontier> = self
+            .frontier
+            .unwrap_or_else(|| Arc::new(MemoryFrontier::new(self.max_urls)));
         let store = self
             .store
             .unwrap_or_else(|| Arc::new(crate::store::stdout::StdoutStore));
         let middleware: Arc<Vec<Arc<dyn Middleware>>> = Arc::new(self.middleware);
+        let pipelines: Arc<Vec<Arc<dyn Pipeline>>> = Arc::new(self.pipelines);
         let crawl_delay = self.crawl_delay;
         let concurrency = self.concurrency;
         let max_retries = self.max_retries;
         let retry_base_delay = self.retry_base_delay;
         let robots_cache = if self.respect_robots {
-            Some(Arc::new(RobotsCache::new(concat!(
-                "kumo/",
-                env!("CARGO_PKG_VERSION")
-            ))))
+            Some(Arc::new(RobotsCache::with_ttl(
+                concat!("kumo/", env!("CARGO_PKG_VERSION")),
+                self.robots_ttl,
+            )))
         } else {
             None
         };
@@ -162,12 +192,18 @@ impl CrawlEngine {
 
         // Build the fetcher: browser (CDP) if configured, otherwise plain HTTP.
         #[cfg(not(feature = "browser"))]
-        let fetcher: Arc<dyn Fetcher> = Arc::new(HttpFetcher::new(client.clone()));
+        let fetcher: Arc<dyn Fetcher> = Arc::new(HttpFetcher::new(
+            client.clone(),
+            concat!("kumo/", env!("CARGO_PKG_VERSION")),
+        ));
 
         #[cfg(feature = "browser")]
         let fetcher: Arc<dyn Fetcher> = match self.browser {
             Some(cfg) => Arc::new(BrowserFetcher::launch(cfg).await?),
-            None => Arc::new(HttpFetcher::new(client.clone())),
+            None => Arc::new(HttpFetcher::new(
+                client.clone(),
+                concat!("kumo/", env!("CARGO_PKG_VERSION")),
+            )),
         };
 
         info!(spider = spider.name(), "starting crawl");
@@ -175,7 +211,12 @@ impl CrawlEngine {
             frontier.push(url, 0).await;
         }
 
-        type TaskResult = (String, usize, Result<(u64, Vec<(String, usize)>), KumoError>);
+        type TaskResult = (
+            String,
+            usize,
+            u32,
+            Result<(u64, Vec<(String, usize)>), KumoError>,
+        );
         let mut join_set: JoinSet<TaskResult> = JoinSet::new();
         let mut stats = CrawlStats::default();
 
@@ -183,7 +224,7 @@ impl CrawlEngine {
             // Fill up to the concurrency limit.
             while join_set.len() < concurrency {
                 match frontier.pop().await {
-                    Some((url, depth)) => {
+                    Some((url, depth, retry_count)) => {
                         // Check robots.txt before dispatching.
                         if let Some(ref cache) = robots_cache
                             && !cache.is_allowed(&client, &url).await
@@ -196,6 +237,7 @@ impl CrawlEngine {
                             spider: spider.clone(),
                             store: store.clone(),
                             middleware: middleware.clone(),
+                            pipelines: pipelines.clone(),
                             fetcher: fetcher.clone(),
                             crawl_delay,
                             max_retries,
@@ -204,7 +246,7 @@ impl CrawlEngine {
 
                         join_set.spawn(async move {
                             let result = process_url_with_retry(url.clone(), depth, ctx).await;
-                            (url, depth, result)
+                            (url, depth, retry_count, result)
                         });
                     }
                     // Frontier currently empty — tasks may still add URLs.
@@ -219,7 +261,7 @@ impl CrawlEngine {
 
             // Wait for the next task to finish, then process its output.
             match join_set.join_next().await {
-                Some(Ok((_url, _depth, Ok((item_count, follows))))) => {
+                Some(Ok((_url, _depth, _retry_count, Ok((item_count, follows))))) => {
                     stats.pages_crawled += 1;
                     stats.items_scraped += item_count;
 
@@ -247,7 +289,7 @@ impl CrawlEngine {
                         frontier.push(follow_url, follow_depth).await;
                     }
                 }
-                Some(Ok((url, depth, Err(e)))) => {
+                Some(Ok((url, depth, retry_count, Err(e)))) => {
                     stats.errors += 1;
                     // Notify all middleware of the permanent failure.
                     for mw in middleware.iter() {
@@ -258,13 +300,18 @@ impl CrawlEngine {
                             error!(url = %url, error = %e, "aborting crawl");
                             return Err(e);
                         }
-                        ErrorPolicy::Retry(n) => {
-                            // Re-queue bypassing dedup so a previously-seen URL
-                            // that failed can be retried.
-                            tracing::warn!(url = %url, retries = n, error = %e, "re-queuing failed URL");
-                            for _ in 0..n {
-                                frontier.push_force(url.clone(), depth).await;
-                            }
+                        ErrorPolicy::Retry(max) if retry_count < max => {
+                            tracing::warn!(
+                                url = %url,
+                                attempt = retry_count + 1,
+                                max,
+                                error = %e,
+                                "re-queuing failed URL"
+                            );
+                            frontier.push_force(url, depth, retry_count + 1).await;
+                        }
+                        ErrorPolicy::Retry(_) => {
+                            error!(url = %url, error = %e, "retry limit reached, skipping URL");
                         }
                         ErrorPolicy::Skip => {
                             error!(url = %url, error = %e, "skipping URL");
@@ -298,6 +345,7 @@ struct TaskContext {
     spider: Arc<dyn Spider>,
     store: Arc<dyn ItemStore>,
     middleware: Arc<Vec<Arc<dyn Middleware>>>,
+    pipelines: Arc<Vec<Arc<dyn Pipeline>>>,
     fetcher: Arc<dyn Fetcher>,
     crawl_delay: Option<Duration>,
     max_retries: u32,
@@ -329,8 +377,19 @@ async fn process_url(
     let output = ctx.spider.parse(response).await?;
 
     let mut item_count = 0u64;
-    for item in &output.items {
-        ctx.store.store(item).await?;
+    'items: for item in output.items {
+        let mut current = item;
+        for pipeline in ctx.pipelines.iter() {
+            match pipeline.process(current).await {
+                Ok(Some(v)) => current = v,
+                Ok(None) => continue 'items, // dropped by pipeline
+                Err(e) => {
+                    tracing::warn!(error = %e, "pipeline dropped item due to error");
+                    continue 'items;
+                }
+            }
+        }
+        ctx.store.store(&current).await?;
         item_count += 1;
     }
 
@@ -349,6 +408,10 @@ async fn process_url_with_retry(
         match process_url(&url, depth, &ctx).await {
             Ok(result) => return Ok(result),
             Err(e) if attempt < ctx.max_retries => {
+                // Notify middleware of this attempt's failure before backing off.
+                for mw in ctx.middleware.iter() {
+                    mw.on_error(&url, &e).await;
+                }
                 let delay = ctx.retry_base_delay * 2_u32.pow(attempt);
                 tracing::warn!(
                     url = %url,

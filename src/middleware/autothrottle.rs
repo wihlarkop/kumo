@@ -126,16 +126,10 @@ impl Middleware for AutoThrottle {
 mod tests {
     use super::*;
     use crate::extract::Response;
-    use reqwest::header::HeaderMap;
 
     fn make_response(status: u16, elapsed_ms: u64) -> Response {
-        Response {
-            url: "http://example.com".into(),
-            status,
-            headers: HeaderMap::new(),
-            elapsed: Duration::from_millis(elapsed_ms),
-            body: String::new(),
-        }
+        Response::from_parts("http://example.com", status, "")
+            .with_elapsed(Duration::from_millis(elapsed_ms))
     }
 
     #[tokio::test]

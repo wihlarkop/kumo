@@ -28,7 +28,7 @@ impl Spider for HttpbinSpider {
             let ua = json["headers"]["User-Agent"].as_str().unwrap_or("?");
             let origin = json["origin"].as_str().unwrap_or("?");
             println!("IP: {origin}  |  UA: {ua}");
-            return Ok(Output::new().item(json));
+            return Ok(Output::new().item(json)?);
         }
         Ok(Output::new())
     }
@@ -41,10 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     // Repeat the same URL several times so we can observe rotation.
-    let urls = vec![
-        "https://httpbin.org/anything".to_string();
-        5
-    ];
+    let urls = vec!["https://httpbin.org/anything".to_string(); 5];
 
     // Replace these with real proxy URLs to test actual IP rotation.
     // Leaving the list empty means ProxyRotator is a no-op and the

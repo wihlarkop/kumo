@@ -3,9 +3,12 @@ pub mod error;
 pub mod extract;
 pub mod fetch;
 pub mod frontier;
+#[cfg(feature = "persistence")]
+pub use frontier::FileFrontier;
 #[cfg(feature = "llm")]
 pub mod llm;
 pub mod middleware;
+pub mod pipeline;
 pub mod robots;
 pub mod spider;
 pub mod store;
@@ -37,9 +40,10 @@ pub mod prelude {
     #[cfg(feature = "llm")]
     pub use crate::llm::{ResponseExtractExt, TokenUsage};
     pub use crate::middleware::{
-        AutoThrottle, DefaultHeaders, Middleware, ProxyRotator, RateLimiter, Request,
+        AutoThrottle, DefaultHeaders, Middleware, ProxyRotator, RateLimiter, Request, StatusRetry,
         UserAgentRotator,
     };
+    pub use crate::pipeline::{DropDuplicates, FilterPipeline, Pipeline, RequireFields};
     pub use crate::spider::{Output, Spider};
     #[cfg(feature = "mysql")]
     pub use crate::store::MySqlStore;

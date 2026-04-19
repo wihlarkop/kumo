@@ -1,7 +1,13 @@
 use super::selector::{Element, ElementList, re_matches};
 use crate::error::KumoError;
+use bytes::Bytes;
 use reqwest::header::HeaderMap;
 use std::time::Duration;
+
+pub(crate) enum ResponseBody {
+    Text(String),
+    Bytes(Bytes),
+}
 
 /// Wraps an HTTP response and provides ergonomic extraction methods.
 pub struct Response {
@@ -10,24 +16,78 @@ pub struct Response {
     pub headers: HeaderMap,
     /// Wall-clock time from sending the request to reading the full body.
     pub elapsed: Duration,
-    pub(crate) body: String,
+    pub(crate) body: ResponseBody,
 }
 
 impl Response {
-    /// Construct a `Response` from raw parts. Primarily useful in tests and examples.
+    /// Construct a text `Response` from raw parts. Primarily useful in tests and examples.
     pub fn from_parts(url: impl Into<String>, status: u16, body: impl Into<String>) -> Self {
         Self {
             url: url.into(),
             status,
             headers: HeaderMap::new(),
             elapsed: Duration::ZERO,
-            body: body.into(),
+            body: ResponseBody::Text(body.into()),
+        }
+    }
+
+    /// Override the elapsed duration on an existing response — useful in tests.
+    pub fn with_elapsed(mut self, elapsed: Duration) -> Self {
+        self.elapsed = elapsed;
+        self
+    }
+
+    /// Construct a `Response` from all fields — used internally by fetchers.
+    pub(crate) fn new(
+        url: String,
+        status: u16,
+        headers: HeaderMap,
+        elapsed: Duration,
+        body: ResponseBody,
+    ) -> Self {
+        Self {
+            url,
+            status,
+            headers,
+            elapsed,
+            body,
+        }
+    }
+
+    /// Construct a binary `Response` from raw bytes.
+    pub fn from_bytes(url: impl Into<String>, status: u16, bytes: Bytes) -> Self {
+        Self {
+            url: url.into(),
+            status,
+            headers: HeaderMap::new(),
+            elapsed: Duration::ZERO,
+            body: ResponseBody::Bytes(bytes),
+        }
+    }
+
+    /// Returns the body as a UTF-8 string slice, or `None` if the body is binary.
+    pub fn text(&self) -> Option<&str> {
+        match &self.body {
+            ResponseBody::Text(s) => Some(s.as_str()),
+            ResponseBody::Bytes(_) => None,
+        }
+    }
+
+    /// Returns the raw body bytes regardless of content type.
+    pub fn bytes(&self) -> &[u8] {
+        match &self.body {
+            ResponseBody::Text(s) => s.as_bytes(),
+            ResponseBody::Bytes(b) => b.as_ref(),
         }
     }
 
     /// Select elements in this page via a CSS selector.
+    /// Returns an empty list if the body is binary.
     pub fn css(&self, selector: &str) -> ElementList {
-        let document = scraper::Html::parse_document(&self.body);
+        let Some(text) = self.text() else {
+            return ElementList { elements: vec![] };
+        };
+        let document = scraper::Html::parse_document(text);
         let Ok(sel) = scraper::Selector::parse(selector) else {
             return ElementList { elements: vec![] };
         };
@@ -40,22 +100,18 @@ impl Response {
         ElementList { elements }
     }
 
-    /// Get the raw HTML body.
-    pub fn text(&self) -> &str {
-        &self.body
-    }
-
-    /// Deserialize the response body as JSON.
+    /// Deserialize the response body as JSON. Works for both text and binary bodies.
     pub fn json<T: serde::de::DeserializeOwned>(&self) -> Result<T, KumoError> {
-        serde_json::from_str(&self.body).map_err(|e| KumoError::Parse(e.to_string()))
+        serde_json::from_slice(self.bytes()).map_err(|e| KumoError::Parse(e.to_string()))
     }
 
     /// Apply a regex pattern to the raw response body and return all matches.
-    ///
-    /// If the pattern contains capture group 1, returns group-1 matches.
-    /// Otherwise returns the full match. Returns an empty Vec on invalid pattern.
+    /// Returns an empty Vec if the body is binary.
     pub fn re(&self, pattern: &str) -> Vec<String> {
-        re_matches(&self.body, pattern)
+        match self.text() {
+            Some(t) => re_matches(t, pattern),
+            None => vec![],
+        }
     }
 
     /// Return the first regex match in the response body, or `None`.
@@ -64,14 +120,11 @@ impl Response {
     }
 
     /// Evaluate a JSONPath expression against the response body parsed as JSON.
-    ///
-    /// Returns matched values as `serde_json::Value`. Errors on invalid JSON or
-    /// invalid JSONPath expression.
     #[cfg(feature = "jsonpath")]
     pub fn jsonpath(&self, expr: &str) -> Result<Vec<serde_json::Value>, KumoError> {
         use jsonpath_rust::JsonPath;
 
-        let value: serde_json::Value = serde_json::from_str(&self.body)
+        let value: serde_json::Value = serde_json::from_slice(self.bytes())
             .map_err(|e| KumoError::Parse(format!("invalid JSON body: {e}")))?;
         let results = value
             .query(expr)
@@ -80,8 +133,6 @@ impl Response {
     }
 
     /// Resolve a relative URL against this response's URL.
-    ///
-    /// Returns `path` unchanged if joining fails (e.g. `path` is already absolute).
     pub fn urljoin(&self, path: &str) -> String {
         use url::Url;
         Url::parse(&self.url)
@@ -94,16 +145,27 @@ impl Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
 
     fn make_response(body: &str) -> Response {
-        Response {
-            url: "https://example.com".to_string(),
-            status: 200,
-            headers: HeaderMap::new(),
-            elapsed: Duration::ZERO,
-            body: body.to_string(),
-        }
+        Response::from_parts("https://example.com", 200, body)
+    }
+
+    #[test]
+    fn text_body_is_accessible() {
+        let res = make_response("hello");
+        assert_eq!(res.text(), Some("hello"));
+        assert_eq!(res.bytes(), b"hello");
+    }
+
+    #[test]
+    fn binary_body_text_returns_none() {
+        let res = Response::from_bytes(
+            "https://example.com",
+            200,
+            Bytes::from_static(b"\x89PNG\r\n"),
+        );
+        assert!(res.text().is_none());
+        assert_eq!(&res.bytes()[..4], b"\x89PNG");
     }
 
     #[test]
@@ -128,6 +190,12 @@ mod tests {
     fn response_re_first_returns_none_when_no_match() {
         let res = make_response("no digits");
         assert_eq!(res.re_first(r"\d+"), None);
+    }
+
+    #[test]
+    fn binary_body_re_returns_empty() {
+        let res = Response::from_bytes("https://example.com", 200, Bytes::from_static(b"\xff\xfe"));
+        assert!(res.re(r"\d+").is_empty());
     }
 
     #[cfg(feature = "jsonpath")]

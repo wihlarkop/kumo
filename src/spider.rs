@@ -19,22 +19,20 @@ impl Output {
         }
     }
 
-    /// Add a single serializable item.
-    pub fn item<T: serde::Serialize>(mut self, item: T) -> Self {
-        if let Ok(v) = serde_json::to_value(item) {
-            self.items.push(v);
-        }
-        self
+    /// Add a single serializable item. Returns an error if serialization fails.
+    pub fn item<T: serde::Serialize>(mut self, item: T) -> Result<Self, KumoError> {
+        let v = serde_json::to_value(item).map_err(|e| KumoError::Parse(e.to_string()))?;
+        self.items.push(v);
+        Ok(self)
     }
 
-    /// Add multiple serializable items.
-    pub fn items<T: serde::Serialize>(mut self, items: Vec<T>) -> Self {
+    /// Add multiple serializable items. Returns an error if any item fails to serialize.
+    pub fn items<T: serde::Serialize>(mut self, items: Vec<T>) -> Result<Self, KumoError> {
         for item in items {
-            if let Ok(v) = serde_json::to_value(item) {
-                self.items.push(v);
-            }
+            let v = serde_json::to_value(item).map_err(|e| KumoError::Parse(e.to_string()))?;
+            self.items.push(v);
         }
-        self
+        Ok(self)
     }
 
     /// Enqueue a single URL to follow.
@@ -113,14 +111,16 @@ mod tests {
 
     #[test]
     fn item_adds_serialized_value() {
-        let output = Output::new().item(Item { value: 42 });
+        let output = Output::new().item(Item { value: 42 }).unwrap();
         assert_eq!(output.items.len(), 1);
         assert_eq!(output.items[0]["value"], 42);
     }
 
     #[test]
     fn items_adds_multiple_values() {
-        let output = Output::new().items(vec![Item { value: 1 }, Item { value: 2 }]);
+        let output = Output::new()
+            .items(vec![Item { value: 1 }, Item { value: 2 }])
+            .unwrap();
         assert_eq!(output.items.len(), 2);
         assert_eq!(output.items[0]["value"], 1);
         assert_eq!(output.items[1]["value"], 2);
@@ -146,6 +146,7 @@ mod tests {
     fn builder_is_chainable() {
         let output = Output::new()
             .item(Item { value: 99 })
+            .unwrap()
             .follow("https://example.com/next");
         assert_eq!(output.items.len(), 1);
         assert_eq!(output.follow.len(), 1);

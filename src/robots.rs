@@ -1,28 +1,49 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use texting_robots::Robot;
 use tokio::sync::Mutex;
 
+const DEFAULT_TTL: Duration = Duration::from_secs(24 * 60 * 60); // 24 hours
+
+struct CacheEntry {
+    txt: Option<Arc<String>>,
+    fetched_at: Instant,
+}
+
 /// Fetches and caches robots.txt for each domain encountered during a crawl.
 ///
-/// Parsed `Robot` objects are stored in memory keyed by `scheme://host`.
+/// Entries expire after a configurable TTL (default: 24 hours), matching the
+/// de-facto standard used by most crawlers. Expired entries are re-fetched
+/// transparently on the next request to that domain.
+///
 /// A failed or missing robots.txt is treated as allowing all paths.
 pub struct RobotsCache {
-    cache: Mutex<HashMap<String, Option<Arc<String>>>>,
+    cache: Mutex<HashMap<String, CacheEntry>>,
     user_agent: String,
+    ttl: Duration,
 }
 
 impl RobotsCache {
     pub fn new(user_agent: impl Into<String>) -> Self {
+        Self::with_ttl(user_agent, DEFAULT_TTL)
+    }
+
+    pub fn with_ttl(user_agent: impl Into<String>, ttl: Duration) -> Self {
         Self {
             cache: Mutex::new(HashMap::new()),
             user_agent: user_agent.into(),
+            ttl,
         }
     }
 
     /// Check whether `url` is allowed for this cache's user agent.
     ///
-    /// Fetches robots.txt on the first request to a domain, then reuses the cache.
-    /// Returns `true` (allowed) if fetching robots.txt fails or it is absent.
+    /// Fetches robots.txt on the first request to a domain, then reuses the
+    /// cache until the TTL expires. Returns `true` (allowed) if fetching
+    /// robots.txt fails or it is absent.
     pub async fn is_allowed(&self, client: &reqwest::Client, url: &str) -> bool {
         let parsed = match url::Url::parse(url) {
             Ok(u) => u,
@@ -31,12 +52,21 @@ impl RobotsCache {
 
         let origin = format!("{}://{}", parsed.scheme(), parsed.host_str().unwrap_or(""));
 
-        // Return cached result if available.
-        if let Some(entry) = self.cache.lock().await.get(&origin).cloned() {
-            return Self::robot_allows(&self.user_agent, entry.as_deref().map(|s| s.as_str()), url);
+        // Return cached result if still fresh.
+        {
+            let cache = self.cache.lock().await;
+            if let Some(entry) = cache.get(&origin)
+                && entry.fetched_at.elapsed() < self.ttl
+            {
+                return Self::robot_allows(
+                    &self.user_agent,
+                    entry.txt.as_deref().map(|s| s.as_str()),
+                    url,
+                );
+            }
         }
 
-        // Fetch robots.txt.
+        // Fetch (or re-fetch after TTL expiry).
         let robots_url = format!("{}/robots.txt", origin);
         let txt = client
             .get(&robots_url)
@@ -51,9 +81,15 @@ impl RobotsCache {
             None => None,
         };
 
-        let entry: Option<Arc<String>> = txt.map(Arc::new);
-        let allowed =
-            Self::robot_allows(&self.user_agent, entry.as_deref().map(|s| s.as_str()), url);
+        let entry = CacheEntry {
+            txt: txt.map(Arc::new),
+            fetched_at: Instant::now(),
+        };
+        let allowed = Self::robot_allows(
+            &self.user_agent,
+            entry.txt.as_deref().map(|s| s.as_str()),
+            url,
+        );
         self.cache.lock().await.insert(origin, entry);
         allowed
     }
@@ -71,8 +107,6 @@ impl RobotsCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // robot_allows is a private static method — test it directly.
 
     #[test]
     fn no_robots_txt_allows_all() {
@@ -126,7 +160,6 @@ mod tests {
     #[test]
     fn malformed_robots_txt_allows_all() {
         let txt = "this is not a valid robots.txt !!!@#$";
-        // parse error → default allow
         assert!(RobotsCache::robot_allows(
             "kumo",
             Some(txt),

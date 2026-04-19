@@ -1,7 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 
 use super::Fetcher;
-use crate::{error::KumoError, extract::Response, middleware::Request};
+use crate::{
+    error::KumoError,
+    extract::{Response, response::ResponseBody},
+    middleware::Request,
+};
 use reqwest::Client;
 use tokio::sync::RwLock;
 
@@ -11,15 +15,18 @@ use tokio::sync::RwLock;
 /// When `request.proxy` is set by a `ProxyRotator` middleware, the fetcher
 /// lazily builds and caches a dedicated `Client` for that proxy URL so
 /// connection pooling is preserved across requests through the same proxy.
+/// Proxy clients inherit the same User-Agent as the default client.
 pub struct HttpFetcher {
     client: Client,
+    default_user_agent: String,
     proxy_clients: Arc<RwLock<HashMap<String, Client>>>,
 }
 
 impl HttpFetcher {
-    pub fn new(client: Client) -> Self {
+    pub fn new(client: Client, default_user_agent: impl Into<String>) -> Self {
         Self {
             client,
+            default_user_agent: default_user_agent.into(),
             proxy_clients: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -37,21 +44,18 @@ impl HttpFetcher {
             }
         }
 
-        // Slow path: build and cache a new client for this proxy.
-        let proxy = reqwest::Proxy::all(proxy_url.as_str())
-            .map_err(KumoError::Fetch)?;
+        // Slow path: build and cache a new client for this proxy,
+        // inheriting the same UA and cookie settings as the default client.
+        let proxy = reqwest::Proxy::all(proxy_url.as_str()).map_err(KumoError::Fetch)?;
         let new_client = Client::builder()
             .cookie_store(true)
+            .user_agent(&self.default_user_agent)
             .proxy(proxy)
             .build()
             .map_err(KumoError::Fetch)?;
 
         let mut cache = self.proxy_clients.write().await;
-        // Another task may have inserted it while we waited for the write lock.
-        Ok(cache
-            .entry(proxy_url.clone())
-            .or_insert(new_client)
-            .clone())
+        Ok(cache.entry(proxy_url.clone()).or_insert(new_client).clone())
     }
 }
 
@@ -70,15 +74,27 @@ impl Fetcher for HttpFetcher {
         let res = builder.send().await.map_err(KumoError::Fetch)?;
         let status = res.status().as_u16();
         let headers = res.headers().clone();
-        let body = res.text().await.map_err(KumoError::Fetch)?;
+
+        // Decode as text for text/* and application/json; store raw bytes otherwise.
+        let is_text = headers
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|ct| ct.starts_with("text/") || ct.contains("application/json"))
+            .unwrap_or(true); // assume text when Content-Type is absent
+
+        let body = if is_text {
+            ResponseBody::Text(res.text().await.map_err(KumoError::Fetch)?)
+        } else {
+            ResponseBody::Bytes(res.bytes().await.map_err(KumoError::Fetch)?)
+        };
         let elapsed = start.elapsed();
 
-        Ok(Response {
-            url: request.url.clone(),
+        Ok(Response::new(
+            request.url.clone(),
             status,
             headers,
             elapsed,
             body,
-        })
+        ))
     }
 }

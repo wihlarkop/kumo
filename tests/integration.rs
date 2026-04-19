@@ -57,7 +57,7 @@ impl Spider for SinglePageSpider {
             .first()
             .map(|el| el.text())
             .unwrap_or_default();
-        Ok(Output::new().item(serde_json::json!({ "title": title })))
+        Ok(Output::new().item(serde_json::json!({ "title": title }))?)
     }
 }
 
@@ -117,7 +117,7 @@ impl Spider for PaginatedSpider {
             .and_then(|el| el.attr("href"))
             .map(|href| res.urljoin(&href));
 
-        let mut output = Output::new().item(item);
+        let mut output = Output::new().item(item)?;
         if let Some(url) = next {
             output = output.follow(url);
         }

@@ -2,12 +2,14 @@ pub mod autothrottle;
 pub mod default_headers;
 pub mod proxy;
 pub mod rate_limit;
+pub mod status_retry;
 pub mod user_agent;
 
 pub use autothrottle::AutoThrottle;
 pub use default_headers::DefaultHeaders;
 pub use proxy::ProxyRotator;
 pub use rate_limit::RateLimiter;
+pub use status_retry::StatusRetry;
 pub use user_agent::UserAgentRotator;
 
 use crate::{error::KumoError, extract::Response};

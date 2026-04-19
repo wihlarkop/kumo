@@ -176,7 +176,8 @@ impl ResponseExtractExt for Response {
         T: serde::de::DeserializeOwned + schemars::JsonSchema + Send,
     {
         let schema = schemars::schema_for!(T);
-        let (json, usage) = client.extract_json(&schema, self.text()).await?;
+        let body_text = self.text().unwrap_or("");
+        let (json, usage) = client.extract_json(&schema, body_text).await?;
         let value = serde_json::from_value(json)
             .map_err(|e| KumoError::Llm(format!("schema mismatch: {e}")))?;
         Ok((value, usage))

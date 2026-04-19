@@ -42,7 +42,7 @@ impl Spider for QuotesJsSpider {
             output = output.item(serde_json::json!({
                 "text": text,
                 "author": author,
-            }));
+            }))?;
         }
 
         // Follow the "Next" button if present.

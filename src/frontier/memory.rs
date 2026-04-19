@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 
 /// In-memory frontier: a FIFO queue + Bloom filter for O(1) URL deduplication.
 pub struct MemoryFrontier {
-    queue: Mutex<VecDeque<(String, usize)>>,
+    queue: Mutex<VecDeque<(String, usize, u32)>>,
     seen: Mutex<Bloom<String>>,
 }
 
@@ -33,19 +33,19 @@ impl Frontier for MemoryFrontier {
     async fn push(&self, url: String, depth: usize) -> bool {
         let mut seen = self.seen.lock().await;
         if seen.check(&url) {
-            return false; // already seen — Bloom filter hit
+            return false;
         }
         seen.set(&url);
-        drop(seen); // release lock before acquiring queue lock
-        self.queue.lock().await.push_back((url, depth));
+        drop(seen);
+        self.queue.lock().await.push_back((url, depth, 0));
         true
     }
 
-    async fn push_force(&self, url: String, depth: usize) {
-        self.queue.lock().await.push_back((url, depth));
+    async fn push_force(&self, url: String, depth: usize, retry_count: u32) {
+        self.queue.lock().await.push_back((url, depth, retry_count));
     }
 
-    async fn pop(&self) -> Option<(String, usize)> {
+    async fn pop(&self) -> Option<(String, usize, u32)> {
         self.queue.lock().await.pop_front()
     }
 
@@ -85,6 +85,7 @@ mod tests {
         let item = frontier.pop().await.unwrap();
         assert_eq!(item.0, "https://example.com");
         assert_eq!(item.1, 3);
+        assert_eq!(item.2, 0);
     }
 
     #[tokio::test]
@@ -123,5 +124,20 @@ mod tests {
         assert!(frontier.push("https://a.com".into(), 0).await);
         assert!(frontier.push("https://b.com".into(), 0).await);
         assert_eq!(frontier.len().await, 2);
+    }
+
+    #[tokio::test]
+    async fn push_force_bypasses_dedup_and_carries_retry_count() {
+        let frontier = MemoryFrontier::new(1000);
+        frontier.push("https://example.com".into(), 0).await;
+        // Already seen, so push would return false — but push_force should work.
+        frontier
+            .push_force("https://example.com".into(), 0, 1)
+            .await;
+        // First pop is the original, second is the forced retry.
+        let _ = frontier.pop().await;
+        let retried = frontier.pop().await.unwrap();
+        assert_eq!(retried.0, "https://example.com");
+        assert_eq!(retried.2, 1);
     }
 }

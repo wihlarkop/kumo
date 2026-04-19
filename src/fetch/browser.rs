@@ -5,7 +5,11 @@ use chromiumoxide::browser::{Browser, BrowserConfig as CdpBrowserConfig};
 use futures::StreamExt;
 use reqwest::header::HeaderMap;
 
-use crate::{error::KumoError, extract::Response, middleware::Request};
+use crate::{
+    error::KumoError,
+    extract::{Response, response::ResponseBody},
+    middleware::Request,
+};
 
 use super::Fetcher;
 
@@ -204,12 +208,12 @@ impl Fetcher for BrowserFetcher {
 
         page.close().await.ok();
 
-        Ok(Response {
-            url: request.url.clone(),
-            status: 200,
-            headers: HeaderMap::new(),
+        Ok(Response::new(
+            request.url.clone(),
+            200,
+            HeaderMap::new(),
             elapsed,
-            body: html,
-        })
+            ResponseBody::Text(html),
+        ))
     }
 }

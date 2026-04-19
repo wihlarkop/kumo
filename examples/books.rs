@@ -77,7 +77,7 @@ impl Spider for BooksSpider {
             .and_then(|el| el.attr("href"))
             .map(|href| res.urljoin(&href));
 
-        let mut output = Output::new().items(books);
+        let mut output = Output::new().items(books)?;
         if let Some(url) = next_url {
             output = output.follow(url);
         }

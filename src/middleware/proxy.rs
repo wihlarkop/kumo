@@ -114,7 +114,10 @@ mod tests {
             let mut req = make_request();
             rotator.before_request(&mut req).await.unwrap();
             let picked = req.proxy.unwrap();
-            assert!(proxies.contains(&picked.as_str()), "unexpected proxy: {picked}");
+            assert!(
+                proxies.contains(&picked.as_str()),
+                "unexpected proxy: {picked}"
+            );
         }
     }
 

@@ -1,6 +1,12 @@
 pub mod memory;
 
+#[cfg(feature = "persistence")]
+pub mod file;
+
 pub use memory::MemoryFrontier;
+
+#[cfg(feature = "persistence")]
+pub use file::FileFrontier;
 
 /// URL queue with deduplication. The frontier drives the crawl loop.
 #[async_trait::async_trait]
@@ -11,10 +17,11 @@ pub trait Frontier: Send + Sync {
 
     /// Enqueue a URL unconditionally, bypassing the deduplication filter.
     /// Used by `ErrorPolicy::Retry` to re-queue a URL that previously failed.
-    async fn push_force(&self, url: String, depth: usize);
+    /// `retry_count` tracks how many times this URL has been retried.
+    async fn push_force(&self, url: String, depth: usize, retry_count: u32);
 
     /// Dequeue the next URL. Returns `None` if the queue is currently empty.
-    async fn pop(&self) -> Option<(String, usize)>;
+    async fn pop(&self) -> Option<(String, usize, u32)>;
 
     /// Number of URLs waiting in the queue.
     async fn len(&self) -> usize;
