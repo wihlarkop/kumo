@@ -4,14 +4,74 @@ use tracing::{error, info};
 
 use crate::{
     error::{ErrorPolicy, KumoError},
+    extract::Response,
     fetch::{Fetcher, http::HttpFetcher},
     frontier::{Frontier, memory::MemoryFrontier},
     middleware::{Middleware, Request},
     pipeline::Pipeline,
     robots::RobotsCache,
-    spider::Spider,
+    spider::{Output, Spider},
     store::ItemStore,
 };
+
+// ── Type erasure ──────────────────────────────────────────────────────────────
+//
+// `Spider::Item` is an associated type, which makes `dyn Spider` non-object-safe.
+// `ErasedSpider` is an internal object-safe twin that serializes items to
+// `serde_json::Value` inside `parse_erased`, allowing the engine to use
+// `Arc<dyn ErasedSpider>` for its task contexts.
+
+struct ErasedOutput {
+    items: Vec<serde_json::Value>,
+    follow: Vec<String>,
+}
+
+#[async_trait::async_trait]
+trait ErasedSpider: Send + Sync {
+    fn name(&self) -> &str;
+    fn start_urls(&self) -> Vec<String>;
+    async fn parse_erased(&self, response: &Response) -> Result<ErasedOutput, KumoError>;
+    fn on_error(&self, url: &str, err: &KumoError) -> ErrorPolicy;
+    fn max_depth(&self) -> Option<usize>;
+    fn allowed_domains(&self) -> Vec<&str>;
+}
+
+struct SpiderErased<S>(S);
+
+#[async_trait::async_trait]
+impl<S: Spider + 'static> ErasedSpider for SpiderErased<S> {
+    fn name(&self) -> &str {
+        self.0.name()
+    }
+    fn start_urls(&self) -> Vec<String> {
+        self.0.start_urls()
+    }
+
+    async fn parse_erased(&self, response: &Response) -> Result<ErasedOutput, KumoError> {
+        let output: Output<S::Item> = self.0.parse(response).await?;
+        let items = output
+            .items
+            .into_iter()
+            .map(|item| {
+                serde_json::to_value(item).map_err(|e| KumoError::parse("item serialization", e))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(ErasedOutput {
+            items,
+            follow: output.follow,
+        })
+    }
+
+    fn on_error(&self, url: &str, err: &KumoError) -> ErrorPolicy {
+        self.0.on_error(url, err)
+    }
+    fn max_depth(&self) -> Option<usize> {
+        self.0.max_depth()
+    }
+    fn allowed_domains(&self) -> Vec<&str> {
+        self.0.allowed_domains()
+    }
+}
 
 type FrontierOverride = Option<Arc<dyn Frontier>>;
 
@@ -161,7 +221,7 @@ impl CrawlEngine {
         S: Spider + 'static,
     {
         let start = std::time::Instant::now();
-        let spider: Arc<dyn Spider> = Arc::new(spider);
+        let spider: Arc<dyn ErasedSpider> = Arc::new(SpiderErased(spider));
         let frontier: Arc<dyn Frontier> = self
             .frontier
             .unwrap_or_else(|| Arc::new(MemoryFrontier::new(self.max_urls)));
@@ -359,7 +419,7 @@ impl CrawlEngine {
 
 /// Shared context cloned into each spawned task.
 struct TaskContext {
-    spider: Arc<dyn Spider>,
+    spider: Arc<dyn ErasedSpider>,
     store: Arc<dyn ItemStore>,
     middleware: Arc<Vec<Arc<dyn Middleware>>>,
     pipelines: Arc<Vec<Arc<dyn Pipeline>>>,
@@ -391,7 +451,7 @@ async fn process_url(
         mw.after_response(&mut response).await?;
     }
 
-    let output = ctx.spider.parse(&response).await?;
+    let output = ctx.spider.parse_erased(&response).await?;
 
     let mut item_count = 0u64;
     'items: for item in output.items {

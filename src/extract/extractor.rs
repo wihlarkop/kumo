@@ -42,8 +42,9 @@ pub struct CssExtractor;
 impl Extractor for CssExtractor {
     fn extract(&self, html: &str, selector: &str) -> Result<Vec<ExtractedNode>, KumoError> {
         let document = scraper::Html::parse_document(html);
-        let sel = scraper::Selector::parse(selector)
-            .map_err(|e| KumoError::parse_msg(format!("invalid CSS selector '{selector}': {e:?}")))?;
+        let sel = scraper::Selector::parse(selector).map_err(|e| {
+            KumoError::parse_msg(format!("invalid CSS selector '{selector}': {e:?}"))
+        })?;
         let nodes = document
             .select(&sel)
             .map(|el| ExtractedNode {
@@ -86,8 +87,8 @@ impl ValueExtractor for JsonPathExtractor {
     fn extract_values(&self, input: &str, selector: &str) -> Result<Vec<String>, KumoError> {
         use jsonpath_rust::JsonPath;
 
-        let value: serde_json::Value = serde_json::from_str(input)
-            .map_err(|e| KumoError::parse("invalid JSON input", e))?;
+        let value: serde_json::Value =
+            serde_json::from_str(input).map_err(|e| KumoError::parse("invalid JSON input", e))?;
         let results = value
             .query(selector)
             .map_err(|e| KumoError::parse(format!("jsonpath '{selector}'"), e))?

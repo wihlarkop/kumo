@@ -18,6 +18,8 @@ struct BooksSpider;
 
 #[async_trait::async_trait]
 impl Spider for BooksSpider {
+    type Item = Book;
+
     fn name(&self) -> &str {
         "books"
     }
@@ -34,7 +36,7 @@ impl Spider for BooksSpider {
         Some(60) // site has 50 pages
     }
 
-    async fn parse(&self, res: &Response) -> Result<Output, KumoError> {
+    async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
         // Extract books on this page.
         let books: Vec<Book> = res
             .css("article.product_pod")

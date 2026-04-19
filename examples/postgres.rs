@@ -21,6 +21,8 @@ struct QuotesSpider;
 
 #[async_trait::async_trait]
 impl Spider for QuotesSpider {
+    type Item = serde_json::Value;
+
     fn name(&self) -> &str {
         "quotes"
     }
@@ -29,7 +31,7 @@ impl Spider for QuotesSpider {
         vec!["https://quotes.toscrape.com".into()]
     }
 
-    async fn parse(&self, res: &Response) -> Result<Output, KumoError> {
+    async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
         let quotes: Vec<Quote> = res
             .css(".quote")
             .iter()

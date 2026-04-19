@@ -46,8 +46,7 @@ impl FileFrontier {
     /// automatically (resume); otherwise a fresh frontier is created.
     pub fn open(dir: impl Into<PathBuf>) -> Result<Self, KumoError> {
         let dir = dir.into();
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| KumoError::store("create frontier dir", e))?;
+        std::fs::create_dir_all(&dir).map_err(|e| KumoError::store("create frontier dir", e))?;
 
         let queue_path = dir.join("queue.json");
         let seen_path = dir.join("seen.json");
@@ -58,8 +57,8 @@ impl FileFrontier {
         let seen_exact: Vec<String> = if seen_path.exists() {
             let data = std::fs::read_to_string(&seen_path)
                 .map_err(|e| KumoError::store("read seen.json", e))?;
-            let urls: Vec<String> = serde_json::from_str(&data)
-                .map_err(|e| KumoError::store("parse seen.json", e))?;
+            let urls: Vec<String> =
+                serde_json::from_str(&data).map_err(|e| KumoError::store("parse seen.json", e))?;
             for url in &urls {
                 bloom.set(url);
             }
@@ -71,8 +70,7 @@ impl FileFrontier {
         let queue: VecDeque<(String, usize, u32)> = if queue_path.exists() {
             let data = std::fs::read_to_string(&queue_path)
                 .map_err(|e| KumoError::store("read queue.json", e))?;
-            serde_json::from_str(&data)
-                .map_err(|e| KumoError::store("parse queue.json", e))?
+            serde_json::from_str(&data).map_err(|e| KumoError::store("parse queue.json", e))?
         } else {
             VecDeque::new()
         };
@@ -97,10 +95,10 @@ impl FileFrontier {
         let queue = self.queue.lock().await;
         let seen = self.seen_exact.lock().await;
 
-        let queue_json = serde_json::to_string(&*queue)
-            .map_err(|e| KumoError::store("serialize queue", e))?;
-        let seen_json = serde_json::to_string(&*seen)
-            .map_err(|e| KumoError::store("serialize seen", e))?;
+        let queue_json =
+            serde_json::to_string(&*queue).map_err(|e| KumoError::store("serialize queue", e))?;
+        let seen_json =
+            serde_json::to_string(&*seen).map_err(|e| KumoError::store("serialize seen", e))?;
 
         std::fs::write(self.dir.join("queue.json"), queue_json)
             .map_err(|e| KumoError::store("write queue.json", e))?;

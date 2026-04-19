@@ -56,13 +56,19 @@ impl KumoError {
         context: impl Into<String>,
         source: impl std::error::Error + Send + Sync + 'static,
     ) -> Self {
-        Self::Parse { context: context.into(), source: Box::new(source) }
+        Self::Parse {
+            context: context.into(),
+            source: Box::new(source),
+        }
     }
 
     /// Construct a `Parse` variant from a plain message (no source).
     pub fn parse_msg(msg: impl Into<String>) -> Self {
         let msg = msg.into();
-        Self::Parse { context: msg.clone(), source: Box::new(Msg(msg)) }
+        Self::Parse {
+            context: msg.clone(),
+            source: Box::new(Msg(msg)),
+        }
     }
 
     /// Construct a `Store` variant from a real source error.
@@ -70,13 +76,19 @@ impl KumoError {
         context: impl Into<String>,
         source: impl std::error::Error + Send + Sync + 'static,
     ) -> Self {
-        Self::Store { context: context.into(), source: Box::new(source) }
+        Self::Store {
+            context: context.into(),
+            source: Box::new(source),
+        }
     }
 
     /// Construct a `Store` variant from a plain message (no source).
     pub fn store_msg(msg: impl Into<String>) -> Self {
         let msg = msg.into();
-        Self::Store { context: msg.clone(), source: Box::new(Msg(msg)) }
+        Self::Store {
+            context: msg.clone(),
+            source: Box::new(Msg(msg)),
+        }
     }
 }
 

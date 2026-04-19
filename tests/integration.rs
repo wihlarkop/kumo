@@ -42,11 +42,20 @@ struct SinglePageSpider {
 
 #[async_trait::async_trait]
 impl Spider for SinglePageSpider {
-    fn name(&self) -> &str { "single-page" }
-    fn start_urls(&self) -> Vec<String> { vec![self.start.clone()] }
+    type Item = serde_json::Value;
+    fn name(&self) -> &str {
+        "single-page"
+    }
+    fn start_urls(&self) -> Vec<String> {
+        vec![self.start.clone()]
+    }
 
-    async fn parse(&self, res: &Response) -> Result<Output, KumoError> {
-        let title = res.css("h1").first().map(|el| el.text()).unwrap_or_default();
+    async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
+        let title = res
+            .css("h1")
+            .first()
+            .map(|el| el.text())
+            .unwrap_or_default();
         Ok(Output::new().item(serde_json::json!({ "title": title }))?)
     }
 }
@@ -57,10 +66,15 @@ struct PaginatedSpider {
 
 #[async_trait::async_trait]
 impl Spider for PaginatedSpider {
-    fn name(&self) -> &str { "paginated" }
-    fn start_urls(&self) -> Vec<String> { vec![self.page1.clone()] }
+    type Item = serde_json::Value;
+    fn name(&self) -> &str {
+        "paginated"
+    }
+    fn start_urls(&self) -> Vec<String> {
+        vec![self.page1.clone()]
+    }
 
-    async fn parse(&self, res: &Response) -> Result<Output, KumoError> {
+    async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
         let item = serde_json::json!({ "url": res.url });
         let next = res
             .css("a.next")
@@ -94,7 +108,9 @@ async fn engine_scrapes_single_page() {
         .concurrency(1)
         .respect_robots_txt(false)
         .store(store.clone())
-        .run(SinglePageSpider { start: server.url() })
+        .run(SinglePageSpider {
+            start: server.url(),
+        })
         .await
         .unwrap();
 
@@ -131,7 +147,9 @@ async fn engine_follows_pagination() {
         .concurrency(1)
         .respect_robots_txt(false)
         .store(VecStore::default())
-        .run(PaginatedSpider { page1: format!("{base}/page/1") })
+        .run(PaginatedSpider {
+            page1: format!("{base}/page/1"),
+        })
         .await
         .unwrap();
 
@@ -155,9 +173,14 @@ async fn middleware_injects_custom_user_agent() {
     struct AgentSpider(String);
     #[async_trait::async_trait]
     impl Spider for AgentSpider {
-        fn name(&self) -> &str { "agent" }
-        fn start_urls(&self) -> Vec<String> { vec![self.0.clone()] }
-        async fn parse(&self, _res: &Response) -> Result<Output, KumoError> {
+        type Item = serde_json::Value;
+        fn name(&self) -> &str {
+            "agent"
+        }
+        fn start_urls(&self) -> Vec<String> {
+            vec![self.0.clone()]
+        }
+        async fn parse(&self, _res: &Response) -> Result<Output<Self::Item>, KumoError> {
             Ok(Output::new())
         }
     }
@@ -189,10 +212,14 @@ async fn pipeline_drops_items_missing_required_field() {
     struct NoTitleSpider(String);
     #[async_trait::async_trait]
     impl Spider for NoTitleSpider {
-        fn name(&self) -> &str { "no-title" }
-        fn start_urls(&self) -> Vec<String> { vec![self.0.clone()] }
-        async fn parse(&self, _res: &Response) -> Result<Output, KumoError> {
-            // Emits item missing "title"
+        type Item = serde_json::Value;
+        fn name(&self) -> &str {
+            "no-title"
+        }
+        fn start_urls(&self) -> Vec<String> {
+            vec![self.0.clone()]
+        }
+        async fn parse(&self, _res: &Response) -> Result<Output<Self::Item>, KumoError> {
             Ok(Output::new().item(serde_json::json!({ "body": "hello" }))?)
         }
     }
@@ -207,7 +234,10 @@ async fn pipeline_drops_items_missing_required_field() {
         .unwrap();
 
     assert_eq!(stats.pages_crawled, 1);
-    assert_eq!(stats.items_scraped, 0, "pipeline should have dropped the item");
+    assert_eq!(
+        stats.items_scraped, 0,
+        "pipeline should have dropped the item"
+    );
     assert!(store.collected().is_empty());
 }
 
@@ -231,9 +261,14 @@ async fn status_retry_retries_on_429_and_succeeds() {
     struct RetrySpider(String);
     #[async_trait::async_trait]
     impl Spider for RetrySpider {
-        fn name(&self) -> &str { "retry" }
-        fn start_urls(&self) -> Vec<String> { vec![self.0.clone()] }
-        async fn parse(&self, _res: &Response) -> Result<Output, KumoError> {
+        type Item = serde_json::Value;
+        fn name(&self) -> &str {
+            "retry"
+        }
+        fn start_urls(&self) -> Vec<String> {
+            vec![self.0.clone()]
+        }
+        async fn parse(&self, _res: &Response) -> Result<Output<Self::Item>, KumoError> {
             Ok(Output::new())
         }
     }

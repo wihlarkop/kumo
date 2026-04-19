@@ -28,6 +28,8 @@ struct QuotesSpider {
 
 #[async_trait::async_trait]
 impl Spider for QuotesSpider {
+    type Item = serde_json::Value;
+
     fn name(&self) -> &str {
         "quotes-llm"
     }
@@ -36,7 +38,7 @@ impl Spider for QuotesSpider {
         vec!["https://quotes.toscrape.com".into()]
     }
 
-    async fn parse(&self, res: &Response) -> Result<Output, KumoError> {
+    async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
         // No CSS selectors — the LLM reads the HTML and fills in the struct.
         let quotes: Vec<Quote> = res.extract(self.client.as_ref()).await?;
 
