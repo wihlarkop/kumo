@@ -3,10 +3,16 @@ pub mod memory;
 #[cfg(feature = "persistence")]
 pub mod file;
 
+#[cfg(feature = "redis-frontier")]
+pub mod redis_frontier;
+
 pub use memory::MemoryFrontier;
 
 #[cfg(feature = "persistence")]
 pub use file::FileFrontier;
+
+#[cfg(feature = "redis-frontier")]
+pub use redis_frontier::RedisFrontier;
 
 /// URL queue with deduplication. The frontier drives the crawl loop.
 #[async_trait::async_trait]

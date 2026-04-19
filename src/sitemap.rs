@@ -18,7 +18,6 @@ use crate::{
 ///     .await?;
 /// ```
 pub struct SitemapSpider {
-    base_url: String,
     sitemap_url: String,
 }
 
@@ -27,12 +26,12 @@ impl SitemapSpider {
     pub fn new(base_url: impl Into<String>) -> Self {
         let base = base_url.into();
         let sitemap = format!("{}/sitemap.xml", base.trim_end_matches('/'));
-        Self { base_url: base, sitemap_url: sitemap }
+        Self { sitemap_url: sitemap }
     }
 
     /// Create a spider with a custom sitemap URL.
-    pub fn with_sitemap(base_url: impl Into<String>, sitemap_url: impl Into<String>) -> Self {
-        Self { base_url: base_url.into(), sitemap_url: sitemap_url.into() }
+    pub fn with_sitemap(_base_url: impl Into<String>, sitemap_url: impl Into<String>) -> Self {
+        Self { sitemap_url: sitemap_url.into() }
     }
 
     fn extract_locs(body: &str) -> Vec<String> {

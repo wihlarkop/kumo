@@ -5,6 +5,8 @@ pub mod fetch;
 pub mod frontier;
 #[cfg(feature = "persistence")]
 pub use frontier::FileFrontier;
+#[cfg(feature = "redis-frontier")]
+pub use frontier::RedisFrontier;
 #[cfg(feature = "llm")]
 pub mod llm;
 pub mod middleware;
