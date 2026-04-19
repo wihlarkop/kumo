@@ -69,7 +69,7 @@ impl MySqlStoreBuilder {
 
         let pool = MySqlPool::connect(&self.database_url)
             .await
-            .map_err(|e| KumoError::Store(e.to_string()))?;
+            .map_err(|e| KumoError::store("mysql store", e))?;
 
         if self.create_table {
             let extra = self
@@ -88,7 +88,7 @@ impl MySqlStoreBuilder {
             sqlx::query(&sql)
                 .execute(&pool)
                 .await
-                .map_err(|e| KumoError::Store(e.to_string()))?;
+                .map_err(|e| KumoError::store("mysql store", e))?;
         }
 
         Ok(MySqlStore {
@@ -128,7 +128,7 @@ impl ItemStore for MySqlStore {
         }
         q.execute(&self.pool)
             .await
-            .map_err(|e| KumoError::Store(e.to_string()))?;
+            .map_err(|e| KumoError::store("mysql store", e))?;
         Ok(())
     }
 }

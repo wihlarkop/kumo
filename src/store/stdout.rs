@@ -7,7 +7,7 @@ pub struct StdoutStore;
 #[async_trait::async_trait]
 impl ItemStore for StdoutStore {
     async fn store(&self, item: &serde_json::Value) -> Result<(), KumoError> {
-        let json = serde_json::to_string(item).map_err(|e| KumoError::Store(e.to_string()))?;
+        let json = serde_json::to_string(item).map_err(|e| KumoError::store("stdout serialization", e))?;
         println!("{json}");
         Ok(())
     }

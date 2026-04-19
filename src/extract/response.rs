@@ -102,7 +102,7 @@ impl Response {
 
     /// Deserialize the response body as JSON. Works for both text and binary bodies.
     pub fn json<T: serde::de::DeserializeOwned>(&self) -> Result<T, KumoError> {
-        serde_json::from_slice(self.bytes()).map_err(|e| KumoError::Parse(e.to_string()))
+        serde_json::from_slice(self.bytes()).map_err(|e| KumoError::parse("json deserialization", e))
     }
 
     /// Apply a regex pattern to the raw response body and return all matches.
@@ -125,10 +125,10 @@ impl Response {
         use jsonpath_rust::JsonPath;
 
         let value: serde_json::Value = serde_json::from_slice(self.bytes())
-            .map_err(|e| KumoError::Parse(format!("invalid JSON body: {e}")))?;
+            .map_err(|e| KumoError::parse("json body", e))?;
         let results = value
             .query(expr)
-            .map_err(|e| KumoError::Parse(format!("invalid JSONPath '{expr}': {e}")))?;
+            .map_err(|e| KumoError::parse(format!("jsonpath '{expr}'"), e))?;
         Ok(results.into_iter().cloned().collect())
     }
 

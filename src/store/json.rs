@@ -38,8 +38,8 @@ impl ItemStore for JsonStore {
     async fn flush(&self) -> Result<(), KumoError> {
         let items = self.items.lock().unwrap();
         let json =
-            serde_json::to_string_pretty(&*items).map_err(|e| KumoError::Store(e.to_string()))?;
-        std::fs::write(&self.path, json).map_err(|e| KumoError::Store(e.to_string()))?;
+            serde_json::to_string_pretty(&*items).map_err(|e| KumoError::store("json store", e))?;
+        std::fs::write(&self.path, json).map_err(|e| KumoError::store("json store", e))?;
         Ok(())
     }
 }

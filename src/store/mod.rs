@@ -39,13 +39,13 @@ pub trait ItemStore: Send + Sync {
 #[cfg(any(feature = "postgres", feature = "sqlite", feature = "mysql"))]
 pub(super) fn validate_table_name(name: &str) -> Result<(), crate::error::KumoError> {
     if name.is_empty() || name.len() > 63 {
-        return Err(crate::error::KumoError::Store(format!(
+        return Err(crate::error::KumoError::store_msg(format!(
             "table name must be 1–63 characters, got {}",
             name.len()
         )));
     }
     if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        return Err(crate::error::KumoError::Store(format!(
+        return Err(crate::error::KumoError::store_msg(format!(
             "table name '{}' contains invalid characters (only a-z, A-Z, 0-9, _ allowed)",
             name
         )));

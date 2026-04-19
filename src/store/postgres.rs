@@ -68,7 +68,7 @@ impl PostgresStoreBuilder {
 
         let pool = PgPool::connect(&self.database_url)
             .await
-            .map_err(|e| KumoError::Store(e.to_string()))?;
+            .map_err(|e| KumoError::store("postgres store", e))?;
 
         if self.create_table {
             let extra = self
@@ -87,7 +87,7 @@ impl PostgresStoreBuilder {
             sqlx::query(&sql)
                 .execute(&pool)
                 .await
-                .map_err(|e| KumoError::Store(e.to_string()))?;
+                .map_err(|e| KumoError::store("postgres store", e))?;
         }
 
         Ok(PostgresStore {
@@ -129,7 +129,7 @@ impl ItemStore for PostgresStore {
         }
         q.execute(&self.pool)
             .await
-            .map_err(|e| KumoError::Store(e.to_string()))?;
+            .map_err(|e| KumoError::store("postgres store", e))?;
         Ok(())
     }
 }

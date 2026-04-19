@@ -38,9 +38,9 @@ impl JsonlStore {
 #[async_trait::async_trait]
 impl ItemStore for JsonlStore {
     async fn store(&self, item: &serde_json::Value) -> Result<(), KumoError> {
-        let json = serde_json::to_string(item).map_err(|e| KumoError::Store(e.to_string()))?;
+        let json = serde_json::to_string(item).map_err(|e| KumoError::store("jsonl store", e))?;
         let mut writer = self.writer.lock().unwrap();
-        writeln!(writer, "{json}").map_err(|e| KumoError::Store(e.to_string()))?;
+        writeln!(writer, "{json}").map_err(|e| KumoError::store("jsonl store", e))?;
         Ok(())
     }
 
@@ -49,6 +49,6 @@ impl ItemStore for JsonlStore {
             .lock()
             .unwrap()
             .flush()
-            .map_err(|e| KumoError::Store(e.to_string()))
+            .map_err(|e| KumoError::store("jsonl store", e))
     }
 }

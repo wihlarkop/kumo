@@ -39,6 +39,51 @@ jobs:
       - name: Run integration tests
         run: cargo test --test integration
 
+  feature-matrix:
+    name: Feature flags (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - ""
+          - "sqlite"
+          - "jsonpath"
+          - "persistence"
+          - "sqlite,jsonpath,persistence"
+          - "llm"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-feat-${{ matrix.features }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-feat-
+
+      - name: Build
+        run: |
+          if [ -z "${{ matrix.features }}" ]; then
+            cargo build
+          else
+            cargo build --features "${{ matrix.features }}"
+          fi
+
+      - name: Test
+        run: |
+          if [ -z "${{ matrix.features }}" ]; then
+            cargo test
+          else
+            cargo test --features "${{ matrix.features }}"
+          fi
+
   lint:
     name: Clippy & Format
     runs-on: ubuntu-latest

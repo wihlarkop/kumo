@@ -21,7 +21,7 @@ impl Output {
 
     /// Add a single serializable item. Returns an error if serialization fails.
     pub fn item<T: serde::Serialize>(mut self, item: T) -> Result<Self, KumoError> {
-        let v = serde_json::to_value(item).map_err(|e| KumoError::Parse(e.to_string()))?;
+        let v = serde_json::to_value(item).map_err(|e| KumoError::parse("item serialization", e))?;
         self.items.push(v);
         Ok(self)
     }
@@ -29,7 +29,7 @@ impl Output {
     /// Add multiple serializable items. Returns an error if any item fails to serialize.
     pub fn items<T: serde::Serialize>(mut self, items: Vec<T>) -> Result<Self, KumoError> {
         for item in items {
-            let v = serde_json::to_value(item).map_err(|e| KumoError::Parse(e.to_string()))?;
+            let v = serde_json::to_value(item).map_err(|e| KumoError::parse("item serialization", e))?;
             self.items.push(v);
         }
         Ok(self)

@@ -47,7 +47,7 @@ impl FileFrontier {
     pub fn open(dir: impl Into<PathBuf>) -> Result<Self, KumoError> {
         let dir = dir.into();
         std::fs::create_dir_all(&dir)
-            .map_err(|e| KumoError::Store(format!("cannot create frontier dir: {e}")))?;
+            .map_err(|e| KumoError::store("create frontier dir", e))?;
 
         let queue_path = dir.join("queue.json");
         let seen_path = dir.join("seen.json");
@@ -57,9 +57,9 @@ impl FileFrontier {
 
         let seen_exact: Vec<String> = if seen_path.exists() {
             let data = std::fs::read_to_string(&seen_path)
-                .map_err(|e| KumoError::Store(format!("cannot read seen.json: {e}")))?;
+                .map_err(|e| KumoError::store("read seen.json", e))?;
             let urls: Vec<String> = serde_json::from_str(&data)
-                .map_err(|e| KumoError::Store(format!("corrupt seen.json: {e}")))?;
+                .map_err(|e| KumoError::store("parse seen.json", e))?;
             for url in &urls {
                 bloom.set(url);
             }
@@ -70,9 +70,9 @@ impl FileFrontier {
 
         let queue: VecDeque<(String, usize, u32)> = if queue_path.exists() {
             let data = std::fs::read_to_string(&queue_path)
-                .map_err(|e| KumoError::Store(format!("cannot read queue.json: {e}")))?;
+                .map_err(|e| KumoError::store("read queue.json", e))?;
             serde_json::from_str(&data)
-                .map_err(|e| KumoError::Store(format!("corrupt queue.json: {e}")))?
+                .map_err(|e| KumoError::store("parse queue.json", e))?
         } else {
             VecDeque::new()
         };
@@ -98,14 +98,14 @@ impl FileFrontier {
         let seen = self.seen_exact.lock().await;
 
         let queue_json = serde_json::to_string(&*queue)
-            .map_err(|e| KumoError::Store(format!("cannot serialize queue: {e}")))?;
+            .map_err(|e| KumoError::store("serialize queue", e))?;
         let seen_json = serde_json::to_string(&*seen)
-            .map_err(|e| KumoError::Store(format!("cannot serialize seen: {e}")))?;
+            .map_err(|e| KumoError::store("serialize seen", e))?;
 
         std::fs::write(self.dir.join("queue.json"), queue_json)
-            .map_err(|e| KumoError::Store(format!("cannot write queue.json: {e}")))?;
+            .map_err(|e| KumoError::store("write queue.json", e))?;
         std::fs::write(self.dir.join("seen.json"), seen_json)
-            .map_err(|e| KumoError::Store(format!("cannot write seen.json: {e}")))?;
+            .map_err(|e| KumoError::store("write seen.json", e))?;
 
         Ok(())
     }

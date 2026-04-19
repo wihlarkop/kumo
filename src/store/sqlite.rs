@@ -69,7 +69,7 @@ impl SqliteStoreBuilder {
 
         let pool = SqlitePool::connect(&self.database_url)
             .await
-            .map_err(|e| KumoError::Store(e.to_string()))?;
+            .map_err(|e| KumoError::store("sqlite store", e))?;
 
         if self.create_table {
             let extra = self
@@ -88,7 +88,7 @@ impl SqliteStoreBuilder {
             sqlx::query(&sql)
                 .execute(&pool)
                 .await
-                .map_err(|e| KumoError::Store(e.to_string()))?;
+                .map_err(|e| KumoError::store("sqlite store", e))?;
         }
 
         Ok(SqliteStore {
@@ -128,7 +128,7 @@ impl ItemStore for SqliteStore {
         }
         q.execute(&self.pool)
             .await
-            .map_err(|e| KumoError::Store(e.to_string()))?;
+            .map_err(|e| KumoError::store("sqlite store", e))?;
         Ok(())
     }
 }
