@@ -111,6 +111,7 @@ pub struct CrawlEngine {
     /// Expected unique URL count for Bloom filter sizing (default: 1_000_000).
     max_urls: usize,
     robots_ttl: Duration,
+    metrics_interval: Option<Duration>,
     #[cfg(feature = "browser")]
     browser: Option<BrowserConfig>,
 }
@@ -129,6 +130,7 @@ impl Default for CrawlEngine {
             retry_base_delay: Duration::from_millis(500),
             max_urls: 1_000_000,
             robots_ttl: Duration::from_secs(24 * 60 * 60),
+            metrics_interval: None,
             #[cfg(feature = "browser")]
             browser: None,
         }
@@ -191,6 +193,13 @@ impl CrawlEngine {
         self
     }
 
+    /// Emit a `tracing::info!` stats snapshot every `interval` during the crawl.
+    /// Useful for monitoring long-running crawls without an external metrics system.
+    pub fn metrics_interval(mut self, interval: Duration) -> Self {
+        self.metrics_interval = Some(interval);
+        self
+    }
+
     /// TTL for cached robots.txt entries (default: 24 hours).
     pub fn robots_ttl(mut self, ttl: Duration) -> Self {
         self.robots_ttl = ttl;
@@ -221,6 +230,7 @@ impl CrawlEngine {
         S: Spider + 'static,
     {
         let start = std::time::Instant::now();
+        let metrics_interval = self.metrics_interval;
         let spider: Arc<dyn ErasedSpider> = Arc::new(SpiderErased(spider));
         let frontier: Arc<dyn Frontier> = self
             .frontier
@@ -297,6 +307,25 @@ impl CrawlEngine {
         let mut join_set: JoinSet<TaskResult> = JoinSet::new();
         let mut stats = CrawlStats::default();
 
+        // Spawn periodic metrics logger if configured.
+        let live_stats = Arc::new(tokio::sync::Mutex::new(CrawlStats::default()));
+        let _metrics_task = metrics_interval.map(|interval| {
+            let live = live_stats.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(interval).await;
+                    let s = live.lock().await;
+                    tracing::info!(
+                        pages = s.pages_crawled,
+                        items = s.items_scraped,
+                        errors = s.errors,
+                        elapsed_secs = s.duration.as_secs_f64(),
+                        "[kumo metrics]"
+                    );
+                }
+            })
+        });
+
         loop {
             // Fill up to the concurrency limit.
             while join_set.len() < concurrency {
@@ -341,6 +370,14 @@ impl CrawlEngine {
                 Some(Ok((_url, _depth, _retry_count, Ok((item_count, follows))))) => {
                     stats.pages_crawled += 1;
                     stats.items_scraped += item_count;
+                    // Keep live snapshot up to date for the metrics task.
+                    if metrics_interval.is_some() {
+                        let mut snap = live_stats.lock().await;
+                        snap.pages_crawled = stats.pages_crawled;
+                        snap.items_scraped = stats.items_scraped;
+                        snap.errors = stats.errors;
+                        snap.duration = start.elapsed();
+                    }
 
                     for (follow_url, follow_depth) in follows {
                         // Respect max_depth.
