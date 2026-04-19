@@ -188,10 +188,8 @@ impl ResponseExtractExt for Response {
 mod tests {
     use super::*;
     use crate::extract::Response;
-    use reqwest::header::HeaderMap;
     use schemars::JsonSchema;
     use serde::Deserialize;
-    use std::time::Duration;
 
     fn make_response(body: &str) -> Response {
         Response::from_parts("http://example.com", 200, body)
