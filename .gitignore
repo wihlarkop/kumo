@@ -32,3 +32,4 @@ target
 docs/
 *.pdf
 
+.env
