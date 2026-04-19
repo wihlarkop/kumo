@@ -24,7 +24,7 @@ struct QuotesSpider;
 
 #[async_trait::async_trait]
 impl Spider for QuotesSpider {
-    type Item = serde_json::Value;
+    type Item = Quote;
 
     fn name(&self) -> &str {
         "quotes"
