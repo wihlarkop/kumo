@@ -170,6 +170,23 @@ impl CrawlEngine {
             .unwrap_or_else(|| Arc::new(crate::store::stdout::StdoutStore));
         let middleware: Arc<Vec<Arc<dyn Middleware>>> = Arc::new(self.middleware);
         let pipelines: Arc<Vec<Arc<dyn Pipeline>>> = Arc::new(self.pipelines);
+
+        // Warn if both AutoThrottle and RateLimiter are registered — they compound delays.
+        {
+            let has_throttle = middleware
+                .iter()
+                .any(|mw| std::any::type_name_of_val(mw.as_ref()).contains("AutoThrottle"));
+            let has_limiter = middleware
+                .iter()
+                .any(|mw| std::any::type_name_of_val(mw.as_ref()).contains("RateLimiter"));
+            if has_throttle && has_limiter {
+                tracing::warn!(
+                    "Both AutoThrottle and RateLimiter are registered. \
+                     They apply delays independently and will compound. \
+                     Consider using only one."
+                );
+            }
+        }
         let crawl_delay = self.crawl_delay;
         let concurrency = self.concurrency;
         let max_retries = self.max_retries;
@@ -199,7 +216,7 @@ impl CrawlEngine {
 
         #[cfg(feature = "browser")]
         let fetcher: Arc<dyn Fetcher> = match self.browser {
-            Some(cfg) => Arc::new(BrowserFetcher::launch(cfg).await?),
+            Some(cfg) => Arc::new(BrowserFetcher::launch(cfg, concurrency).await?),
             None => Arc::new(HttpFetcher::new(
                 client.clone(),
                 concat!("kumo/", env!("CARGO_PKG_VERSION")),

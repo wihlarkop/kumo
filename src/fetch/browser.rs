@@ -1,5 +1,7 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
+use tokio::sync::Semaphore;
+
 use async_trait::async_trait;
 use chromiumoxide::browser::{Browser, BrowserConfig as CdpBrowserConfig};
 use futures::StreamExt;
@@ -103,11 +105,13 @@ pub struct BrowserFetcher {
     // Kept alive to ensure the CDP event-loop task runs for the engine lifetime.
     _handler: tokio::task::JoinHandle<()>,
     config: BrowserConfig,
+    // Caps concurrent open tabs to the engine's concurrency setting.
+    tab_semaphore: Arc<Semaphore>,
 }
 
 impl BrowserFetcher {
-    /// Launch the browser process. Call once when the engine starts.
-    pub async fn launch(config: BrowserConfig) -> Result<Self, KumoError> {
+    /// Launch the browser process. `concurrency` caps how many tabs can be open simultaneously.
+    pub async fn launch(config: BrowserConfig, concurrency: usize) -> Result<Self, KumoError> {
         let mut builder = CdpBrowserConfig::builder()
             .window_size(config.viewport.0, config.viewport.1)
             .launch_timeout(config.timeout);
@@ -140,6 +144,7 @@ impl BrowserFetcher {
             browser: Arc::new(browser),
             _handler: handler_task,
             config,
+            tab_semaphore: Arc::new(Semaphore::new(concurrency.max(1))),
         })
     }
 }
@@ -148,6 +153,12 @@ impl BrowserFetcher {
 impl Fetcher for BrowserFetcher {
     async fn fetch(&self, request: &Request) -> Result<Response, KumoError> {
         let start = std::time::Instant::now();
+
+        let _permit = self
+            .tab_semaphore
+            .acquire()
+            .await
+            .map_err(|e| KumoError::Browser(e.to_string()))?;
 
         if request.proxy.is_some() {
             tracing::warn!(

@@ -16,8 +16,15 @@ enum Strategy {
 /// The selected proxy URL is written to `request.proxy`; `HttpFetcher` picks it up
 /// and routes the request through the specified proxy.
 ///
+/// ## Cookie isolation
+///
+/// Each proxy gets its own `reqwest::Client` with an independent cookie jar.
+/// This is intentional for anonymity — requests through proxy A and proxy B
+/// won't share session cookies. If you need shared cookies across proxies,
+/// implement a custom `Fetcher`.
+///
 /// Proxy URLs follow reqwest's format: `"http://user:pass@host:port"` or
-/// `"socks5://host:port"` etc.
+/// `"socks5://host:port"`.
 ///
 /// # Examples
 /// ```rust,ignore
