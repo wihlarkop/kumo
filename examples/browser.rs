@@ -24,7 +24,7 @@ impl Spider for QuotesJsSpider {
         vec!["quotes.toscrape.com"]
     }
 
-    async fn parse(&self, response: Response) -> Result<Output, KumoError> {
+    async fn parse(&self, response: &Response) -> Result<Output, KumoError> {
         let mut output = Output::new();
 
         for quote in response.css(".quote").iter() {

@@ -22,7 +22,7 @@ impl Spider for HttpbinSpider {
         self.urls.clone()
     }
 
-    async fn parse(&self, response: Response) -> Result<Output, KumoError> {
+    async fn parse(&self, response: &Response) -> Result<Output, KumoError> {
         // httpbin returns a JSON body with the headers it received.
         if let Ok(json) = response.json::<serde_json::Value>() {
             let ua = json["headers"]["User-Agent"].as_str().unwrap_or("?");

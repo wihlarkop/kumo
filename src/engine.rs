@@ -391,7 +391,7 @@ async fn process_url(
         mw.after_response(&mut response).await?;
     }
 
-    let output = ctx.spider.parse(response).await?;
+    let output = ctx.spider.parse(&response).await?;
 
     let mut item_count = 0u64;
     'items: for item in output.items {

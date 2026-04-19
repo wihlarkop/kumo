@@ -67,7 +67,7 @@ pub trait Spider: Send + Sync {
     fn start_urls(&self) -> Vec<String>;
 
     /// Called for every successfully fetched page.
-    async fn parse(&self, response: Response) -> Result<Output, KumoError>;
+    async fn parse(&self, response: &Response) -> Result<Output, KumoError>;
 
     /// Error handling policy for fetch or parse failures. Default: skip and log.
     fn on_error(&self, _url: &str, _err: &KumoError) -> ErrorPolicy {

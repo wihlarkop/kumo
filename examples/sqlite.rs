@@ -32,7 +32,7 @@ impl Spider for QuotesSpider {
         vec!["https://quotes.toscrape.com".into()]
     }
 
-    async fn parse(&self, res: Response) -> Result<Output, KumoError> {
+    async fn parse(&self, res: &Response) -> Result<Output, KumoError> {
         let quotes: Vec<Quote> = res
             .css(".quote")
             .iter()

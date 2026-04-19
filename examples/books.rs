@@ -34,7 +34,7 @@ impl Spider for BooksSpider {
         Some(60) // site has 50 pages
     }
 
-    async fn parse(&self, res: Response) -> Result<Output, KumoError> {
+    async fn parse(&self, res: &Response) -> Result<Output, KumoError> {
         // Extract books on this page.
         let books: Vec<Book> = res
             .css("article.product_pod")

@@ -45,7 +45,7 @@ impl Spider for SinglePageSpider {
     fn name(&self) -> &str { "single-page" }
     fn start_urls(&self) -> Vec<String> { vec![self.start.clone()] }
 
-    async fn parse(&self, res: Response) -> Result<Output, KumoError> {
+    async fn parse(&self, res: &Response) -> Result<Output, KumoError> {
         let title = res.css("h1").first().map(|el| el.text()).unwrap_or_default();
         Ok(Output::new().item(serde_json::json!({ "title": title }))?)
     }
@@ -60,7 +60,7 @@ impl Spider for PaginatedSpider {
     fn name(&self) -> &str { "paginated" }
     fn start_urls(&self) -> Vec<String> { vec![self.page1.clone()] }
 
-    async fn parse(&self, res: Response) -> Result<Output, KumoError> {
+    async fn parse(&self, res: &Response) -> Result<Output, KumoError> {
         let item = serde_json::json!({ "url": res.url });
         let next = res
             .css("a.next")
@@ -157,7 +157,7 @@ async fn middleware_injects_custom_user_agent() {
     impl Spider for AgentSpider {
         fn name(&self) -> &str { "agent" }
         fn start_urls(&self) -> Vec<String> { vec![self.0.clone()] }
-        async fn parse(&self, _res: Response) -> Result<Output, KumoError> {
+        async fn parse(&self, _res: &Response) -> Result<Output, KumoError> {
             Ok(Output::new())
         }
     }
@@ -191,7 +191,7 @@ async fn pipeline_drops_items_missing_required_field() {
     impl Spider for NoTitleSpider {
         fn name(&self) -> &str { "no-title" }
         fn start_urls(&self) -> Vec<String> { vec![self.0.clone()] }
-        async fn parse(&self, _res: Response) -> Result<Output, KumoError> {
+        async fn parse(&self, _res: &Response) -> Result<Output, KumoError> {
             // Emits item missing "title"
             Ok(Output::new().item(serde_json::json!({ "body": "hello" }))?)
         }
@@ -233,7 +233,7 @@ async fn status_retry_retries_on_429_and_succeeds() {
     impl Spider for RetrySpider {
         fn name(&self) -> &str { "retry" }
         fn start_urls(&self) -> Vec<String> { vec![self.0.clone()] }
-        async fn parse(&self, _res: Response) -> Result<Output, KumoError> {
+        async fn parse(&self, _res: &Response) -> Result<Output, KumoError> {
             Ok(Output::new())
         }
     }
