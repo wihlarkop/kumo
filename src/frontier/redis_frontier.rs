@@ -39,8 +39,7 @@ impl RedisFrontier {
         queue_key: impl Into<String>,
         seen_key: impl Into<String>,
     ) -> Result<Self, KumoError> {
-        let client = Client::open(url)
-            .map_err(|e| KumoError::store("redis connect", e))?;
+        let client = Client::open(url).map_err(|e| KumoError::store("redis connect", e))?;
 
         let mut conn = client
             .get_multiplexed_async_connection()
@@ -81,7 +80,9 @@ impl RedisFrontier {
 #[async_trait::async_trait]
 impl Frontier for RedisFrontier {
     async fn push(&self, url: String, depth: usize) -> bool {
-        let Ok(mut conn) = self.conn().await else { return false; };
+        let Ok(mut conn) = self.conn().await else {
+            return false;
+        };
         // SADD returns 1 if new member, 0 if already present.
         let added: i64 = conn.sadd(&self.seen_key, &url).await.unwrap_or(0);
         if added == 0 {
@@ -93,7 +94,9 @@ impl Frontier for RedisFrontier {
     }
 
     async fn push_force(&self, url: String, depth: usize, retry_count: u32) {
-        let Ok(mut conn) = self.conn().await else { return; };
+        let Ok(mut conn) = self.conn().await else {
+            return;
+        };
         let entry = serde_json::json!([url, depth, retry_count]).to_string();
         let _: () = conn.rpush(&self.queue_key, entry).await.unwrap_or(());
     }
@@ -111,7 +114,9 @@ impl Frontier for RedisFrontier {
     }
 
     async fn len(&self) -> usize {
-        let Ok(mut conn) = self.conn().await else { return 0; };
+        let Ok(mut conn) = self.conn().await else {
+            return 0;
+        };
         conn.llen(&self.queue_key).await.unwrap_or(0)
     }
 }

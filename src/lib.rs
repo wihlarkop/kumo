@@ -12,8 +12,8 @@ pub mod llm;
 pub mod middleware;
 pub mod pipeline;
 pub mod robots;
-pub mod spider;
 pub mod sitemap;
+pub mod spider;
 pub mod store;
 
 /// Convenience re-exports for writing spiders with minimal `use` statements.

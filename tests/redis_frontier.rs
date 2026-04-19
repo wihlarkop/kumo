@@ -6,8 +6,8 @@
 
 #[cfg(feature = "redis-frontier")]
 mod tests {
-    use kumo::frontier::Frontier;
     use kumo::RedisFrontier;
+    use kumo::frontier::Frontier;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     fn redis_url() -> String {
@@ -25,7 +25,10 @@ mod tests {
     static KEY_COUNTER: AtomicU64 = AtomicU64::new(0);
     fn unique_keys() -> (String, String) {
         let id = KEY_COUNTER.fetch_add(1, Ordering::Relaxed);
-        (format!("kumo_test:queue:{id}"), format!("kumo_test:seen:{id}"))
+        (
+            format!("kumo_test:queue:{id}"),
+            format!("kumo_test:seen:{id}"),
+        )
     }
 
     #[tokio::test]
@@ -50,7 +53,10 @@ mod tests {
         let f = RedisFrontier::new(&redis_url(), &qk, &sk).await.unwrap();
 
         assert!(f.push("https://example.com".into(), 0).await);
-        assert!(!f.push("https://example.com".into(), 0).await, "duplicate should be rejected");
+        assert!(
+            !f.push("https://example.com".into(), 0).await,
+            "duplicate should be rejected"
+        );
         assert_eq!(f.len().await, 1);
 
         f.clear().await.unwrap();

@@ -26,12 +26,16 @@ impl SitemapSpider {
     pub fn new(base_url: impl Into<String>) -> Self {
         let base = base_url.into();
         let sitemap = format!("{}/sitemap.xml", base.trim_end_matches('/'));
-        Self { sitemap_url: sitemap }
+        Self {
+            sitemap_url: sitemap,
+        }
     }
 
     /// Create a spider with a custom sitemap URL.
     pub fn with_sitemap(_base_url: impl Into<String>, sitemap_url: impl Into<String>) -> Self {
-        Self { sitemap_url: sitemap_url.into() }
+        Self {
+            sitemap_url: sitemap_url.into(),
+        }
     }
 
     fn extract_locs(body: &str) -> Vec<String> {
@@ -91,7 +95,10 @@ mod tests {
   <url><loc>https://example.com/page2</loc></url>
 </urlset>"#;
         let locs = SitemapSpider::extract_locs(xml);
-        assert_eq!(locs, vec!["https://example.com/page1", "https://example.com/page2"]);
+        assert_eq!(
+            locs,
+            vec!["https://example.com/page1", "https://example.com/page2"]
+        );
     }
 
     #[test]
