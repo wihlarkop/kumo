@@ -11,6 +11,7 @@ pub mod middleware;
 pub mod pipeline;
 pub mod robots;
 pub mod spider;
+pub mod sitemap;
 pub mod store;
 
 /// Convenience re-exports for writing spiders with minimal `use` statements.
@@ -44,6 +45,7 @@ pub mod prelude {
         UserAgentRotator,
     };
     pub use crate::pipeline::{DropDuplicates, FilterPipeline, Pipeline, RequireFields};
+    pub use crate::sitemap::SitemapSpider;
     pub use crate::spider::{Output, Spider};
     #[cfg(feature = "mysql")]
     pub use crate::store::MySqlStore;
