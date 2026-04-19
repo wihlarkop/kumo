@@ -28,7 +28,7 @@ impl Spider for HttpbinSpider {
             let ua = json["headers"]["User-Agent"].as_str().unwrap_or("?");
             let origin = json["origin"].as_str().unwrap_or("?");
             println!("IP: {origin}  |  UA: {ua}");
-            return Ok(Output::new().item(json)?);
+            return Output::new().item(json);
         }
         Ok(Output::new())
     }

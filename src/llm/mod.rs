@@ -194,13 +194,7 @@ mod tests {
     use std::time::Duration;
 
     fn make_response(body: &str) -> Response {
-        Response {
-            url: "http://example.com".into(),
-            status: 200,
-            headers: HeaderMap::new(),
-            elapsed: Duration::ZERO,
-            body: body.to_string(),
-        }
+        Response::from_parts("http://example.com", 200, body)
     }
 
     struct FakeLlm {
