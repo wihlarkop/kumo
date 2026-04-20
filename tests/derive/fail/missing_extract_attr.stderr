@@ -1,0 +1,5 @@
+error: field is missing #[extract(css = "...")]
+ --> tests/derive/fail/missing_extract_attr.rs:5:5
+  |
+5 |     title: String, // missing #[extract(css = "...")]
+  |     ^^^^^^^^^^^^^

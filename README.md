@@ -18,7 +18,6 @@ An async web crawling framework for Rust — Scrapy for Rust.
 - **Regex selectors** — `res.re(r"\d+")`, `el.re_first(r"...")`, works on `Response`, `Element`, and `ElementList`
 - **JSONPath selectors** — `res.jsonpath("$.store.books[*].title")` for JSON responses (feature: `jsonpath`)
 - **`#[derive(Extract)]`** — generate CSS extraction boilerplate from field annotations (feature: `derive`)
-- **LLM adaptive extraction** — `#[extract(llm_fallback = "hint")]` falls back to an LLM when a selector returns empty (features: `derive` + any LLM provider)
 - **Rate limiting** — token-bucket `RateLimiter` via `governor`
 - **Auto-throttle** — adaptive delay based on EWMA latency and 429/503 back-off
 - **Retry with backoff** — exponential backoff via `.retry(max, base_delay)`
@@ -32,7 +31,6 @@ An async web crawling framework for Rust — Scrapy for Rust.
 - **Multi-spider engine** — run multiple spiders concurrently via `.add_spider()` / `.run_all()`
 - **LLM extraction** — extract structured data without selectors using Claude, OpenAI, Gemini, or Ollama
 - **Browser fetcher** — headless Chromium via chromiumoxide for JS-rendered pages (feature: `browser`)
-- **Stealth mode** — JS fingerprint patches for browser + TLS/HTTP2 fingerprint spoofing via `rquest` (feature: `stealth`)
 - **Distributed frontier** — Redis-backed URL frontier for multi-process crawls (feature: `redis-frontier`)
 - **Persistent frontier** — file-backed URL frontier that survives restarts (feature: `persistence`)
 - **Metrics** — periodic stats snapshots via `tracing::info!` using `.metrics_interval()`
@@ -99,7 +97,7 @@ async fn main() -> Result<(), KumoError> {
 }
 ```
 
-For more examples — rate limiting, database stores, LLM extraction, browser mode, stealth, and all selector types — see the [`examples/`](examples/) folder.
+For more examples — rate limiting, database stores, LLM extraction, browser mode, and all selector types — see the [`examples/`](examples/) folder.
 
 ## Feature Flags
 
@@ -111,10 +109,10 @@ For more examples — rate limiting, database stores, LLM extraction, browser mo
 | `xpath` | `sxd-xpath` | XPath selector on `Response` |
 | `browser` | `chromiumoxide` | Headless Chromium fetcher for JS-rendered pages |
 | `stealth` | `rquest`, `rquest-util` | TLS/HTTP2 fingerprint spoofing + browser stealth patches¹ |
-| `claude` | `rig-core` | `AnthropicClient` for LLM extraction / fallback |
-| `openai` | `rig-core` | `OpenAiClient` for LLM extraction / fallback |
-| `gemini` | `rig-core` | `GeminiClient` for LLM extraction / fallback |
-| `ollama` | `rig-core` | `OllamaClient` for local LLM extraction / fallback |
+| `claude` | `rig-core` | `AnthropicClient` for LLM extraction |
+| `openai` | `rig-core` | `OpenAiClient` for LLM extraction |
+| `gemini` | `rig-core` | `GeminiClient` for LLM extraction |
+| `ollama` | `rig-core` | `OllamaClient` for local LLM extraction |
 | `llm` | `rig-core`, `schemars` | Base LLM traits (implied by all provider flags) |
 | `postgres` | `sqlx` | `PostgresStore` |
 | `sqlite` | `sqlx` | `SqliteStore` |
@@ -123,62 +121,6 @@ For more examples — rate limiting, database stores, LLM extraction, browser mo
 | `redis-frontier` | `redis` | `RedisFrontier` — distributed URL frontier via Redis |
 
 > ¹ The `stealth` feature compiles BoringSSL from source. It requires **cmake** and **nasm** on the build machine (`apt install cmake nasm` on Ubuntu, `brew install cmake nasm` on macOS).
-
-## LLM Adaptive Extraction
-
-Combine `#[derive(Extract)]` with `llm_fallback` to gracefully handle pages where selectors sometimes return nothing:
-
-```rust
-#[derive(Extract, Serialize)]
-struct Product {
-    #[extract(css = "h1.title")]
-    title: String,
-
-    // Falls back to LLM when the selector returns empty
-    #[extract(css = ".price", llm_fallback = "the product price including currency symbol")]
-    price: String,
-
-    #[extract(css = ".stock", llm_fallback)]  // uses field name as the hint
-    stock: Option<String>,
-}
-
-// Without LLM (selector-only):
-let item = Product::extract_from(&el, None).await?;
-
-// With LLM fallback (Claude):
-let item = Product::extract_from(&el, Some(&claude_client)).await?;
-```
-
-## Stealth Mode
-
-Avoid bot detection with two complementary layers:
-
-```rust
-// Layer 1 — Browser: JS patches hide navigator.webdriver, spoof canvas/WebGL, etc.
-let cfg = BrowserConfig::headless().stealth();
-CrawlEngine::builder().browser(cfg).run(MySpider).await?;
-
-// Layer 2 — HTTP: TLS + HTTP/2 fingerprint matches a real Chrome 131 client hello
-// (requires the `stealth` feature with cmake/nasm build tools)
-CrawlEngine::builder()
-    .stealth(StealthProfile::Chrome131)
-    .run(MySpider)
-    .await?;
-
-// Also available: custom reqwest client configuration (no extra deps)
-CrawlEngine::builder()
-    .http_client_builder(|b| b.timeout(Duration::from_secs(10)))
-    .run(MySpider)
-    .await?;
-```
-
-## Roadmap
-
-| Version | Status | Features |
-|---------|--------|---------|
-| v0.1 | released | Spider trait, CrawlEngine, CSS extraction, RateLimiter, AutoThrottle, retry, robots.txt, JsonlStore, JsonStore, StdoutStore |
-| v0.2 | released | PostgreSQL / SQLite / MySQL / CSV stores, LLM extraction (Claude, OpenAI, Gemini, Ollama), regex + JSONPath + XPath selectors, browser fetcher, HTTP cache, link extractor, multi-spider, Redis frontier, persistent frontier, metrics, `#[derive(Extract)]`, LLM adaptive extraction, stealth mode |
-| v0.3 | planned | Item stream API (`CrawlEngine::stream()`), OpenTelemetry metrics, cloud storage backends (S3, GCS, Azure Blob) |
 
 ## License
 

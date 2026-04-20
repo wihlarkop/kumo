@@ -1,0 +1,5 @@
+error: unknown extract attribute `unknown_key` — valid keys: css, attr, re, text, llm_fallback
+ --> tests/derive/fail/unknown_key.rs:5:27
+  |
+5 |     #[extract(css = "h1", unknown_key = "value")]
+  |                           ^^^^^^^^^^^

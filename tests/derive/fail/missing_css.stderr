@@ -1,0 +1,5 @@
+error: #[extract] requires css = "selector"
+ --> tests/derive/fail/missing_css.rs:5:5
+  |
+5 |     #[extract(attr = "href")] // has attr but no css = "..."
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^

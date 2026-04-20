@@ -1,0 +1,7 @@
+error: #[derive(Extract)] only supports structs
+ --> tests/derive/fail/enum_not_supported.rs:4:1
+  |
+4 | / enum Bad {
+5 | |     Variant,
+6 | | }
+  | |_^

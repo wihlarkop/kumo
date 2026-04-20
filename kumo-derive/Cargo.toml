@@ -2,7 +2,13 @@
 name = "kumo-derive"
 version = "0.1.0"
 edition = "2024"
-description = "Proc-macro crate for the kumo web scraping framework"
+description = "Derive macro for the kumo web scraping framework — generates Extract impls from #[extract(...)] field annotations"
+license = "MIT"
+repository = "https://github.com/wihlarkop/kumo"
+homepage = "https://github.com/wihlarkop/kumo"
+keywords = ["web", "scraping", "crawling", "derive", "macro"]
+categories = ["web-programming", "development-tools::procedural-macro-helpers"]
+readme = "../README.md"
 
 [lib]
 proc-macro = true

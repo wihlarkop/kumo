@@ -39,6 +39,9 @@ jobs:
       - name: Run integration tests
         run: cargo test --test integration
 
+      - name: Run derive macro tests
+        run: cargo test --features derive --test derive_macro
+
   feature-matrix:
     name: Feature flags (${{ matrix.features }})
     runs-on: ubuntu-latest
