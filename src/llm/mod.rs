@@ -25,10 +25,13 @@ pub use openai::OpenAiClient;
 
 pub use client::{LlmClient, TokenUsage};
 
+#[cfg(feature = "llm")]
 use std::sync::Arc;
+#[cfg(feature = "llm")]
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Shared atomic counters accumulated across all `extract_json` calls on a client.
+#[cfg(feature = "llm")]
 pub(crate) struct UsageCounters {
     pub input: AtomicU64,
     pub output: AtomicU64,
@@ -37,6 +40,7 @@ pub(crate) struct UsageCounters {
     pub cache_creation_input: AtomicU64,
 }
 
+#[cfg(feature = "llm")]
 impl UsageCounters {
     pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {

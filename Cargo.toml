@@ -14,51 +14,43 @@ readme = "README.md"
 keywords = ["web", "crawling", "scraping", "spider", "async"]
 categories = ["web-programming", "asynchronous"]
 
+# ── Feature flags ─────────────────────────────────────────────────────────────
+
 [features]
 default = []
+
+# Database stores
 postgres = ["dep:sqlx", "sqlx/postgres"]
-sqlite = ["dep:sqlx", "sqlx/sqlite"]
-mysql = ["dep:sqlx", "sqlx/mysql"]
-llm = ["dep:schemars", "dep:rig-core"]
+sqlite   = ["dep:sqlx", "sqlx/sqlite"]
+mysql    = ["dep:sqlx", "sqlx/mysql"]
+
+# LLM extraction (base + per-provider)
+llm    = ["dep:schemars", "dep:rig-core"]
 claude = ["llm"]
 openai = ["llm"]
 gemini = ["llm"]
 ollama = ["llm"]
+
+# Selectors
 jsonpath = ["dep:jsonpath-rust"]
-xpath = ["dep:sxd-xpath", "dep:sxd-document", "dep:sxd_html"]
+xpath    = ["dep:sxd-xpath", "dep:sxd-document", "dep:sxd_html"]
+
+# Fetchers
 browser = ["dep:chromiumoxide", "dep:futures"]
-persistence = []
-redis-frontier = ["dep:redis"]
+stealth = ["dep:rquest", "dep:rquest-util"]   # TLS/HTTP2 fingerprint spoofing; requires cmake + nasm
+
+# Frontiers
+persistence    = []                      # FileFrontier — survives restarts
+redis-frontier = ["dep:redis"]           # RedisFrontier — distributed crawling
+
+# Derive macro
 derive = ["dep:kumo-derive"]
-stealth = ["dep:rquest", "dep:rquest-util"]
+
+# ── Dependencies ──────────────────────────────────────────────────────────────
 
 [dependencies]
-async-trait = "0.1.89"
-bloomfilter = "3.0.1"
-bytes = "1"
-chromiumoxide = { version = "0.9", optional = true }
-futures = { version = "0.3", optional = true, default-features = false, features = [
-  "std",
-] }
-governor = "0.10.4"
-jsonpath-rust = { version = "1.0.4", optional = true }
-sxd-xpath = { version = "0.4", optional = true }
-sxd-document = { version = "0.3", optional = true }
-sxd_html = { version = "0.1", optional = true }
-redis = { version = "1.2.0", optional = true, features = ["tokio-rustls-comp"] }
-regex = "1.12.3"
-reqwest = { version = "0.13.2", features = ["json", "cookies"] }
-scraper = "0.26.0"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-schemars = { version = "1.2.1", optional = true, features = ["derive"] }
-rig-core = { version = "0.35.0", optional = true }
-sqlx = { version = "0.8.6", optional = true, features = [
-  "runtime-tokio-rustls",
-  "json",
-] }
-texting_robots = "0.2.2"
-thiserror = "2.0.18"
+
+# Async runtime
 tokio = { version = "1.52.1", features = [
   "rt-multi-thread",
   "sync",
@@ -67,16 +59,69 @@ tokio = { version = "1.52.1", features = [
   "macros",
   "net",
 ] }
-tracing = "0.1.44"
+async-trait = "0.1.89"
+
+# HTTP
+reqwest = { version = "0.13.2", features = ["json", "cookies"] }
+url     = "2.5.8"
+bytes   = "1.11.1"
+
+# HTML parsing & scraping
+scraper = "0.26.0"
+regex   = "1.12.3"
+
+# Deduplication
+bloomfilter = "3.0.1"
+
+# Serialization
+serde      = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+
+# Error handling
+thiserror = "2.0.18"
+
+# Logging & tracing
+tracing            = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-url = "2.5.8"
+
+# Rate limiting
+governor = "0.10.4"
+
+# Robots.txt
+texting_robots = "0.2.2"
+
+# Optional — derive macro
 kumo-derive = { path = "kumo-derive", optional = true }
-rquest = { version = "5.1.0", optional = true }
+
+# Optional — selectors
+jsonpath-rust = { version = "1.0.4", optional = true }
+sxd-xpath    = { version = "0.4.2",  optional = true }
+sxd-document = { version = "0.3.2",  optional = true }
+sxd_html     = { version = "0.1.2",  optional = true }
+
+# Optional — browser fetcher
+chromiumoxide = { version = "0.9.1", optional = true }
+futures       = { version = "0.3.32", optional = true, default-features = false, features = ["std"] }
+
+# Optional — stealth fetcher (TLS/HTTP2 fingerprint spoofing via BoringSSL)
+rquest      = { version = "5.1.0", optional = true, features = ["cookies"] }
 rquest-util = { version = "2.2.1", optional = true }
 
+# Optional — LLM extraction
+schemars = { version = "1.2.1", optional = true, features = ["derive"] }
+rig-core = { version = "0.35.0", optional = true }
+
+# Optional — database stores
+sqlx  = { version = "0.8.6", optional = true, features = ["runtime-tokio-rustls", "json"] }
+redis = { version = "1.2.0", optional = true, features = ["tokio-rustls-comp"] }
+
+# ── Dev dependencies ──────────────────────────────────────────────────────────
+
 [dev-dependencies]
-mockito = "1.7.2"
-tempfile = "3"
+mockito  = "1.7.2"
+tempfile = "3.27.0"
+
+# ── Examples ──────────────────────────────────────────────────────────────────
 
 [[example]]
 name = "postgres"
@@ -91,16 +136,16 @@ name = "llm_extract"
 required-features = ["claude"]
 
 [[example]]
+name = "llm_fallback"
+required-features = ["derive", "claude"]
+
+[[example]]
 name = "browser"
 required-features = ["browser"]
 
 [[example]]
 name = "books_derive"
 required-features = ["derive"]
-
-[[example]]
-name = "llm_fallback"
-required-features = ["derive", "claude"]
 
 [[example]]
 name = "link_extractor"
