@@ -126,7 +126,9 @@ impl Fetcher for StealthHttpFetcher {
             .unwrap_or("")
             .to_string();
 
-        let is_text = content_type.starts_with("text/") || content_type.contains("application/json") || content_type.is_empty();
+        let is_text = content_type.starts_with("text/")
+            || content_type.contains("application/json")
+            || content_type.is_empty();
 
         let body = if is_text {
             ResponseBody::Text(
