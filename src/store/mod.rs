@@ -1,3 +1,4 @@
+pub mod csv;
 pub mod json;
 pub mod jsonl;
 #[cfg(feature = "mysql")]
@@ -8,6 +9,7 @@ pub mod postgres;
 pub mod sqlite;
 pub mod stdout;
 
+pub use csv::CsvStore;
 pub use json::JsonStore;
 pub use jsonl::JsonlStore;
 #[cfg(feature = "mysql")]

@@ -79,7 +79,7 @@ impl Spider for BooksSpider {
             .and_then(|el| el.attr("href"))
             .map(|href| res.urljoin(&href));
 
-        let mut output = Output::new().items(books)?;
+        let mut output = Output::new().items(books);
         if let Some(url) = next_url {
             output = output.follow(url);
         }
@@ -97,7 +97,7 @@ async fn main() -> Result<(), KumoError> {
         .concurrency(3)
         .middleware(RateLimiter::per_second(2.0))
         .middleware(DefaultHeaders::new().user_agent("kumo/0.1"))
-        .store(JsonStore::new("books.json"))
+        .store(JsonStore::new("books.json")?)
         .crawl_delay(std::time::Duration::from_millis(300))
         .retry(2, std::time::Duration::from_millis(500))
         .respect_robots_txt(true)

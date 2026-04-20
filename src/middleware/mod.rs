@@ -17,7 +17,7 @@ use reqwest::header::HeaderMap;
 
 /// A pending HTTP request, passed through the middleware chain before fetching.
 pub struct Request {
-    pub url: String,
+    url: String,
     pub headers: HeaderMap,
     pub depth: usize,
     /// Proxy URL set by `ProxyRotator` middleware (e.g. `"http://user:pass@host:port"`).
@@ -33,6 +33,11 @@ impl Request {
             depth,
             proxy: None,
         }
+    }
+
+    /// The URL this request will fetch.
+    pub fn url(&self) -> &str {
+        &self.url
     }
 }
 

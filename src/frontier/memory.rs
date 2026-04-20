@@ -11,6 +11,12 @@ pub struct MemoryFrontier {
 
 impl MemoryFrontier {
     /// Create a frontier sized for `expected_urls` unique URLs at 0.1% false-positive rate.
+    ///
+    /// **Note:** The Bloom filter used for deduplication can produce false positives.
+    /// A small fraction (~0.1%) of unique URLs may be incorrectly treated as already-seen
+    /// and silently skipped. For crawls that require 100% URL coverage, use
+    /// [`FileFrontier`](crate::frontier::FileFrontier) (which stores exact URLs) or a
+    /// custom `Frontier` implementation.
     pub fn new(expected_urls: usize) -> Self {
         Self {
             queue: Mutex::new(VecDeque::new()),

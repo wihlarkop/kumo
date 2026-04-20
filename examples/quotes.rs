@@ -52,7 +52,7 @@ impl Spider for QuotesSpider {
             .and_then(|el| el.attr("href"))
             .map(|href| res.urljoin(&href));
 
-        let mut output = Output::new().items(quotes)?;
+        let mut output = Output::new().items(quotes);
         if let Some(url) = next_url {
             output = output.follow(url);
         }
@@ -71,7 +71,7 @@ async fn main() -> Result<(), KumoError> {
         .middleware(
             DefaultHeaders::new().user_agent("kumo/0.1 (+https://github.com/wihlarkop/kumo)"),
         )
-        .store(JsonlStore::new("quotes.jsonl"))
+        .store(JsonlStore::new("quotes.jsonl")?)
         .run(QuotesSpider)
         .await?;
 

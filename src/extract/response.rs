@@ -11,11 +11,11 @@ pub(crate) enum ResponseBody {
 
 /// Wraps an HTTP response and provides ergonomic extraction methods.
 pub struct Response {
-    pub url: String,
-    pub status: u16,
-    pub headers: HeaderMap,
+    url: String,
+    status: u16,
+    headers: HeaderMap,
     /// Wall-clock time from sending the request to reading the full body.
-    pub elapsed: Duration,
+    elapsed: Duration,
     pub(crate) body: ResponseBody,
 }
 
@@ -54,6 +54,17 @@ impl Response {
         }
     }
 
+    /// Load a `Response` from a local HTML file. Useful in spider unit tests.
+    ///
+    /// Returns `Err` if the file cannot be read.
+    pub fn from_file(
+        url: impl Into<String>,
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<Self, std::io::Error> {
+        let body = std::fs::read_to_string(path)?;
+        Ok(Self::from_parts(url, 200, body))
+    }
+
     /// Construct a binary `Response` from raw bytes.
     pub fn from_bytes(url: impl Into<String>, status: u16, bytes: Bytes) -> Self {
         Self {
@@ -63,6 +74,26 @@ impl Response {
             elapsed: Duration::ZERO,
             body: ResponseBody::Bytes(bytes),
         }
+    }
+
+    /// The URL of the fetched page.
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    /// HTTP status code (e.g. 200, 404).
+    pub fn status(&self) -> u16 {
+        self.status
+    }
+
+    /// Response headers.
+    pub fn headers(&self) -> &HeaderMap {
+        &self.headers
+    }
+
+    /// Wall-clock time from sending the request to reading the full body.
+    pub fn elapsed(&self) -> Duration {
+        self.elapsed
     }
 
     /// Returns the body as a UTF-8 string slice, or `None` if the body is binary.
@@ -133,6 +164,62 @@ impl Response {
         Ok(results.into_iter().cloned().collect())
     }
 
+    /// Evaluate an XPath 1.0 expression against the response body.
+    ///
+    /// Returns string values of all matched nodes:
+    /// - **Element nodes** → outer HTML serialization
+    /// - **Text nodes** → the text content (use `text()` axis in your expression)
+    /// - **Attribute nodes** → the attribute value (use `@attr` in your expression)
+    ///
+    /// Returns an empty `Vec` on invalid expressions, no matches, or binary bodies.
+    ///
+    /// # Note
+    ///
+    /// The underlying HTML parser auto-inserts `<tbody>` inside `<table>` elements.
+    /// Use `//table/tbody/tr/td` instead of `//table/tr/td`.
+    ///
+    /// Requires the `xpath` feature flag.
+    ///
+    /// # Examples
+    /// ```rust,ignore
+    /// res.xpath("//h1/text()")                         // all h1 text
+    /// res.xpath("//a/@href")                           // all href values
+    /// res.xpath(r#"//div[@class="price"]/text()"#)     // filtered elements
+    /// res.xpath("//item/title/text()")                 // RSS feed titles
+    /// ```
+    #[cfg(feature = "xpath")]
+    pub fn xpath(&self, expr: &str) -> Vec<String> {
+        let Some(text) = self.text() else {
+            return vec![];
+        };
+
+        let package = sxd_html::parse_html(text);
+        let document = package.as_document();
+
+        let value = match sxd_xpath::evaluate_xpath(&document, expr) {
+            Ok(v) => v,
+            Err(_) => return vec![],
+        };
+
+        match value {
+            sxd_xpath::Value::Nodeset(nodeset) => nodeset
+                .document_order()
+                .into_iter()
+                .filter_map(xpath_node_to_string)
+                .collect(),
+            sxd_xpath::Value::String(s) => vec![s],
+            sxd_xpath::Value::Number(n) => vec![n.to_string()],
+            sxd_xpath::Value::Boolean(b) => vec![b.to_string()],
+        }
+    }
+
+    /// Return the first XPath match as a string, or `None`.
+    /// Requires the `xpath` feature flag.
+    #[cfg(feature = "xpath")]
+    pub fn xpath_first(&self, expr: &str) -> Option<String> {
+        self.xpath(expr).into_iter().next()
+    }
+
     /// Resolve a relative URL against this response's URL.
     pub fn urljoin(&self, path: &str) -> String {
         use url::Url;
@@ -140,6 +227,47 @@ impl Response {
             .and_then(|base| base.join(path))
             .map(|u| u.to_string())
             .unwrap_or_else(|_| path.to_string())
+    }
+}
+
+// ── XPath helpers (only compiled with the "xpath" feature) ────────────────────
+
+#[cfg(feature = "xpath")]
+fn xpath_node_to_string(node: sxd_xpath::nodeset::Node<'_>) -> Option<String> {
+    use sxd_xpath::nodeset::Node;
+    match node {
+        Node::Text(t) => Some(t.text().to_string()),
+        Node::Attribute(a) => Some(a.value().to_string()),
+        Node::Element(e) => Some(xpath_element_to_html(e)),
+        Node::Root(_) | Node::Comment(_) | Node::ProcessingInstruction(_) | Node::Namespace(_) => {
+            None
+        }
+    }
+}
+
+#[cfg(feature = "xpath")]
+fn xpath_element_to_html(el: sxd_document::dom::Element<'_>) -> String {
+    let name = el.name().local_part();
+    let attrs: String = el
+        .attributes()
+        .iter()
+        .map(|a| format!(r#" {}="{}""#, a.name().local_part(), a.value()))
+        .collect();
+    let children: String = el
+        .children()
+        .iter()
+        .filter_map(xpath_child_to_html)
+        .collect();
+    format!("<{name}{attrs}>{children}</{name}>")
+}
+
+#[cfg(feature = "xpath")]
+fn xpath_child_to_html(child: &sxd_document::dom::ChildOfElement<'_>) -> Option<String> {
+    use sxd_document::dom::ChildOfElement;
+    match child {
+        ChildOfElement::Element(e) => Some(xpath_element_to_html(*e)),
+        ChildOfElement::Text(t) => Some(t.text().to_string()),
+        ChildOfElement::Comment(_) | ChildOfElement::ProcessingInstruction(_) => None,
     }
 }
 
@@ -220,5 +348,89 @@ mod tests {
     fn response_jsonpath_invalid_path_returns_error() {
         let res = make_response(r#"{"a":1}"#);
         assert!(res.jsonpath("!!!bad").is_err());
+    }
+
+    #[cfg(feature = "xpath")]
+    mod xpath_tests {
+        use super::*;
+
+        fn page(html: &str) -> Response {
+            Response::from_parts("https://example.com", 200, html)
+        }
+
+        #[test]
+        fn xpath_selects_element_text() {
+            let res = page("<html><body><h1>Hello</h1></body></html>");
+            let results = res.xpath("//h1");
+            assert_eq!(results.len(), 1);
+            assert!(results[0].contains("Hello"), "got: {:?}", results[0]);
+        }
+
+        #[test]
+        fn xpath_extracts_attribute_value() {
+            let res = page(r#"<html><body><a href="/next">Next</a></body></html>"#);
+            let results = res.xpath("//a/@href");
+            assert_eq!(results, vec!["/next"]);
+        }
+
+        #[test]
+        fn xpath_extracts_text_node() {
+            let res = page("<html><body><p>Hello world</p></body></html>");
+            let results = res.xpath("//p/text()");
+            assert_eq!(results, vec!["Hello world"]);
+        }
+
+        #[test]
+        fn xpath_returns_multiple_matches() {
+            let res = page("<html><body><ul><li>a</li><li>b</li><li>c</li></ul></body></html>");
+            let results = res.xpath("//li/text()");
+            assert_eq!(results, vec!["a", "b", "c"]);
+        }
+
+        #[test]
+        fn xpath_returns_empty_on_no_match() {
+            let res = page("<html><body><p>no span here</p></body></html>");
+            assert!(res.xpath("//span").is_empty());
+        }
+
+        #[test]
+        fn xpath_returns_empty_on_invalid_expr() {
+            let res = page("<html><body></body></html>");
+            assert!(res.xpath("!!!bad xpath").is_empty());
+        }
+
+        #[test]
+        fn xpath_returns_empty_for_binary_body() {
+            let res = Response::from_bytes(
+                "https://example.com",
+                200,
+                bytes::Bytes::from_static(b"\xff\xfe"),
+            );
+            assert!(res.xpath("//p").is_empty());
+        }
+
+        #[test]
+        fn xpath_first_returns_first_match() {
+            let res = page("<html><body><p>one</p><p>two</p></body></html>");
+            assert_eq!(res.xpath_first("//p/text()"), Some("one".to_string()));
+        }
+
+        #[test]
+        fn xpath_first_returns_none_on_no_match() {
+            let res = page("<html><body></body></html>");
+            assert_eq!(res.xpath_first("//span"), None);
+        }
+
+        #[test]
+        fn xpath_filtered_by_attribute() {
+            let res = page(
+                r#"<html><body>
+                    <div class="price">$10</div>
+                    <div class="title">Book</div>
+                </body></html>"#,
+            );
+            let results = res.xpath(r#"//div[@class="price"]/text()"#);
+            assert_eq!(results, vec!["$10"]);
+        }
     }
 }

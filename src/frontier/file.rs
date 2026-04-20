@@ -41,9 +41,21 @@ pub struct FileFrontier {
     push_count: AtomicUsize,
 }
 
+impl std::fmt::Debug for FileFrontier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FileFrontier")
+            .field("dir", &self.dir)
+            .field("flush_every", &self.flush_every)
+            .finish()
+    }
+}
+
 impl FileFrontier {
     /// Open a frontier backed by `dir`. If state files exist they are loaded
     /// automatically (resume); otherwise a fresh frontier is created.
+    ///
+    /// Uses exact URL storage for deduplication — unlike [`MemoryFrontier`](crate::frontier::MemoryFrontier),
+    /// there are no false positives; every unique URL will be visited exactly once.
     pub fn open(dir: impl Into<PathBuf>) -> Result<Self, KumoError> {
         let dir = dir.into();
         std::fs::create_dir_all(&dir).map_err(|e| KumoError::store("create frontier dir", e))?;

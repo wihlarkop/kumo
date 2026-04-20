@@ -64,7 +64,7 @@ impl Fetcher for HttpFetcher {
     async fn fetch(&self, request: &Request) -> Result<Response, KumoError> {
         let client = self.client_for(request).await?;
 
-        let mut builder = client.get(&request.url);
+        let mut builder = client.get(request.url());
 
         for (name, value) in &request.headers {
             builder = builder.header(name, value);
@@ -90,7 +90,7 @@ impl Fetcher for HttpFetcher {
         let elapsed = start.elapsed();
 
         Ok(Response::new(
-            request.url.clone(),
+            request.url().to_string(),
             status,
             headers,
             elapsed,

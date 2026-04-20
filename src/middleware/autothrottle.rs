@@ -98,12 +98,12 @@ impl Middleware for AutoThrottle {
     }
 
     async fn after_response(&self, response: &mut Response) -> Result<(), KumoError> {
-        let latency = response.elapsed.as_secs_f64();
+        let latency = response.elapsed().as_secs_f64();
         let mut st = self.state.lock().unwrap();
 
         st.ewma_latency_secs = 0.3 * latency + 0.7 * st.ewma_latency_secs;
 
-        let new_delay = if self.backoff_statuses.contains(&response.status) {
+        let new_delay = if self.backoff_statuses.contains(&response.status()) {
             (st.current_delay * 2).min(self.max_delay)
         } else {
             let target_secs = st.ewma_latency_secs / self.target_concurrency;
@@ -115,7 +115,7 @@ impl Middleware for AutoThrottle {
         tracing::debug!(
             delay_ms = st.current_delay.as_millis(),
             ewma_latency_ms = (st.ewma_latency_secs * 1000.0) as u64,
-            status = response.status,
+            status = response.status(),
             "autothrottle adjusted delay"
         );
         Ok(())

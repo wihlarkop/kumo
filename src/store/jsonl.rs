@@ -15,23 +15,21 @@ pub struct JsonlStore {
 }
 
 impl JsonlStore {
-    pub fn new(path: impl Into<PathBuf>) -> Self {
+    pub fn new(path: impl Into<PathBuf>) -> Result<Self, KumoError> {
         let path = path.into();
         if let Some(parent) = path.parent()
             && !parent.as_os_str().is_empty()
         {
-            std::fs::create_dir_all(parent).unwrap_or_else(|e| {
-                panic!("failed to create directory {}: {}", parent.display(), e)
-            });
+            std::fs::create_dir_all(parent).map_err(|e| KumoError::store("jsonl store", e))?;
         }
         let file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)
-            .unwrap_or_else(|e| panic!("failed to open {}: {}", path.display(), e));
-        Self {
+            .map_err(|e| KumoError::store("jsonl store", e))?;
+        Ok(Self {
             writer: Mutex::new(BufWriter::new(file)),
-        }
+        })
     }
 }
 

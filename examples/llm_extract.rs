@@ -48,7 +48,7 @@ impl Spider for QuotesSpider {
             .and_then(|el| el.attr("href"))
             .map(|href| res.urljoin(&href));
 
-        let mut output = Output::new().items(quotes)?;
+        let mut output = Output::new().items(quotes);
         if let Some(url) = next_url {
             output = output.follow(url);
         }

@@ -13,18 +13,17 @@ pub struct JsonStore {
 }
 
 impl JsonStore {
-    pub fn new(path: impl Into<PathBuf>) -> Self {
+    pub fn new(path: impl Into<PathBuf>) -> Result<Self, KumoError> {
         let path = path.into();
         if let Some(parent) = path.parent()
             && !parent.as_os_str().is_empty()
         {
-            std::fs::create_dir_all(parent)
-                .unwrap_or_else(|e| panic!("failed to create directory: {}", e));
+            std::fs::create_dir_all(parent).map_err(|e| KumoError::store("json store", e))?;
         }
-        Self {
+        Ok(Self {
             path,
             items: Mutex::new(Vec::new()),
-        }
+        })
     }
 }
 

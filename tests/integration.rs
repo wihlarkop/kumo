@@ -56,7 +56,7 @@ impl Spider for SinglePageSpider {
             .first()
             .map(|el| el.text())
             .unwrap_or_default();
-        Ok(Output::new().item(serde_json::json!({ "title": title }))?)
+        Ok(Output::new().item(serde_json::json!({ "title": title })))
     }
 }
 
@@ -75,14 +75,14 @@ impl Spider for PaginatedSpider {
     }
 
     async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
-        let item = serde_json::json!({ "url": res.url });
+        let item = serde_json::json!({ "url": res.url() });
         let next = res
             .css("a.next")
             .first()
             .and_then(|el| el.attr("href"))
             .map(|href| res.urljoin(&href));
 
-        let mut output = Output::new().item(item)?;
+        let mut output = Output::new().item(item);
         if let Some(url) = next {
             output = output.follow(url);
         }
@@ -220,7 +220,7 @@ async fn pipeline_drops_items_missing_required_field() {
             vec![self.0.clone()]
         }
         async fn parse(&self, _res: &Response) -> Result<Output<Self::Item>, KumoError> {
-            Ok(Output::new().item(serde_json::json!({ "body": "hello" }))?)
+            Ok(Output::new().item(serde_json::json!({ "body": "hello" })))
         }
     }
 
@@ -284,4 +284,54 @@ async fn status_retry_retries_on_429_and_succeeds() {
 
     assert_eq!(stats.pages_crawled, 1);
     assert_eq!(stats.errors, 0);
+}
+
+// ── MockFetcher tests ─────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn mock_fetcher_runs_spider_without_network() {
+    use kumo::fetch::MockFetcher;
+
+    struct TitleSpider;
+
+    #[async_trait::async_trait]
+    impl Spider for TitleSpider {
+        type Item = serde_json::Value;
+        fn name(&self) -> &str {
+            "title"
+        }
+        fn start_urls(&self) -> Vec<String> {
+            vec!["https://example.com".into()]
+        }
+        async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
+            let title = res.css("h1").first().map(|e| e.text()).unwrap_or_default();
+            Ok(Output::new().item(serde_json::json!({"title": title})))
+        }
+    }
+
+    let store = VecStore::default();
+    let mock = MockFetcher::new().with_response("https://example.com", 200, "<h1>Test Title</h1>");
+
+    let stats = CrawlEngine::builder()
+        .store(store.clone())
+        .fetcher(mock)
+        .respect_robots_txt(false)
+        .run(TitleSpider)
+        .await
+        .unwrap();
+
+    assert_eq!(stats.pages_crawled, 1);
+    assert_eq!(stats.items_scraped, 1);
+    let items = store.collected();
+    assert_eq!(items[0]["title"], "Test Title");
+}
+
+#[tokio::test]
+async fn response_from_file_loads_html() {
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "<h1>From File</h1>").unwrap();
+    let res = Response::from_file("https://example.com", tmp.path()).unwrap();
+    assert_eq!(res.url(), "https://example.com");
+    assert_eq!(res.status(), 200);
+    assert_eq!(res.text(), Some("<h1>From File</h1>"));
 }

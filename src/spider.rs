@@ -1,4 +1,5 @@
 use crate::{
+    engine::CrawlStats,
     error::{ErrorPolicy, KumoError},
     extract::Response,
 };
@@ -23,15 +24,15 @@ impl<T: serde::Serialize> Output<T> {
     }
 
     /// Add a single item.
-    pub fn item(mut self, item: T) -> Result<Self, KumoError> {
+    pub fn item(mut self, item: T) -> Self {
         self.items.push(item);
-        Ok(self)
+        self
     }
 
     /// Add multiple items.
-    pub fn items(mut self, items: Vec<T>) -> Result<Self, KumoError> {
+    pub fn items(mut self, items: Vec<T>) -> Self {
         self.items.extend(items);
-        Ok(self)
+        self
     }
 
     /// Enqueue a single URL to follow.
@@ -107,6 +108,19 @@ pub trait Spider: Send + Sync {
     fn allowed_domains(&self) -> Vec<&str> {
         vec![]
     }
+
+    /// Called once before the first URL is fetched.
+    /// Use for setup: open connections, log "starting", validate config.
+    async fn open(&self) -> Result<(), KumoError> {
+        Ok(())
+    }
+
+    /// Called once after the crawl finishes (or is interrupted).
+    /// `stats` contains the final crawl statistics.
+    /// Use for cleanup: send notifications, flush custom buffers, log summary.
+    async fn close(&self, _stats: &CrawlStats) -> Result<(), KumoError> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -135,15 +149,13 @@ mod tests {
 
     #[test]
     fn item_adds_to_list() {
-        let output = Output::new().item(Item { value: 42 }).unwrap();
+        let output = Output::new().item(Item { value: 42 });
         assert_eq!(output.items.len(), 1);
     }
 
     #[test]
     fn items_adds_multiple() {
-        let output = Output::new()
-            .items(vec![Item { value: 1 }, Item { value: 2 }])
-            .unwrap();
+        let output = Output::new().items(vec![Item { value: 1 }, Item { value: 2 }]);
         assert_eq!(output.items.len(), 2);
     }
 
@@ -167,7 +179,6 @@ mod tests {
     fn builder_is_chainable() {
         let output = Output::new()
             .item(Item { value: 99 })
-            .unwrap()
             .follow("https://example.com/next");
         assert_eq!(output.items.len(), 1);
         assert_eq!(output.follow.len(), 1);
