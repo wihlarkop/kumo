@@ -134,7 +134,7 @@ impl ResponseExtractExt for crate::extract::Response {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "llm"))]
 mod tests {
     use super::*;
     use crate::extract::Response;

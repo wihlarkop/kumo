@@ -11,7 +11,6 @@ use crate::{
     extract::{Response, response::ResponseBody},
     middleware::Request,
 };
-use rquest::tls::Impersonate;
 use rquest_util::Emulation;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -42,23 +41,6 @@ impl StealthProfile {
             Self::Edge127 => Emulation::Edge127,
         }
     }
-
-    fn user_agent(self) -> &'static str {
-        match self {
-            Self::Chrome131 => {
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-            }
-            Self::Firefox128 => {
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0"
-            }
-            Self::Safari18 => {
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
-            }
-            Self::Edge127 => {
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 Edg/127.0.0.0"
-            }
-        }
-    }
 }
 
 /// HTTP fetcher with TLS + HTTP/2 fingerprint spoofing.
@@ -81,16 +63,11 @@ pub struct StealthHttpFetcher {
 
 impl StealthHttpFetcher {
     pub fn new(profile: StealthProfile) -> Result<Self, KumoError> {
-        let emulation = Emulation::builder()
-            .emulation(profile.to_emulation())
-            .build()
-            .map_err(|e| KumoError::Fetch(e.into()))?;
-
         let client = rquest::Client::builder()
-            .emulation(emulation)
+            .emulation(profile.to_emulation())
             .cookie_store(true)
             .build()
-            .map_err(|e| KumoError::Fetch(e.into()))?;
+            .map_err(|e| KumoError::Browser(format!("stealth client: {e}")))?;
 
         Ok(Self {
             client,
@@ -111,19 +88,14 @@ impl StealthHttpFetcher {
             }
         }
 
-        let emulation = Emulation::builder()
-            .emulation(self.profile.to_emulation())
-            .build()
-            .map_err(|e| KumoError::Fetch(e.into()))?;
-
-        let proxy =
-            rquest::Proxy::all(proxy_url.as_str()).map_err(|e| KumoError::Fetch(e.into()))?;
+        let proxy = rquest::Proxy::all(proxy_url.as_str())
+            .map_err(|e| KumoError::Browser(format!("stealth proxy: {e}")))?;
         let new_client = rquest::Client::builder()
-            .emulation(emulation)
+            .emulation(self.profile.to_emulation())
             .cookie_store(true)
             .proxy(proxy)
             .build()
-            .map_err(|e| KumoError::Fetch(e.into()))?;
+            .map_err(|e| KumoError::Browser(format!("stealth proxy client: {e}")))?;
 
         let mut cache = self.proxy_clients.write().await;
         Ok(cache.entry(proxy_url.clone()).or_insert(new_client).clone())
@@ -137,30 +109,36 @@ impl Fetcher for StealthHttpFetcher {
 
         let mut builder = client.get(request.url());
         for (name, value) in &request.headers {
-            builder = builder.header(name, value);
+            builder = builder.header(name.as_str(), value.to_str().unwrap_or(""));
         }
 
         let start = std::time::Instant::now();
         let res = builder
             .send()
             .await
-            .map_err(|e| KumoError::Fetch(e.into()))?;
+            .map_err(|e| KumoError::Browser(format!("stealth fetch: {e}")))?;
         let status = res.status().as_u16();
-        let headers = res.headers().clone();
 
-        let is_text = headers
-            .get(reqwest::header::CONTENT_TYPE)
+        let content_type = res
+            .headers()
+            .get("content-type")
             .and_then(|v| v.to_str().ok())
-            .map(|ct| ct.starts_with("text/") || ct.contains("application/json"))
-            .unwrap_or(true);
+            .unwrap_or("")
+            .to_string();
+
+        let is_text = content_type.starts_with("text/") || content_type.contains("application/json") || content_type.is_empty();
 
         let body = if is_text {
-            ResponseBody::Text(res.text().await.map_err(|e| KumoError::Fetch(e.into()))?)
+            ResponseBody::Text(
+                res.text()
+                    .await
+                    .map_err(|e| KumoError::Browser(format!("stealth body: {e}")))?,
+            )
         } else {
             ResponseBody::Bytes(
                 res.bytes()
                     .await
-                    .map_err(|e| KumoError::Fetch(e.into()))?
+                    .map_err(|e| KumoError::Browser(format!("stealth body: {e}")))?
                     .into(),
             )
         };
