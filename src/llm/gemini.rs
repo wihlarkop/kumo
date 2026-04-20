@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use rig::client::CompletionClient;
 use rig::completion::{CompletionModel, ToolDefinition};
 use rig::providers::gemini;
-use schemars::Schema;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -86,7 +85,7 @@ impl GeminiClient {
 impl super::LlmClient for GeminiClient {
     async fn extract_json(
         &self,
-        schema: &Schema,
+        schema: &Value,
         html: &str,
     ) -> Result<(Value, TokenUsage), KumoError> {
         let html = if self.strip_scripts {
@@ -108,7 +107,7 @@ impl super::LlmClient for GeminiClient {
         let tool = ToolDefinition {
             name: "extract".to_string(),
             description: "Extract structured data from the provided HTML.".to_string(),
-            parameters: schema.as_value().clone(),
+            parameters: schema.clone(),
         };
 
         let model = self.inner.completion_model(&self.model);

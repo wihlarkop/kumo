@@ -34,6 +34,8 @@ trait ErasedSpider: Send + Sync {
     fn on_error(&self, url: &str, err: &KumoError) -> ErrorPolicy;
     fn max_depth(&self) -> Option<usize>;
     fn allowed_domains(&self) -> Vec<&str>;
+    async fn open(&self) -> Result<(), KumoError>;
+    async fn close(&self, stats: &CrawlStats) -> Result<(), KumoError>;
 }
 
 struct SpiderErased<S>(S);
@@ -71,6 +73,12 @@ impl<S: Spider + 'static> ErasedSpider for SpiderErased<S> {
     fn allowed_domains(&self) -> Vec<&str> {
         self.0.allowed_domains()
     }
+    async fn open(&self) -> Result<(), KumoError> {
+        self.0.open().await
+    }
+    async fn close(&self, stats: &CrawlStats) -> Result<(), KumoError> {
+        self.0.close(stats).await
+    }
 }
 
 type FrontierOverride = Option<Arc<dyn Frontier>>;
@@ -79,12 +87,15 @@ type FrontierOverride = Option<Arc<dyn Frontier>>;
 use crate::fetch::{BrowserConfig, BrowserFetcher};
 
 /// Statistics returned by `CrawlEngine::run` after the crawl finishes.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CrawlStats {
     pub pages_crawled: u64,
     pub items_scraped: u64,
     pub errors: u64,
     pub duration: Duration,
+    pub bytes_downloaded: u64,
+    /// `true` when the crawl was stopped early by Ctrl+C.
+    pub interrupted: bool,
 }
 
 /// Fluent builder for configuring and launching a crawl.
@@ -112,8 +123,16 @@ pub struct CrawlEngine {
     max_urls: usize,
     robots_ttl: Duration,
     metrics_interval: Option<Duration>,
+    spiders: Vec<Arc<dyn ErasedSpider>>,
+    fetcher_override: Option<Arc<dyn Fetcher>>,
+    cache_dir: Option<std::path::PathBuf>,
+    cache_ttl: Option<Duration>,
+    http_client_builder:
+        Option<Box<dyn FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder + Send>>,
     #[cfg(feature = "browser")]
     browser: Option<BrowserConfig>,
+    #[cfg(feature = "stealth")]
+    stealth_profile: Option<crate::fetch::StealthProfile>,
 }
 
 impl Default for CrawlEngine {
@@ -131,8 +150,15 @@ impl Default for CrawlEngine {
             max_urls: 1_000_000,
             robots_ttl: Duration::from_secs(24 * 60 * 60),
             metrics_interval: None,
+            spiders: Vec::new(),
+            fetcher_override: None,
+            cache_dir: None,
+            cache_ttl: None,
+            http_client_builder: None,
             #[cfg(feature = "browser")]
             browser: None,
+            #[cfg(feature = "stealth")]
+            stealth_profile: None,
         }
     }
 }
@@ -224,6 +250,72 @@ impl CrawlEngine {
         self
     }
 
+    /// Register a spider for multi-spider execution via [`run_all`](Self::run_all).
+    /// Each registered spider gets its own URL frontier.
+    pub fn add_spider<S: Spider + 'static>(mut self, spider: S) -> Self {
+        self.spiders.push(Arc::new(SpiderErased(spider)));
+        self
+    }
+
+    /// Use a custom fetcher instead of the default `HttpFetcher`.
+    ///
+    /// Primarily useful for testing — inject a [`MockFetcher`](crate::fetch::MockFetcher)
+    /// to run spiders against predefined HTML without any network access.
+    pub fn fetcher(mut self, f: impl Fetcher + 'static) -> Self {
+        self.fetcher_override = Some(Arc::new(f));
+        self
+    }
+
+    /// Cache HTTP responses to disk in `dir`.
+    ///
+    /// On subsequent runs, cached responses are served directly — no network requests.
+    /// Ideal during development to speed up spider iteration.
+    /// Use `.cache_ttl()` to set an expiry duration.
+    pub fn http_cache(mut self, dir: impl Into<std::path::PathBuf>) -> Result<Self, KumoError> {
+        let dir = dir.into();
+        std::fs::create_dir_all(&dir).map_err(|e| KumoError::store("http cache", e))?;
+        self.cache_dir = Some(dir);
+        Ok(self)
+    }
+
+    /// Expire cached HTTP responses older than `ttl` (used with `.http_cache()`).
+    /// Default: entries never expire.
+    pub fn cache_ttl(mut self, ttl: Duration) -> Self {
+        self.cache_ttl = Some(ttl);
+        self
+    }
+
+    /// Customize the underlying `reqwest::Client` before it is built.
+    ///
+    /// Use this to set custom timeouts, DNS resolvers, TLS configuration, or
+    /// any other reqwest option not exposed by the engine builder.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// CrawlEngine::builder()
+    ///     .http_client_builder(|b| b.timeout(Duration::from_secs(10)))
+    ///     .run(MySpider)
+    ///     .await?;
+    /// ```
+    pub fn http_client_builder(
+        mut self,
+        f: impl FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder + Send + 'static,
+    ) -> Self {
+        self.http_client_builder = Some(Box::new(f));
+        self
+    }
+
+    /// Use a stealth HTTP fetcher with TLS + HTTP/2 fingerprint spoofing.
+    ///
+    /// Requires the `stealth` feature flag (and cmake/NASM build tools for BoringSSL).
+    /// Replaces the default `HttpFetcher` with one backed by `rquest` that reproduces
+    /// the exact TLS client hello of a real browser, defeating JA3/JA4 fingerprinting.
+    #[cfg(feature = "stealth")]
+    pub fn stealth(mut self, profile: crate::fetch::StealthProfile) -> Self {
+        self.stealth_profile = Some(profile);
+        self
+    }
+
     /// Consume the engine, run the spider, and return crawl statistics.
     pub async fn run<S>(self, spider: S) -> Result<CrawlStats, KumoError>
     where
@@ -271,27 +363,76 @@ impl CrawlEngine {
         };
 
         // Single shared reqwest client — used for robots.txt and plain HTTP fetching.
-        let client = reqwest::Client::builder()
-            .cookie_store(true)
-            .user_agent(concat!("kumo/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .map_err(KumoError::Fetch)?;
-
-        // Build the fetcher: browser (CDP) if configured, otherwise plain HTTP.
-        #[cfg(not(feature = "browser"))]
-        let fetcher: Arc<dyn Fetcher> = Arc::new(HttpFetcher::new(
-            client.clone(),
-            concat!("kumo/", env!("CARGO_PKG_VERSION")),
-        ));
-
-        #[cfg(feature = "browser")]
-        let fetcher: Arc<dyn Fetcher> = match self.browser {
-            Some(cfg) => Arc::new(BrowserFetcher::launch(cfg, concurrency).await?),
-            None => Arc::new(HttpFetcher::new(
-                client.clone(),
-                concat!("kumo/", env!("CARGO_PKG_VERSION")),
-            )),
+        let client = {
+            let mut builder = reqwest::Client::builder()
+                .cookie_store(true)
+                .user_agent(concat!("kumo/", env!("CARGO_PKG_VERSION")));
+            if let Some(customize) = self.http_client_builder {
+                builder = customize(builder);
+            }
+            builder.build().map_err(KumoError::Fetch)?
         };
+
+        // Build the fetcher: use override if provided, else stealth/browser/plain HTTP.
+        let fetcher: Arc<dyn Fetcher> = if let Some(f) = self.fetcher_override {
+            f
+        } else {
+            #[cfg(feature = "stealth")]
+            if let Some(profile) = self.stealth_profile {
+                Arc::new(crate::fetch::StealthHttpFetcher::new(profile)?)
+            } else {
+                #[cfg(not(feature = "browser"))]
+                {
+                    Arc::new(HttpFetcher::new(
+                        client.clone(),
+                        concat!("kumo/", env!("CARGO_PKG_VERSION")),
+                    ))
+                }
+                #[cfg(feature = "browser")]
+                {
+                    match self.browser {
+                        Some(cfg) => Arc::new(BrowserFetcher::launch(cfg, concurrency).await?),
+                        None => Arc::new(HttpFetcher::new(
+                            client.clone(),
+                            concat!("kumo/", env!("CARGO_PKG_VERSION")),
+                        )),
+                    }
+                }
+            }
+            #[cfg(not(feature = "stealth"))]
+            {
+                #[cfg(not(feature = "browser"))]
+                {
+                    Arc::new(HttpFetcher::new(
+                        client.clone(),
+                        concat!("kumo/", env!("CARGO_PKG_VERSION")),
+                    ))
+                }
+                #[cfg(feature = "browser")]
+                {
+                    match self.browser {
+                        Some(cfg) => Arc::new(BrowserFetcher::launch(cfg, concurrency).await?),
+                        None => Arc::new(HttpFetcher::new(
+                            client.clone(),
+                            concat!("kumo/", env!("CARGO_PKG_VERSION")),
+                        )),
+                    }
+                }
+            }
+        };
+
+        // Wrap with disk cache if configured.
+        let fetcher: Arc<dyn Fetcher> = if let Some(dir) = self.cache_dir {
+            let mut cf = crate::fetch::CachingFetcher::new(ArcFetcher(fetcher), dir)?;
+            if let Some(ttl) = self.cache_ttl {
+                cf = cf.ttl(ttl);
+            }
+            Arc::new(cf)
+        } else {
+            fetcher
+        };
+
+        spider.open().await?;
 
         info!(spider = spider.name(), "starting crawl");
         for url in spider.start_urls() {
@@ -302,7 +443,7 @@ impl CrawlEngine {
             String,
             usize,
             u32,
-            Result<(u64, Vec<(String, usize)>), KumoError>,
+            Result<(u64, u64, Vec<(String, usize)>), KumoError>,
         );
         let mut join_set: JoinSet<TaskResult> = JoinSet::new();
         let mut stats = CrawlStats::default();
@@ -319,6 +460,7 @@ impl CrawlEngine {
                         pages = s.pages_crawled,
                         items = s.items_scraped,
                         errors = s.errors,
+                        bytes = s.bytes_downloaded,
                         elapsed_secs = s.duration.as_secs_f64(),
                         "[kumo metrics]"
                     );
@@ -326,37 +468,51 @@ impl CrawlEngine {
             })
         });
 
+        let shutdown = async {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                tokio::signal::ctrl_c().await.ok();
+                tracing::info!("ctrl-c received — finishing in-flight tasks then exiting");
+            }
+            #[cfg(target_arch = "wasm32")]
+            std::future::pending::<()>().await
+        };
+        tokio::pin!(shutdown);
+        let mut shutting_down = false;
+
         loop {
-            // Fill up to the concurrency limit.
-            while join_set.len() < concurrency {
-                match frontier.pop().await {
-                    Some((url, depth, retry_count)) => {
-                        // Check robots.txt before dispatching.
-                        if let Some(ref cache) = robots_cache
-                            && !cache.is_allowed(&client, &url).await
-                        {
-                            tracing::debug!(url = %url, "blocked by robots.txt, skipping");
-                            continue;
+            if !shutting_down {
+                // Fill up to the concurrency limit.
+                while join_set.len() < concurrency {
+                    match frontier.pop().await {
+                        Some((url, depth, retry_count)) => {
+                            // Check robots.txt before dispatching.
+                            if let Some(ref cache) = robots_cache
+                                && !cache.is_allowed(&client, &url).await
+                            {
+                                tracing::debug!(url = %url, "blocked by robots.txt, skipping");
+                                continue;
+                            }
+
+                            let ctx = TaskContext {
+                                spider: spider.clone(),
+                                store: store.clone(),
+                                middleware: middleware.clone(),
+                                pipelines: pipelines.clone(),
+                                fetcher: fetcher.clone(),
+                                crawl_delay,
+                                max_retries,
+                                retry_base_delay,
+                            };
+
+                            join_set.spawn(async move {
+                                let result = process_url_with_retry(url.clone(), depth, ctx).await;
+                                (url, depth, retry_count, result)
+                            });
                         }
-
-                        let ctx = TaskContext {
-                            spider: spider.clone(),
-                            store: store.clone(),
-                            middleware: middleware.clone(),
-                            pipelines: pipelines.clone(),
-                            fetcher: fetcher.clone(),
-                            crawl_delay,
-                            max_retries,
-                            retry_base_delay,
-                        };
-
-                        join_set.spawn(async move {
-                            let result = process_url_with_retry(url.clone(), depth, ctx).await;
-                            (url, depth, retry_count, result)
-                        });
+                        // Frontier currently empty — tasks may still add URLs.
+                        None => break,
                     }
-                    // Frontier currently empty — tasks may still add URLs.
-                    None => break,
                 }
             }
 
@@ -365,92 +521,403 @@ impl CrawlEngine {
                 break;
             }
 
-            // Wait for the next task to finish, then process its output.
-            match join_set.join_next().await {
-                Some(Ok((_url, _depth, _retry_count, Ok((item_count, follows))))) => {
-                    stats.pages_crawled += 1;
-                    stats.items_scraped += item_count;
-                    // Keep live snapshot up to date for the metrics task.
-                    if metrics_interval.is_some() {
-                        let mut snap = live_stats.lock().await;
-                        snap.pages_crawled = stats.pages_crawled;
-                        snap.items_scraped = stats.items_scraped;
-                        snap.errors = stats.errors;
-                        snap.duration = start.elapsed();
-                    }
+            tokio::select! {
+                _ = &mut shutdown, if !shutting_down => {
+                    shutting_down = true;
+                    stats.interrupted = true;
+                }
+                result = join_set.join_next() => {
+                    match result {
+                        Some(Ok((_url, _depth, _retry_count, Ok((item_count, bytes, follows))))) => {
+                            stats.pages_crawled += 1;
+                            stats.items_scraped += item_count;
+                            stats.bytes_downloaded += bytes;
+                            // Keep live snapshot up to date for the metrics task.
+                            if metrics_interval.is_some() {
+                                let mut snap = live_stats.lock().await;
+                                snap.pages_crawled = stats.pages_crawled;
+                                snap.items_scraped = stats.items_scraped;
+                                snap.errors = stats.errors;
+                                snap.bytes_downloaded = stats.bytes_downloaded;
+                                snap.duration = start.elapsed();
+                            }
 
-                    for (follow_url, follow_depth) in follows {
-                        // Respect max_depth.
-                        if let Some(max) = spider.max_depth()
-                            && follow_depth > max
-                        {
-                            continue;
-                        }
+                            if !shutting_down {
+                                for (follow_url, follow_depth) in follows {
+                                    // Respect max_depth.
+                                    if let Some(max) = spider.max_depth()
+                                        && follow_depth > max
+                                    {
+                                        continue;
+                                    }
 
-                        // Respect allowed_domains (empty list = allow all).
-                        let allowed = spider.allowed_domains();
-                        if !allowed.is_empty() {
-                            let domain_ok = url::Url::parse(&follow_url)
-                                .ok()
-                                .and_then(|u| u.host_str().map(String::from))
-                                .map(|host| allowed.iter().any(|d| host.ends_with(*d)))
-                                .unwrap_or(false);
-                            if !domain_ok {
-                                continue;
+                                    // Respect allowed_domains (empty list = allow all).
+                                    let allowed = spider.allowed_domains();
+                                    if !allowed.is_empty() {
+                                        let domain_ok = url::Url::parse(&follow_url)
+                                            .ok()
+                                            .and_then(|u| u.host_str().map(String::from))
+                                            .map(|host| allowed.iter().any(|d| host.ends_with(*d)))
+                                            .unwrap_or(false);
+                                        if !domain_ok {
+                                            continue;
+                                        }
+                                    }
+
+                                    frontier.push(follow_url, follow_depth).await;
+                                }
                             }
                         }
+                        Some(Ok((url, depth, retry_count, Err(e)))) => {
+                            stats.errors += 1;
+                            // Notify all middleware of the permanent failure.
+                            for mw in middleware.iter() {
+                                mw.on_error(&url, &e).await;
+                            }
+                            match spider.on_error(&url, &e) {
+                                ErrorPolicy::Abort => {
+                                    error!(url = %url, error = %e, "aborting crawl");
+                                    return Err(e);
+                                }
+                                ErrorPolicy::Retry(max) if retry_count < max => {
+                                    tracing::warn!(
+                                        url = %url,
+                                        attempt = retry_count + 1,
+                                        max,
+                                        error = %e,
+                                        "re-queuing failed URL"
+                                    );
+                                    if !shutting_down {
+                                        frontier.push_force(url, depth, retry_count + 1).await;
+                                    }
+                                }
+                                ErrorPolicy::Retry(_) => {
+                                    error!(url = %url, error = %e, "retry limit reached, skipping URL");
+                                }
+                                ErrorPolicy::Skip => {
+                                    error!(url = %url, error = %e, "skipping URL");
+                                }
+                            }
+                        }
+                        Some(Err(join_err)) => {
+                            stats.errors += 1;
+                            error!(error = %join_err, "crawl task panicked");
+                        }
+                        None => break,
+                    }
 
-                        frontier.push(follow_url, follow_depth).await;
+                    if shutting_down && join_set.is_empty() {
+                        break;
                     }
                 }
-                Some(Ok((url, depth, retry_count, Err(e)))) => {
-                    stats.errors += 1;
-                    // Notify all middleware of the permanent failure.
-                    for mw in middleware.iter() {
-                        mw.on_error(&url, &e).await;
-                    }
-                    match spider.on_error(&url, &e) {
-                        ErrorPolicy::Abort => {
-                            error!(url = %url, error = %e, "aborting crawl");
-                            return Err(e);
-                        }
-                        ErrorPolicy::Retry(max) if retry_count < max => {
-                            tracing::warn!(
-                                url = %url,
-                                attempt = retry_count + 1,
-                                max,
-                                error = %e,
-                                "re-queuing failed URL"
-                            );
-                            frontier.push_force(url, depth, retry_count + 1).await;
-                        }
-                        ErrorPolicy::Retry(_) => {
-                            error!(url = %url, error = %e, "retry limit reached, skipping URL");
-                        }
-                        ErrorPolicy::Skip => {
-                            error!(url = %url, error = %e, "skipping URL");
-                        }
-                    }
-                }
-                Some(Err(join_err)) => {
-                    stats.errors += 1;
-                    error!(error = %join_err, "crawl task panicked");
-                }
-                None => break,
             }
         }
 
         store.flush().await?;
         stats.duration = start.elapsed();
+
+        // close() errors are intentionally not propagated — the crawl and store
+        // flush completed successfully. Cleanup failures are logged only.
+        if let Err(e) = spider.close(&stats).await {
+            tracing::error!(error = %e, "spider::close failed");
+        }
+
+        let rps = if stats.duration.as_secs_f64() > 0.0 {
+            stats.pages_crawled as f64 / stats.duration.as_secs_f64()
+        } else {
+            0.0
+        };
         info!(
             pages = stats.pages_crawled,
             items = stats.items_scraped,
             errors = stats.errors,
+            bytes = stats.bytes_downloaded,
             duration_secs = stats.duration.as_secs_f64(),
+            pages_per_sec = format!("{rps:.1}"),
+            interrupted = stats.interrupted,
             "crawl complete"
         );
 
         Ok(stats)
+    }
+
+    /// Run all spiders registered via [`add_spider`](Self::add_spider) concurrently
+    /// within the same engine (shared middleware, store, and concurrency limit).
+    ///
+    /// Returns one [`CrawlStats`] per spider, in registration order.
+    pub async fn run_all(self) -> Result<Vec<CrawlStats>, KumoError> {
+        if self.spiders.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let start = std::time::Instant::now();
+        let n = self.spiders.len();
+
+        let spider_entries: Vec<(Arc<dyn ErasedSpider>, Arc<dyn Frontier>)> = self
+            .spiders
+            .into_iter()
+            .map(|sp| {
+                let frontier: Arc<dyn Frontier> = Arc::new(MemoryFrontier::new(self.max_urls));
+                (sp, frontier)
+            })
+            .collect();
+
+        let store = self
+            .store
+            .unwrap_or_else(|| Arc::new(crate::store::stdout::StdoutStore));
+        let middleware: Arc<Vec<Arc<dyn Middleware>>> = Arc::new(self.middleware);
+        let pipelines: Arc<Vec<Arc<dyn Pipeline>>> = Arc::new(self.pipelines);
+        let crawl_delay = self.crawl_delay;
+        let concurrency = self.concurrency;
+        let max_retries = self.max_retries;
+        let retry_base_delay = self.retry_base_delay;
+
+        let client = {
+            let mut builder = reqwest::Client::builder()
+                .cookie_store(true)
+                .user_agent(concat!("kumo/", env!("CARGO_PKG_VERSION")));
+            if let Some(customize) = self.http_client_builder {
+                builder = customize(builder);
+            }
+            builder.build().map_err(KumoError::Fetch)?
+        };
+
+        let fetcher: Arc<dyn Fetcher> = if let Some(f) = self.fetcher_override {
+            f
+        } else {
+            #[cfg(feature = "stealth")]
+            if let Some(profile) = self.stealth_profile {
+                Arc::new(crate::fetch::StealthHttpFetcher::new(profile)?)
+            } else {
+                #[cfg(not(feature = "browser"))]
+                {
+                    Arc::new(HttpFetcher::new(
+                        client.clone(),
+                        concat!("kumo/", env!("CARGO_PKG_VERSION")),
+                    ))
+                }
+                #[cfg(feature = "browser")]
+                {
+                    match self.browser {
+                        Some(cfg) => Arc::new(BrowserFetcher::launch(cfg, concurrency).await?),
+                        None => Arc::new(HttpFetcher::new(
+                            client.clone(),
+                            concat!("kumo/", env!("CARGO_PKG_VERSION")),
+                        )),
+                    }
+                }
+            }
+            #[cfg(not(feature = "stealth"))]
+            {
+                #[cfg(not(feature = "browser"))]
+                {
+                    Arc::new(HttpFetcher::new(
+                        client.clone(),
+                        concat!("kumo/", env!("CARGO_PKG_VERSION")),
+                    ))
+                }
+                #[cfg(feature = "browser")]
+                {
+                    match self.browser {
+                        Some(cfg) => Arc::new(BrowserFetcher::launch(cfg, concurrency).await?),
+                        None => Arc::new(HttpFetcher::new(
+                            client.clone(),
+                            concat!("kumo/", env!("CARGO_PKG_VERSION")),
+                        )),
+                    }
+                }
+            }
+        };
+
+        let fetcher: Arc<dyn Fetcher> = if let Some(dir) = self.cache_dir {
+            let mut cf = crate::fetch::CachingFetcher::new(ArcFetcher(fetcher), dir)?;
+            if let Some(ttl) = self.cache_ttl {
+                cf = cf.ttl(ttl);
+            }
+            Arc::new(cf)
+        } else {
+            fetcher
+        };
+
+        let robots_cache = if self.respect_robots {
+            Some(Arc::new(RobotsCache::with_ttl(
+                concat!("kumo/", env!("CARGO_PKG_VERSION")),
+                self.robots_ttl,
+            )))
+        } else {
+            None
+        };
+
+        for (spider, _) in &spider_entries {
+            spider.open().await?;
+        }
+
+        for (spider, frontier) in &spider_entries {
+            info!(spider = spider.name(), "registering spider for multi-crawl");
+            for url in spider.start_urls() {
+                frontier.push(url, 0).await;
+            }
+        }
+
+        type MultiTaskResult = (
+            usize,
+            String,
+            usize,
+            u32,
+            Result<(u64, u64, Vec<(String, usize)>), KumoError>,
+        );
+        let mut join_set: JoinSet<MultiTaskResult> = JoinSet::new();
+        let mut stats_vec: Vec<CrawlStats> = (0..n).map(|_| CrawlStats::default()).collect();
+
+        let shutdown = async {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                tokio::signal::ctrl_c().await.ok();
+                tracing::info!("ctrl-c received — finishing in-flight tasks then exiting");
+            }
+            #[cfg(target_arch = "wasm32")]
+            std::future::pending::<()>().await
+        };
+        tokio::pin!(shutdown);
+        let mut shutting_down = false;
+        let mut fill_cursor = 0usize;
+
+        loop {
+            if !shutting_down {
+                'fill: while join_set.len() < concurrency {
+                    let mut any_popped = false;
+                    for attempt in 0..n {
+                        let idx = (fill_cursor + attempt) % n;
+                        let (spider, frontier) = &spider_entries[idx];
+                        if let Some((url, depth, retry_count)) = frontier.pop().await {
+                            if let Some(ref cache) = robots_cache
+                                && !cache.is_allowed(&client, &url).await
+                            {
+                                tracing::debug!(url = %url, "blocked by robots.txt, skipping");
+                                continue;
+                            }
+                            let ctx = TaskContext {
+                                spider: spider.clone(),
+                                store: store.clone(),
+                                middleware: middleware.clone(),
+                                pipelines: pipelines.clone(),
+                                fetcher: fetcher.clone(),
+                                crawl_delay,
+                                max_retries,
+                                retry_base_delay,
+                            };
+                            join_set.spawn(async move {
+                                let result = process_url_with_retry(url.clone(), depth, ctx).await;
+                                (idx, url, depth, retry_count, result)
+                            });
+                            fill_cursor = idx + 1;
+                            any_popped = true;
+                            break;
+                        }
+                    }
+                    if !any_popped {
+                        break 'fill;
+                    }
+                }
+            }
+
+            if join_set.is_empty() {
+                break;
+            }
+
+            tokio::select! {
+                _ = &mut shutdown, if !shutting_down => {
+                    shutting_down = true;
+                    for s in &mut stats_vec { s.interrupted = true; }
+                }
+                result = join_set.join_next() => {
+                    match result {
+                        Some(Ok((spider_idx, _url, _depth, _retry_count, Ok((item_count, bytes, follows))))) => {
+                            let stats = &mut stats_vec[spider_idx];
+                            stats.pages_crawled += 1;
+                            stats.items_scraped += item_count;
+                            stats.bytes_downloaded += bytes;
+                            if !shutting_down {
+                                let (spider, frontier) = &spider_entries[spider_idx];
+                                for (follow_url, follow_depth) in follows {
+                                    if let Some(max) = spider.max_depth()
+                                        && follow_depth > max
+                                    {
+                                        continue;
+                                    }
+                                    let allowed = spider.allowed_domains();
+                                    if !allowed.is_empty() {
+                                        let ok = url::Url::parse(&follow_url)
+                                            .ok()
+                                            .and_then(|u| u.host_str().map(String::from))
+                                            .map(|host| allowed.iter().any(|d| host.ends_with(*d)))
+                                            .unwrap_or(false);
+                                        if !ok {
+                                            continue;
+                                        }
+                                    }
+                                    frontier.push(follow_url, follow_depth).await;
+                                }
+                            }
+                        }
+                        Some(Ok((spider_idx, url, depth, retry_count, Err(e)))) => {
+                            stats_vec[spider_idx].errors += 1;
+                            for mw in middleware.iter() {
+                                mw.on_error(&url, &e).await;
+                            }
+                            let (spider, frontier) = &spider_entries[spider_idx];
+                            match spider.on_error(&url, &e) {
+                                ErrorPolicy::Abort => {
+                                    error!(url = %url, error = %e, "aborting crawl");
+                                    return Err(e);
+                                }
+                                ErrorPolicy::Retry(max) if retry_count < max => {
+                                    if !shutting_down {
+                                        frontier.push_force(url, depth, retry_count + 1).await;
+                                    }
+                                }
+                                _ => {
+                                    error!(url = %url, error = %e, "skipping URL");
+                                }
+                            }
+                        }
+                        Some(Err(join_err)) => {
+                            error!(error = %join_err, "crawl task panicked");
+                        }
+                        None => break,
+                    }
+                    if shutting_down && join_set.is_empty() {
+                        break;
+                    }
+                }
+            }
+        }
+
+        store.flush().await?;
+        let elapsed = start.elapsed();
+
+        for (i, (spider, _)) in spider_entries.iter().enumerate() {
+            stats_vec[i].duration = elapsed;
+            if let Err(e) = spider.close(&stats_vec[i]).await {
+                tracing::error!(spider = spider.name(), error = %e, "spider::close failed");
+            }
+            let rps = if elapsed.as_secs_f64() > 0.0 {
+                stats_vec[i].pages_crawled as f64 / elapsed.as_secs_f64()
+            } else {
+                0.0
+            };
+            info!(
+                spider = spider.name(),
+                pages = stats_vec[i].pages_crawled,
+                items = stats_vec[i].items_scraped,
+                errors = stats_vec[i].errors,
+                bytes = stats_vec[i].bytes_downloaded,
+                pages_per_sec = format!("{rps:.1}"),
+                "spider complete"
+            );
+        }
+
+        Ok(stats_vec)
     }
 }
 
@@ -467,12 +934,12 @@ struct TaskContext {
 }
 
 /// Fetch, run middleware, parse, and store items for a single URL.
-/// Returns (items_stored, follow_urls_with_depth).
+/// Returns (items_stored, bytes_downloaded, follow_urls_with_depth).
 async fn process_url(
     url: &str,
     depth: usize,
     ctx: &TaskContext,
-) -> Result<(u64, Vec<(String, usize)>), KumoError> {
+) -> Result<(u64, u64, Vec<(String, usize)>), KumoError> {
     if let Some(delay) = ctx.crawl_delay {
         tokio::time::sleep(delay).await;
     }
@@ -483,6 +950,7 @@ async fn process_url(
     }
 
     let mut response = ctx.fetcher.fetch(&request).await?;
+    let bytes_downloaded = response.bytes().len() as u64;
 
     for mw in ctx.middleware.iter() {
         mw.after_response(&mut response).await?;
@@ -509,7 +977,7 @@ async fn process_url(
 
     let follows = output.follow.into_iter().map(|u| (u, depth + 1)).collect();
 
-    Ok((item_count, follows))
+    Ok((item_count, bytes_downloaded, follows))
 }
 
 /// Wraps `process_url` with exponential-backoff retry.
@@ -517,8 +985,9 @@ async fn process_url_with_retry(
     url: String,
     depth: usize,
     ctx: TaskContext,
-) -> Result<(u64, Vec<(String, usize)>), KumoError> {
-    for attempt in 0..=ctx.max_retries {
+) -> Result<(u64, u64, Vec<(String, usize)>), KumoError> {
+    let mut attempt = 0u32;
+    loop {
         match process_url(&url, depth, &ctx).await {
             Ok(result) => return Ok(result),
             Err(e) if attempt < ctx.max_retries => {
@@ -536,9 +1005,19 @@ async fn process_url_with_retry(
                     "retrying URL"
                 );
                 tokio::time::sleep(delay).await;
+                attempt += 1;
             }
             Err(e) => return Err(e),
         }
     }
-    unreachable!()
+}
+
+/// Newtype so `Arc<dyn Fetcher>` can be passed where `impl Fetcher + 'static` is required.
+struct ArcFetcher(Arc<dyn Fetcher>);
+
+#[async_trait::async_trait]
+impl Fetcher for ArcFetcher {
+    async fn fetch(&self, request: &crate::middleware::Request) -> Result<Response, KumoError> {
+        self.0.fetch(request).await
+    }
 }

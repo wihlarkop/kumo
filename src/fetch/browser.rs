@@ -21,6 +21,8 @@ enum WaitStrategy {
     Millis(u64),
 }
 
+static STEALTH_PATCHES_JS: &str = include_str!("stealth_patches.js");
+
 /// Configuration for the headless/headed browser fetcher.
 ///
 /// ```rust,ignore
@@ -35,6 +37,9 @@ pub struct BrowserConfig {
     viewport: (u32, u32),
     user_agent: Option<String>,
     executable: Option<PathBuf>,
+    proxy: Option<String>,
+    /// When `true`, inject stealth JS patches and add anti-detection launch args.
+    stealth: bool,
 }
 
 impl BrowserConfig {
@@ -47,6 +52,8 @@ impl BrowserConfig {
             viewport: (1920, 1080),
             user_agent: None,
             executable: None,
+            proxy: None,
+            stealth: false,
         }
     }
 
@@ -94,6 +101,31 @@ impl BrowserConfig {
         self.executable = Some(path);
         self
     }
+
+    /// Route all browser traffic through a static HTTP/HTTPS proxy.
+    ///
+    /// Pass the proxy URL in the form `http://host:port` or `socks5://host:port`.
+    /// Note: per-request proxy rotation via `ProxyRotator` middleware is not
+    /// supported in browser mode — use this instead.
+    pub fn proxy(mut self, url: impl Into<String>) -> Self {
+        self.proxy = Some(url.into());
+        self
+    }
+
+    /// Enable stealth mode: inject JS fingerprint patches on every page and add
+    /// anti-detection Chrome launch arguments.
+    ///
+    /// Patches applied:
+    /// - `navigator.webdriver` → `undefined`
+    /// - Fake non-empty `navigator.plugins` array
+    /// - `window.chrome` stub
+    /// - `navigator.permissions.query` patch (returns `"prompt"` for notifications)
+    /// - Canvas fingerprint noise
+    /// - WebGL vendor/renderer spoof
+    pub fn stealth(mut self) -> Self {
+        self.stealth = true;
+        self
+    }
 }
 
 /// Fetcher that drives a real Chromium browser via the Chrome DevTools Protocol.
@@ -122,6 +154,18 @@ impl BrowserFetcher {
 
         if let Some(ref path) = config.executable {
             builder = builder.chrome_executable(path);
+        }
+
+        if let Some(ref proxy_url) = config.proxy {
+            builder = builder.arg(format!("--proxy-server={proxy_url}"));
+        }
+
+        if config.stealth {
+            builder = builder
+                .arg("--disable-blink-features=AutomationControlled")
+                .arg("--disable-features=IsolateOrigins,site-per-process")
+                .arg("--no-default-browser-check")
+                .arg("--disable-infobars");
         }
 
         let cdp_config = builder
@@ -160,10 +204,10 @@ impl Fetcher for BrowserFetcher {
             .await
             .map_err(|e| KumoError::Browser(e.to_string()))?;
 
-        if request.proxy.is_some() {
+        if request.proxy.is_some() && self.config.proxy.is_none() {
             tracing::warn!(
-                "BrowserFetcher does not support per-request proxy rotation. \
-                 Set a static proxy via BrowserConfig::proxy() or remove ProxyRotator \
+                "BrowserFetcher does not support per-request proxy rotation via ProxyRotator. \
+                 Use BrowserConfig::proxy(url) to set a static proxy, or remove ProxyRotator \
                  when using the browser fetcher."
             );
         }
@@ -182,14 +226,30 @@ impl Fetcher for BrowserFetcher {
                 .get("user-agent")
                 .and_then(|v| v.to_str().ok())
         });
-        if let Some(ua_str) = ua {
+
+        if self.config.stealth {
+            // Inject JS fingerprint patches before any page scripts run.
+            page.evaluate_on_new_document(STEALTH_PATCHES_JS)
+                .await
+                .map_err(|e| KumoError::Browser(e.to_string()))?;
+
+            // chromiumoxide built-in stealth shim — always apply in stealth mode.
+            let stealth_ua = ua.unwrap_or(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
+                 AppleWebKit/537.36 (KHTML, like Gecko) \
+                 Chrome/131.0.0.0 Safari/537.36",
+            );
+            page.enable_stealth_mode_with_agent(stealth_ua)
+                .await
+                .map_err(|e| KumoError::Browser(e.to_string()))?;
+        } else if let Some(ua_str) = ua {
             page.enable_stealth_mode_with_agent(ua_str)
                 .await
                 .map_err(|e| KumoError::Browser(e.to_string()))?;
         }
 
         // Navigate to the target URL.
-        page.goto(&request.url)
+        page.goto(request.url())
             .await
             .map_err(|e| KumoError::Browser(e.to_string()))?;
 
@@ -220,7 +280,7 @@ impl Fetcher for BrowserFetcher {
         page.close().await.ok();
 
         Ok(Response::new(
-            request.url.clone(),
+            request.url().to_string(),
             200,
             HeaderMap::new(),
             elapsed,

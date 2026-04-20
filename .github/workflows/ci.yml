@@ -47,6 +47,7 @@ jobs:
       matrix:
         features:
           - ""
+          - "derive"
           - "sqlite"
           - "jsonpath"
           - "persistence"
@@ -65,7 +66,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-feat-${{ matrix.features || 'default' }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-feat-${{ matrix.features || 'default' }}-${{
+            hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-feat-
 
       - name: Build
@@ -85,6 +87,34 @@ jobs:
           else
             cargo test --features "$FEATURES"
           fi
+
+  stealth:
+    name: Stealth feature (BoringSSL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install BoringSSL build deps
+        run: sudo apt-get update && sudo apt-get install -y cmake nasm
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-stealth-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-stealth-
+
+      - name: Check stealth feature
+        run: cargo check --features stealth
+
+      - name: Check stealth + browser
+        run: cargo check --features stealth,browser
 
   lint:
     name: Clippy & Format

@@ -1,3 +1,7 @@
+// Cached root selector — avoids recompiling "*" on every attr/inner_html call.
+static ROOT_SELECTOR: std::sync::LazyLock<scraper::Selector> =
+    std::sync::LazyLock::new(|| scraper::Selector::parse("*").unwrap());
+
 pub(crate) fn re_matches(text: &str, pattern: &str) -> Vec<String> {
     let Ok(re) = regex::Regex::new(pattern) else {
         return vec![];
@@ -13,6 +17,7 @@ pub(crate) fn re_matches(text: &str, pattern: &str) -> Vec<String> {
 }
 
 /// A list of HTML elements matched by a CSS selector.
+#[derive(Clone, Debug)]
 pub struct ElementList {
     pub(crate) elements: Vec<Element>,
 }
@@ -52,6 +57,7 @@ impl ElementList {
 ///
 /// Stores the element's outer HTML so it can be queried independently
 /// of the parent document lifetime.
+#[derive(Clone, Debug)]
 pub struct Element {
     pub(crate) outer_html: String,
 }
@@ -66,10 +72,9 @@ impl Element {
     /// Get the value of an attribute by name.
     pub fn attr(&self, name: &str) -> Option<String> {
         let fragment = scraper::Html::parse_fragment(&self.outer_html);
-        let sel = scraper::Selector::parse("*").unwrap();
         // parse_fragment wraps content in html>body; skip those synthetic nodes.
         fragment
-            .select(&sel)
+            .select(&ROOT_SELECTOR)
             .find(|el| !matches!(el.value().name(), "html" | "body"))
             .and_then(|el| el.value().attr(name))
             .map(String::from)
@@ -103,12 +108,16 @@ impl Element {
         self.re(pattern).into_iter().next()
     }
 
+    /// Get the outer HTML of this element (the element itself and its children).
+    pub fn outer_html(&self) -> &str {
+        &self.outer_html
+    }
+
     /// Get the inner HTML of this element (children only, no outer tag).
     pub fn inner_html(&self) -> String {
         let fragment = scraper::Html::parse_fragment(&self.outer_html);
-        let sel = scraper::Selector::parse("*").unwrap();
         fragment
-            .select(&sel)
+            .select(&ROOT_SELECTOR)
             .find(|el| !matches!(el.value().name(), "html" | "body"))
             .map(|el| el.inner_html())
             .unwrap_or_default()

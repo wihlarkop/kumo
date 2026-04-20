@@ -7,7 +7,6 @@ pub mod frontier;
 pub use frontier::FileFrontier;
 #[cfg(feature = "redis-frontier")]
 pub use frontier::RedisFrontier;
-#[cfg(feature = "llm")]
 pub mod llm;
 pub mod middleware;
 pub mod pipeline;
@@ -24,14 +23,19 @@ pub mod store;
 pub mod prelude {
     pub use crate::engine::{CrawlEngine, CrawlStats};
     pub use crate::error::{ErrorPolicy, KumoError};
+    #[cfg(feature = "derive")]
+    pub use crate::extract::Extract;
     #[cfg(feature = "jsonpath")]
     pub use crate::extract::JsonPathExtractor;
     pub use crate::extract::{
-        CssExtractor, Element, ElementList, ExtractedNode, Extractor, RegexExtractor, Response,
-        ValueExtractor,
+        CssExtractor, Element, ElementList, ExtractedNode, Extractor, LinkExtractor,
+        RegexExtractor, Response, ValueExtractor,
     };
     #[cfg(feature = "browser")]
     pub use crate::fetch::{BrowserConfig, BrowserFetcher};
+    pub use crate::fetch::{CachingFetcher, MockFetcher};
+    #[cfg(feature = "stealth")]
+    pub use crate::fetch::{StealthHttpFetcher, StealthProfile};
     #[cfg(feature = "claude")]
     pub use crate::llm::AnthropicClient;
     #[cfg(feature = "gemini")]
@@ -41,7 +45,8 @@ pub mod prelude {
     #[cfg(feature = "openai")]
     pub use crate::llm::OpenAiClient;
     #[cfg(feature = "llm")]
-    pub use crate::llm::{ResponseExtractExt, TokenUsage};
+    pub use crate::llm::ResponseExtractExt;
+    pub use crate::llm::{LlmClient, TokenUsage};
     pub use crate::middleware::{
         AutoThrottle, DefaultHeaders, Middleware, ProxyRotator, RateLimiter, Request, StatusRetry,
         UserAgentRotator,
@@ -55,5 +60,7 @@ pub mod prelude {
     pub use crate::store::PostgresStore;
     #[cfg(feature = "sqlite")]
     pub use crate::store::SqliteStore;
-    pub use crate::store::{JsonStore, JsonlStore, StdoutStore};
+    pub use crate::store::{CsvStore, JsonStore, JsonlStore, StdoutStore};
+    #[cfg(feature = "derive")]
+    pub use kumo_derive::Extract as ExtractDerive;
 }

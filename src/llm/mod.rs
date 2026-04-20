@@ -1,3 +1,4 @@
+pub mod client;
 pub mod models;
 pub mod prompt;
 
@@ -22,32 +23,10 @@ pub use ollama::OllamaClient;
 #[cfg(feature = "openai")]
 pub use openai::OpenAiClient;
 
-use crate::{error::KumoError, extract::Response};
-use schemars::Schema;
+pub use client::{LlmClient, TokenUsage};
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-
-/// Token usage returned by a single LLM extraction call.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct TokenUsage {
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub total_tokens: u64,
-    pub cached_input_tokens: u64,
-    pub cache_creation_input_tokens: u64,
-}
-
-impl TokenUsage {
-    pub(crate) fn from_rig(u: &rig::completion::Usage) -> Self {
-        Self {
-            input_tokens: u.input_tokens,
-            output_tokens: u.output_tokens,
-            total_tokens: u.total_tokens,
-            cached_input_tokens: u.cached_input_tokens,
-            cache_creation_input_tokens: u.cache_creation_input_tokens,
-        }
-    }
-}
 
 /// Shared atomic counters accumulated across all `extract_json` calls on a client.
 pub(crate) struct UsageCounters {
@@ -91,76 +70,45 @@ impl UsageCounters {
     }
 }
 
-/// Provider-agnostic LLM client for structured data extraction.
-///
-/// Implement this trait to plug in any LLM provider not shipped with kumo.
-///
-/// # Example (custom provider)
-/// ```rust,ignore
-/// struct MyLlm;
-///
-/// #[async_trait::async_trait]
-/// impl LlmClient for MyLlm {
-///     async fn extract_json(
-///         &self,
-///         schema: &Schema,
-///         html: &str,
-///     ) -> Result<(serde_json::Value, TokenUsage), KumoError> {
-///         // call your provider, return the JSON value and token usage
-///         Ok((value, TokenUsage::default()))
-///     }
-/// }
-/// ```
-#[async_trait::async_trait]
-pub trait LlmClient: Send + Sync {
-    /// Given a JSON schema and HTML, return the extracted data and token usage.
-    async fn extract_json(
-        &self,
-        schema: &Schema,
-        html: &str,
-    ) -> Result<(serde_json::Value, TokenUsage), KumoError>;
+#[cfg(feature = "llm")]
+impl TokenUsage {
+    pub(crate) fn from_rig(u: &rig::completion::Usage) -> Self {
+        Self {
+            input_tokens: u.input_tokens,
+            output_tokens: u.output_tokens,
+            total_tokens: u.total_tokens,
+            cached_input_tokens: u.cached_input_tokens,
+            cache_creation_input_tokens: u.cache_creation_input_tokens,
+        }
+    }
 }
 
 /// Extension trait that adds `.extract::<T>()` and `.extract_with_usage::<T>()` to `Response`.
 ///
 /// Imported via `use kumo::prelude::*` when the `llm` feature is enabled.
+#[cfg(feature = "llm")]
 #[async_trait::async_trait]
 pub trait ResponseExtractExt {
     /// Extract structured data of type `T` from this response using an LLM.
     ///
     /// `T` must derive both `serde::Deserialize` and `schemars::JsonSchema`.
-    /// Doc comments on fields are included in the schema as extraction hints.
-    ///
-    /// Token usage is recorded on the client's internal counter (readable via
-    /// `client.total_usage()`) but not returned here. Use [`extract_with_usage`]
-    /// if you need per-call token counts.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// let quotes: Vec<Quote> = res.extract(&claude_client).await?;
-    /// ```
-    async fn extract<T>(&self, client: &dyn LlmClient) -> Result<T, KumoError>
+    async fn extract<T>(&self, client: &dyn LlmClient) -> Result<T, crate::error::KumoError>
     where
         T: serde::de::DeserializeOwned + schemars::JsonSchema + Send;
 
     /// Extract structured data and return the token usage for this call.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// let (quotes, usage) = res.extract_with_usage::<Vec<Quote>>(&claude_client).await?;
-    /// println!("tokens: {} in / {} out", usage.input_tokens, usage.output_tokens);
-    /// ```
     async fn extract_with_usage<T>(
         &self,
         client: &dyn LlmClient,
-    ) -> Result<(T, TokenUsage), KumoError>
+    ) -> Result<(T, TokenUsage), crate::error::KumoError>
     where
         T: serde::de::DeserializeOwned + schemars::JsonSchema + Send;
 }
 
+#[cfg(feature = "llm")]
 #[async_trait::async_trait]
-impl ResponseExtractExt for Response {
-    async fn extract<T>(&self, client: &dyn LlmClient) -> Result<T, KumoError>
+impl ResponseExtractExt for crate::extract::Response {
+    async fn extract<T>(&self, client: &dyn LlmClient) -> Result<T, crate::error::KumoError>
     where
         T: serde::de::DeserializeOwned + schemars::JsonSchema + Send,
     {
@@ -171,15 +119,17 @@ impl ResponseExtractExt for Response {
     async fn extract_with_usage<T>(
         &self,
         client: &dyn LlmClient,
-    ) -> Result<(T, TokenUsage), KumoError>
+    ) -> Result<(T, TokenUsage), crate::error::KumoError>
     where
         T: serde::de::DeserializeOwned + schemars::JsonSchema + Send,
     {
         let schema = schemars::schema_for!(T);
+        let schema_json = serde_json::to_value(&schema)
+            .map_err(|e| crate::error::KumoError::Llm(format!("schema serialization: {e}")))?;
         let body_text = self.text().unwrap_or("");
-        let (json, usage) = client.extract_json(&schema, body_text).await?;
+        let (json, usage) = client.extract_json(&schema_json, body_text).await?;
         let value = serde_json::from_value(json)
-            .map_err(|e| KumoError::Llm(format!("schema mismatch: {e}")))?;
+            .map_err(|e| crate::error::KumoError::Llm(format!("schema mismatch: {e}")))?;
         Ok((value, usage))
     }
 }
@@ -223,9 +173,9 @@ mod tests {
     impl LlmClient for FakeLlm {
         async fn extract_json(
             &self,
-            _schema: &Schema,
+            _schema: &serde_json::Value,
             _html: &str,
-        ) -> Result<(serde_json::Value, TokenUsage), KumoError> {
+        ) -> Result<(serde_json::Value, TokenUsage), crate::error::KumoError> {
             Ok((self.returns.clone(), self.usage))
         }
     }
