@@ -116,8 +116,7 @@ pub struct CrawlEngine {
     store: Option<Arc<dyn ItemStore>>,
     crawl_delay: Option<Duration>,
     respect_robots: bool,
-    max_retries: u32,
-    retry_base_delay: Duration,
+    retry_policy: crate::retry::RetryPolicy,
     frontier: FrontierOverride,
     /// Expected unique URL count for Bloom filter sizing (default: 1_000_000).
     max_urls: usize,
@@ -145,8 +144,7 @@ impl Default for CrawlEngine {
             respect_robots: true,
             pipelines: Vec::new(),
             frontier: None,
-            max_retries: 0,
-            retry_base_delay: Duration::from_millis(500),
+            retry_policy: crate::retry::RetryPolicy::new(0),
             max_urls: 1_000_000,
             robots_ttl: Duration::from_secs(24 * 60 * 60),
             metrics_interval: None,
@@ -204,12 +202,28 @@ impl CrawlEngine {
         self
     }
 
-    /// Retry failed fetches up to `max_attempts` times with exponential backoff.
+    /// Set a retry policy with full control over attempts, delay, jitter, and status filtering.
     ///
-    /// Delay between attempts: `base_delay * 2^attempt` (500ms, 1s, 2s, …).
+    /// # Example
+    /// ```rust,ignore
+    /// .retry_policy(
+    ///     RetryPolicy::new(3)
+    ///         .base_delay(Duration::from_millis(200))
+    ///         .max_delay(Duration::from_secs(30))
+    ///         .jitter(true)
+    ///         .on_status(429)
+    ///         .on_status(503),
+    /// )
+    /// ```
+    pub fn retry_policy(mut self, policy: crate::retry::RetryPolicy) -> Self {
+        self.retry_policy = policy;
+        self
+    }
+
+    /// Convenience wrapper: retry up to `max_attempts` times with exponential backoff
+    /// starting at `base_delay`. Retries on any transient HTTP or network error.
     pub fn retry(mut self, max_attempts: u32, base_delay: Duration) -> Self {
-        self.max_retries = max_attempts;
-        self.retry_base_delay = base_delay;
+        self.retry_policy = crate::retry::RetryPolicy::new(max_attempts).base_delay(base_delay);
         self
     }
 
@@ -351,8 +365,7 @@ impl CrawlEngine {
         }
         let crawl_delay = self.crawl_delay;
         let concurrency = self.concurrency;
-        let max_retries = self.max_retries;
-        let retry_base_delay = self.retry_base_delay;
+        let retry_policy = self.retry_policy;
         let robots_cache = if self.respect_robots {
             Some(Arc::new(RobotsCache::with_ttl(
                 concat!("kumo/", env!("CARGO_PKG_VERSION")),
@@ -501,8 +514,7 @@ impl CrawlEngine {
                                 pipelines: pipelines.clone(),
                                 fetcher: fetcher.clone(),
                                 crawl_delay,
-                                max_retries,
-                                retry_base_delay,
+                                retry_policy: retry_policy.clone(),
                             };
 
                             join_set.spawn(async move {
@@ -669,8 +681,7 @@ impl CrawlEngine {
         let pipelines: Arc<Vec<Arc<dyn Pipeline>>> = Arc::new(self.pipelines);
         let crawl_delay = self.crawl_delay;
         let concurrency = self.concurrency;
-        let max_retries = self.max_retries;
-        let retry_base_delay = self.retry_base_delay;
+        let retry_policy = self.retry_policy;
 
         let client = {
             let mut builder = reqwest::Client::builder()
@@ -803,8 +814,7 @@ impl CrawlEngine {
                                 pipelines: pipelines.clone(),
                                 fetcher: fetcher.clone(),
                                 crawl_delay,
-                                max_retries,
-                                retry_base_delay,
+                                retry_policy: retry_policy.clone(),
                             };
                             join_set.spawn(async move {
                                 let result = process_url_with_retry(url.clone(), depth, ctx).await;
@@ -929,8 +939,7 @@ struct TaskContext {
     pipelines: Arc<Vec<Arc<dyn Pipeline>>>,
     fetcher: Arc<dyn Fetcher>,
     crawl_delay: Option<Duration>,
-    max_retries: u32,
-    retry_base_delay: Duration,
+    retry_policy: crate::retry::RetryPolicy,
 }
 
 /// Fetch, run middleware, parse, and store items for a single URL.
@@ -980,7 +989,7 @@ async fn process_url(
     Ok((item_count, bytes_downloaded, follows))
 }
 
-/// Wraps `process_url` with exponential-backoff retry.
+/// Wraps `process_url` with exponential-backoff retry driven by `RetryPolicy`.
 async fn process_url_with_retry(
     url: String,
     depth: usize,
@@ -990,16 +999,17 @@ async fn process_url_with_retry(
     loop {
         match process_url(&url, depth, &ctx).await {
             Ok(result) => return Ok(result),
-            Err(e) if attempt < ctx.max_retries => {
-                // Notify middleware of this attempt's failure before backing off.
+            Err(e)
+                if attempt < ctx.retry_policy.max_attempts && ctx.retry_policy.is_retriable(&e) =>
+            {
                 for mw in ctx.middleware.iter() {
                     mw.on_error(&url, &e).await;
                 }
-                let delay = ctx.retry_base_delay * 2_u32.pow(attempt);
+                let delay = ctx.retry_policy.delay_for(attempt);
                 tracing::warn!(
                     url = %url,
                     attempt = attempt + 1,
-                    max = ctx.max_retries,
+                    max = ctx.retry_policy.max_attempts,
                     retry_in_ms = delay.as_millis(),
                     error = %e,
                     "retrying URL"

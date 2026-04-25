@@ -7,12 +7,17 @@ use kumo::{
     engine::CrawlEngine,
     error::KumoError,
     extract::Response,
-    middleware::{DefaultHeaders, StatusRetry},
+    fetch::Fetcher,
+    middleware::{DefaultHeaders, Request, StatusRetry},
     pipeline::RequireFields,
+    retry::RetryPolicy,
     spider::{Output, Spider},
     store::{ItemStore, StdoutStore},
 };
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU32, Ordering},
+};
 
 /// A simple in-memory store that collects items for assertions.
 #[derive(Clone, Default)]
@@ -284,6 +289,125 @@ async fn status_retry_retries_on_429_and_succeeds() {
 
     assert_eq!(stats.pages_crawled, 1);
     assert_eq!(stats.errors, 0);
+}
+
+// ── RetryPolicy tests ─────────────────────────────────────────────────────────
+
+/// Returns `fail_times` × 503 responses then 200 for every subsequent call.
+struct SequentialFetcher {
+    calls: Arc<AtomicU32>,
+    fail_times: u32,
+}
+
+#[async_trait::async_trait]
+impl Fetcher for SequentialFetcher {
+    async fn fetch(&self, req: &Request) -> Result<Response, KumoError> {
+        let n = self.calls.fetch_add(1, Ordering::SeqCst);
+        let status = if n < self.fail_times { 503 } else { 200 };
+        Ok(Response::from_parts(
+            req.url(),
+            status,
+            "<html><body><h1>ok</h1></body></html>",
+        ))
+    }
+}
+
+#[tokio::test]
+async fn retry_policy_exhausted_counts_as_single_error() {
+    // 3 retries + 1 initial = 4 total calls, all return 503 → 1 error reported.
+    let calls = Arc::new(AtomicU32::new(0));
+    let fetcher = SequentialFetcher {
+        calls: calls.clone(),
+        fail_times: 100,
+    };
+
+    struct S;
+    #[async_trait::async_trait]
+    impl Spider for S {
+        type Item = serde_json::Value;
+        fn name(&self) -> &str {
+            "retry-exhaust"
+        }
+        fn start_urls(&self) -> Vec<String> {
+            vec!["https://example.com/".into()]
+        }
+        async fn parse(&self, _r: &Response) -> Result<Output<Self::Item>, KumoError> {
+            Ok(Output::new())
+        }
+    }
+
+    let stats = CrawlEngine::builder()
+        .fetcher(fetcher)
+        .middleware(StatusRetry::new())
+        .retry_policy(
+            RetryPolicy::new(3)
+                .base_delay(std::time::Duration::from_millis(1))
+                .max_delay(std::time::Duration::from_millis(4)),
+        )
+        .respect_robots_txt(false)
+        .store(StdoutStore)
+        .run(S)
+        .await
+        .unwrap();
+
+    assert_eq!(stats.errors, 1, "all retries exhausted = one error");
+    assert_eq!(stats.pages_crawled, 0);
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        4,
+        "initial + 3 retries = 4 fetches"
+    );
+}
+
+#[tokio::test]
+async fn retry_policy_succeeds_on_later_attempt() {
+    // Fails twice then returns 200 — should succeed with 0 errors.
+    let calls = Arc::new(AtomicU32::new(0));
+    let fetcher = SequentialFetcher {
+        calls: calls.clone(),
+        fail_times: 2,
+    };
+
+    struct S;
+    #[async_trait::async_trait]
+    impl Spider for S {
+        type Item = serde_json::Value;
+        fn name(&self) -> &str {
+            "retry-success"
+        }
+        fn start_urls(&self) -> Vec<String> {
+            vec!["https://example.com/".into()]
+        }
+        async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
+            let title = res.css("h1").first().map(|e| e.text()).unwrap_or_default();
+            Ok(Output::new().item(serde_json::json!({ "title": title })))
+        }
+    }
+
+    let store = VecStore::default();
+    let stats = CrawlEngine::builder()
+        .fetcher(fetcher)
+        .middleware(StatusRetry::new())
+        .retry_policy(
+            RetryPolicy::new(3)
+                .base_delay(std::time::Duration::from_millis(1))
+                .max_delay(std::time::Duration::from_millis(4)),
+        )
+        .respect_robots_txt(false)
+        .store(store.clone())
+        .run(S)
+        .await
+        .unwrap();
+
+    assert_eq!(stats.errors, 0, "succeeded after 2 failures");
+    assert_eq!(stats.pages_crawled, 1);
+    assert_eq!(stats.items_scraped, 1);
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        3,
+        "2 failures + 1 success = 3 fetches"
+    );
+    assert_eq!(store.collected()[0]["title"], "ok");
 }
 
 // ── MockFetcher tests ─────────────────────────────────────────────────────────

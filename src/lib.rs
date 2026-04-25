@@ -10,6 +10,7 @@ pub use frontier::RedisFrontier;
 pub mod llm;
 pub mod middleware;
 pub mod pipeline;
+pub mod retry;
 pub mod robots;
 pub mod sitemap;
 pub mod spider;
@@ -52,6 +53,7 @@ pub mod prelude {
         UserAgentRotator,
     };
     pub use crate::pipeline::{DropDuplicates, FilterPipeline, Pipeline, RequireFields};
+    pub use crate::retry::RetryPolicy;
     pub use crate::sitemap::SitemapSpider;
     pub use crate::spider::{Output, Spider};
     #[cfg(feature = "mysql")]
