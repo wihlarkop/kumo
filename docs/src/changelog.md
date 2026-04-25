@@ -1,14 +1,16 @@
 ---
-description: kumo release history — features, fixes, and breaking changes by version.
+description: kumo and kumo-derive release history — features, fixes, and breaking changes by version.
 ---
 
 # Changelog
 
 Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/releases).
 
-## 0.1.0
+## kumo 0.1.0 · kumo-derive 0.1.0
 
 Initial release.
+
+### kumo
 
 - Async-first crawl engine via Tokio (`CrawlEngine::builder()`)
 - CSS, regex, XPath, JSONPath selectors
@@ -29,3 +31,15 @@ Initial release.
 - `CrawlEngine::stream()` — async item stream with backpressure
 - `SitemapSpider`
 - OpenTelemetry OTLP/gRPC export (`otel` feature)
+
+### kumo-derive
+
+- `#[derive(Extract)]` proc-macro for structs with named fields
+- `css = "selector"` — required CSS selector per field
+- `attr = "name"` — extract HTML attribute instead of text
+- `re = r"pattern"` — apply regex, take first match
+- `text` — explicit text extraction (default)
+- `default = "value"` — fallback for `String` fields
+- `transform = "trim|lowercase|uppercase"` — post-extraction transform
+- `llm_fallback = "hint"` / `llm_fallback` — fall back to LLM when selector is empty
+- `String` fields fall back to `""`, `Option<String>` fields to `None`
