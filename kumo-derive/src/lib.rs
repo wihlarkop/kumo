@@ -198,6 +198,10 @@ struct ExtractArgs {
     re: Option<LitStr>,
     /// `Some(Some(hint))` = `llm_fallback = "hint"`, `Some(None)` = bare `llm_fallback`.
     llm_fallback: Option<Option<LitStr>>,
+    /// Fallback string for `String` fields when the selector returns empty.
+    default_val: Option<LitStr>,
+    /// Named transform: "trim", "lowercase", or "uppercase".
+    transform: Option<LitStr>,
 }
 
 fn parse_extract_args(field: &syn::Field) -> syn::Result<ExtractArgs> {
@@ -213,6 +217,8 @@ fn parse_extract_args(field: &syn::Field) -> syn::Result<ExtractArgs> {
     let mut attr_val: Option<LitStr> = None;
     let mut re_val: Option<LitStr> = None;
     let mut llm_fallback: Option<Option<LitStr>> = None;
+    let mut default_val: Option<LitStr> = None;
+    let mut transform: Option<LitStr> = None;
 
     attr.parse_nested_meta(|meta| {
         if meta.path.is_ident("css") {
@@ -230,6 +236,18 @@ fn parse_extract_args(field: &syn::Field) -> syn::Result<ExtractArgs> {
             } else {
                 llm_fallback = Some(None);
             }
+        } else if meta.path.is_ident("default") {
+            default_val = Some(meta.value()?.parse()?);
+        } else if meta.path.is_ident("transform") {
+            let lit: LitStr = meta.value()?.parse()?;
+            let val = lit.value();
+            if !matches!(val.as_str(), "trim" | "lowercase" | "uppercase") {
+                return Err(syn::Error::new(
+                    lit.span(),
+                    format!("unknown transform `{val}` — valid values: trim, lowercase, uppercase"),
+                ));
+            }
+            transform = Some(lit);
         } else {
             let key = meta
                 .path
@@ -237,7 +255,7 @@ fn parse_extract_args(field: &syn::Field) -> syn::Result<ExtractArgs> {
                 .map(|i| i.to_string())
                 .unwrap_or_default();
             return Err(meta.error(format!(
-                "unknown extract attribute `{key}` — valid keys: css, attr, re, text, llm_fallback"
+                "unknown extract attribute `{key}` — valid keys: css, attr, re, text, llm_fallback, default, transform"
             )));
         }
         Ok(())
@@ -251,6 +269,8 @@ fn parse_extract_args(field: &syn::Field) -> syn::Result<ExtractArgs> {
         attr: attr_val,
         re: re_val,
         llm_fallback,
+        default_val,
+        transform,
     })
 }
 
