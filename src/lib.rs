@@ -22,7 +22,8 @@ pub mod store;
 /// use kumo::prelude::*;
 /// ```
 pub mod prelude {
-    pub use crate::engine::{CrawlEngine, CrawlStats};
+    pub use crate::engine::{CrawlEngine, CrawlStats, ItemStream};
+    pub use tokio_stream::StreamExt;
     pub use crate::error::{ErrorPolicy, KumoError};
     #[cfg(feature = "derive")]
     pub use crate::extract::Extract;
