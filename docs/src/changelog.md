@@ -6,9 +6,12 @@ description: kumo and kumo-derive release history — features, fixes, and break
 
 Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/releases).
 
-## kumo 0.1.0 · kumo-derive 0.1.0
+`kumo` and `kumo-derive` are always released together with the same version number.
+If only one crate changed in a release, the other's section is omitted.
 
-Initial release.
+---
+
+## 0.1.0 — 2026-04-13
 
 ### kumo
 

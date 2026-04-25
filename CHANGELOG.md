@@ -1,6 +1,9 @@
 # Changelog
 
-All notable changes to kumo and kumo-derive are documented here.
+All notable changes to `kumo` and `kumo-derive` are documented here.
+
+`kumo` and `kumo-derive` are always released together with the same version number.
+If only one crate changed, the other's section is omitted from that release entry.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -11,7 +14,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.0] — 2026-04-13
 
-### kumo — Added
+### kumo
+
+#### Added
 
 - `CrawlEngine::builder()` — fluent builder for configuring and launching crawls
 - `Spider` trait — type-safe spider with associated `Item` type
@@ -39,7 +44,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `MockFetcher` and `CachingFetcher` for testing
 - `metrics_interval` — periodic stats logging via `tracing`
 
-### kumo-derive — Added
+### kumo-derive
+
+#### Added
 
 - `#[derive(Extract)]` proc-macro for structs with named fields
 - `css = "selector"` — required CSS selector per field

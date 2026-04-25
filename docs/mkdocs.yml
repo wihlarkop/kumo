@@ -83,6 +83,7 @@ nav:
     - Stores: stores.md
     - Pipelines: pipelines.md
     - Frontiers: frontier.md
+    - Feature Flags: feature-flags.md
   - Advanced:
     - Item Stream: advanced/stream.md
     - OpenTelemetry: advanced/otel.md
@@ -91,6 +92,5 @@ nav:
     - HTTP Cache: advanced/http-cache.md
     - Link Extractor: advanced/link-extractor.md
     - Sitemap Spider: advanced/sitemap.md
-  - Feature Flags: feature-flags.md
   - Examples: examples.md
   - Changelog: changelog.md
