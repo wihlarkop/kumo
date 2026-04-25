@@ -54,7 +54,7 @@ pub mod prelude {
     };
     pub use crate::pipeline::{DropDuplicates, FilterPipeline, Pipeline, RequireFields};
     pub use crate::retry::RetryPolicy;
-    pub use crate::sitemap::SitemapSpider;
+    pub use crate::sitemap::{SitemapEntry, SitemapSpider};
     pub use crate::spider::{Output, Spider};
     #[cfg(feature = "mysql")]
     pub use crate::store::MySqlStore;

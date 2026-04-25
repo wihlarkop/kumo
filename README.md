@@ -33,6 +33,7 @@ An async web crawling framework for Rust — Scrapy for Rust.
 - **Browser fetcher** — headless Chromium via chromiumoxide for JS-rendered pages (feature: `browser`)
 - **Distributed frontier** — Redis-backed URL frontier for multi-process crawls (feature: `redis-frontier`)
 - **Persistent frontier** — file-backed URL frontier that survives restarts (feature: `persistence`)
+- **Sitemap spider** — `SitemapSpider` reads `sitemap.xml` / sitemap index files, emits `SitemapEntry` items with `lastmod`, `priority`, `changefreq`; supports URL filtering and robots.txt autodiscovery
 - **Metrics** — periodic stats snapshots via `tracing::info!` using `.metrics_interval()`
 
 ## Installation
@@ -98,6 +99,32 @@ async fn main() -> Result<(), KumoError> {
 ```
 
 For more examples — rate limiting, database stores, LLM extraction, browser mode, and all selector types — see the [`examples/`](examples/) folder.
+
+### Sitemap Crawling
+
+`SitemapSpider` reads sitemaps and emits structured `SitemapEntry` items:
+
+```rust
+// Crawl sitemap.xml — emits SitemapEntry items with loc, lastmod, priority, changefreq
+CrawlEngine::builder()
+    .run(SitemapSpider::new("https://example.com"))
+    .await?;
+
+// Discover sitemaps from robots.txt automatically
+CrawlEngine::builder()
+    .run(SitemapSpider::from_robots("https://example.com"))
+    .await?;
+
+// Only follow blog URLs
+CrawlEngine::builder()
+    .run(
+        SitemapSpider::new("https://example.com")
+            .filter_url(|url| url.contains("/blog/")),
+    )
+    .await?;
+```
+
+Sitemap index files are followed automatically. `from_robots()` reads `robots.txt` and extracts all `Sitemap:` directives.
 
 ### Link Extraction
 

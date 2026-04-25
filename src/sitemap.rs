@@ -15,6 +15,8 @@ pub struct SitemapEntry {
     pub priority: Option<f32>,
 }
 
+type UrlFilter = Box<dyn Fn(&str) -> bool + Send + Sync>;
+
 /// A spider that discovers URLs from a sitemap and crawls each one.
 ///
 /// Fetches `/sitemap.xml` by default and supports:
@@ -44,7 +46,7 @@ pub struct SitemapEntry {
 /// ```
 pub struct SitemapSpider {
     sitemap_url: String,
-    filter_url: Option<Box<dyn Fn(&str) -> bool + Send + Sync>>,
+    filter_url: Option<UrlFilter>,
 }
 
 impl SitemapSpider {
@@ -103,8 +105,7 @@ impl SitemapSpider {
         let loc_re = regex::Regex::new(r"<loc>\s*(https?://[^\s<]+)\s*</loc>").unwrap();
         let lastmod_re = regex::Regex::new(r"<lastmod>\s*([^\s<]+)\s*</lastmod>").unwrap();
         let priority_re = regex::Regex::new(r"<priority>\s*([0-9.]+)\s*</priority>").unwrap();
-        let changefreq_re =
-            regex::Regex::new(r"<changefreq>\s*([^\s<]+)\s*</changefreq>").unwrap();
+        let changefreq_re = regex::Regex::new(r"<changefreq>\s*([^\s<]+)\s*</changefreq>").unwrap();
 
         url_re
             .captures_iter(body)
