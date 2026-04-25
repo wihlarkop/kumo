@@ -28,8 +28,8 @@ target
 # Claude Code session files
 .claude/
 
-# Project planning docs and spec
-docs/
+# Claude Code planning files (not documentation)
+docs/superpowers/
 *.pdf
 
 .env
