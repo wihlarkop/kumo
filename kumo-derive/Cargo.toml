@@ -8,7 +8,7 @@ repository = "https://github.com/wihlarkop/kumo"
 homepage = "https://github.com/wihlarkop/kumo"
 keywords = ["web", "scraping", "crawling", "derive", "macro"]
 categories = ["web-programming", "development-tools::procedural-macro-helpers"]
-readme = "../README.md"
+readme = "README.md"
 
 [lib]
 proc-macro = true
