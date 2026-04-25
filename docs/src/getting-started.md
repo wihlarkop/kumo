@@ -1,3 +1,7 @@
+---
+description: Install kumo and write your first Rust web spider in minutes — step-by-step guide with a complete working example.
+---
+
 # Getting Started
 
 ## Prerequisites

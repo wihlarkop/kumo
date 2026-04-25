@@ -1,6 +1,7 @@
 # kumo
 
 [![CI](https://github.com/wihlarkop/kumo/actions/workflows/ci.yml/badge.svg)](https://github.com/wihlarkop/kumo/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-kumo.wihlarkop.com-blue)](https://kumo.wihlarkop.com)
 
 <p align="center">
   <img src="assets/logo.png" alt="kumo logo" width="200">

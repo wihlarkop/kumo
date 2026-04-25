@@ -1,3 +1,7 @@
+---
+description: kumo is an async web crawling framework for Rust — type-safe spiders, CSS/XPath/LLM extraction, pluggable stores, and OpenTelemetry built in.
+---
+
 # kumo
 
 [![CI](https://github.com/wihlarkop/kumo/actions/workflows/ci.yml/badge.svg)](https://github.com/wihlarkop/kumo/actions/workflows/ci.yml)
