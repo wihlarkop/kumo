@@ -14,6 +14,7 @@ use kumo::{
     spider::{Output, Spider},
     store::{ItemStore, StdoutStore},
 };
+use tokio_stream::StreamExt;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU32, Ordering},
@@ -448,6 +449,82 @@ async fn mock_fetcher_runs_spider_without_network() {
     assert_eq!(stats.items_scraped, 1);
     let items = store.collected();
     assert_eq!(items[0]["title"], "Test Title");
+}
+
+// ── ItemStream tests ──────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn stream_yields_items_as_scraped() {
+    use kumo::fetch::MockFetcher;
+
+    struct TitleStreamSpider;
+    #[async_trait::async_trait]
+    impl Spider for TitleStreamSpider {
+        type Item = serde_json::Value;
+        fn name(&self) -> &str {
+            "title-stream"
+        }
+        fn start_urls(&self) -> Vec<String> {
+            vec!["https://example.com".into()]
+        }
+        async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
+            let title = res.css("h1").first().map(|e| e.text()).unwrap_or_default();
+            Ok(Output::new().item(serde_json::json!({ "title": title })))
+        }
+    }
+
+    let mock =
+        MockFetcher::new().with_response("https://example.com", 200, "<h1>Stream Works</h1>");
+
+    let mut stream = CrawlEngine::builder()
+        .fetcher(mock)
+        .respect_robots_txt(false)
+        .stream(TitleStreamSpider)
+        .await
+        .unwrap();
+
+    let item = stream.next().await.expect("stream should yield one item");
+    assert_eq!(item["title"], "Stream Works");
+    assert!(
+        stream.next().await.is_none(),
+        "stream should end after all items"
+    );
+}
+
+#[tokio::test]
+async fn dropping_stream_does_not_panic() {
+    use kumo::fetch::MockFetcher;
+
+    struct MultiPageSpider;
+    #[async_trait::async_trait]
+    impl Spider for MultiPageSpider {
+        type Item = serde_json::Value;
+        fn name(&self) -> &str {
+            "multi-stream"
+        }
+        fn start_urls(&self) -> Vec<String> {
+            vec![
+                "https://example.com/1".into(),
+                "https://example.com/2".into(),
+            ]
+        }
+        async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
+            Ok(Output::new().item(serde_json::json!({ "url": res.url() })))
+        }
+    }
+
+    let mock = MockFetcher::new().with_default(200, "<p>page</p>");
+
+    let stream = CrawlEngine::builder()
+        .fetcher(mock)
+        .respect_robots_txt(false)
+        .stream(MultiPageSpider)
+        .await
+        .unwrap();
+
+    drop(stream);
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    // reaching here without panic = pass
 }
 
 #[tokio::test]
