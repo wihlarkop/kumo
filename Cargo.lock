@@ -1708,6 +1708,7 @@ dependencies = [
  "jsonpath-rust",
  "kumo-derive",
  "mockito",
+ "rand 0.9.4",
  "redis",
  "regex",
  "reqwest",

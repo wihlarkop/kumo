@@ -231,7 +231,11 @@ fn parse_extract_args(field: &syn::Field) -> syn::Result<ExtractArgs> {
                 llm_fallback = Some(None);
             }
         } else {
-            let key = meta.path.get_ident().map(|i| i.to_string()).unwrap_or_default();
+            let key = meta
+                .path
+                .get_ident()
+                .map(|i| i.to_string())
+                .unwrap_or_default();
             return Err(meta.error(format!(
                 "unknown extract attribute `{key}` — valid keys: css, attr, re, text, llm_fallback"
             )));
