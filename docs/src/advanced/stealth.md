@@ -33,6 +33,9 @@ Available profiles:
 | Profile | Mimics |
 |---------|--------|
 | `StealthProfile::Chrome131` | Chrome 131 on Windows 10 |
+| `StealthProfile::Firefox128` | Firefox 128 LTS |
+| `StealthProfile::Safari18` | Safari 18 on macOS Sequoia |
+| `StealthProfile::Edge127` | Microsoft Edge 127 |
 
 ## Browser-Level Stealth
 

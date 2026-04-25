@@ -19,11 +19,8 @@ Set fixed headers on every request:
 Token-bucket rate limiter via `governor`:
 
 ```rust
-use std::num::NonZeroU32;
-
-.middleware(RateLimiter::per_second(NonZeroU32::new(5).unwrap()))
-// or
-.middleware(RateLimiter::per_minute(NonZeroU32::new(60).unwrap()))
+.middleware(RateLimiter::per_second(5.0))   // 5 requests per second
+.middleware(RateLimiter::per_second(0.5))   // 1 request every 2 seconds
 ```
 
 Requests that exceed the limit are held until a token is available — no requests are dropped.
@@ -35,9 +32,10 @@ Adaptive delay based on EWMA server latency. Automatically slows down when the s
 ```rust
 .middleware(
     AutoThrottle::new()
-        .target_latency(Duration::from_millis(500))  // aim for 500ms response time
+        .target_concurrency(1.0)              // aim for 1 concurrent request (default)
+        .start_delay(Duration::from_millis(500))
         .min_delay(Duration::from_millis(100))
-        .max_delay(Duration::from_secs(5))
+        .max_delay(Duration::from_secs(60))
 )
 ```
 

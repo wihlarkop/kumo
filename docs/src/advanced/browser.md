@@ -16,7 +16,7 @@ Chromium is downloaded automatically on first build via `chromiumoxide`.
 use kumo::prelude::*;
 
 CrawlEngine::builder()
-    .browser(BrowserConfig::new())   // use default headless Chromium
+    .browser(BrowserConfig::headless())  // use default headless Chromium
     .run(MySpider)
     .await?;
 ```
@@ -26,12 +26,16 @@ CrawlEngine::builder()
 ## BrowserConfig
 
 ```rust
-BrowserConfig::new()
-    .headless(false)                 // show the browser window (debugging)
-    .window_size(1920, 1080)         // set viewport
+// Headless (production)
+BrowserConfig::headless()
+    .viewport(1920, 1080)            // set viewport size
     .user_agent("Mozilla/5.0 ...")   // override User-Agent
     .stealth()                       // enable JS stealth patches (requires stealth feature)
-    .launch_arg("--disable-gpu")     // pass extra Chromium flags
+    .timeout(Duration::from_secs(45))
+
+// Headed (debugging — shows the browser window)
+BrowserConfig::headed()
+    .wait_for_selector(".content")   // wait for element before reading page
 ```
 
 ## Performance Considerations

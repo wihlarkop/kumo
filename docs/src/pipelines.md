@@ -7,7 +7,7 @@ Pipelines transform or filter items before they reach the store. Register them w
 Drops items with duplicate values for a given field:
 
 ```rust
-.pipeline(DropDuplicates::on("url"))
+.pipeline(DropDuplicates::by_field("url"))
 // or on multiple fields
 .pipeline(DropDuplicates::on("title"))
 ```
@@ -68,7 +68,7 @@ Return `Ok(None)` to drop the item, `Ok(Some(item))` to pass it through (possibl
 ```rust
 CrawlEngine::builder()
     .pipeline(RequireFields::new(&["title", "price"]))
-    .pipeline(DropDuplicates::on("url"))
+    .pipeline(DropDuplicates::by_field("url"))
     .pipeline(NormalizePrice)
     .store(JsonlStore::new("products.jsonl")?)
     .run(ProductSpider)

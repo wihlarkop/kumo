@@ -98,7 +98,7 @@ pub struct KafkaStore { /* ... */ }
 
 #[async_trait]
 impl ItemStore for KafkaStore {
-    async fn store_item(&self, item: serde_json::Value) -> Result<(), KumoError> {
+    async fn store(&self, item: &serde_json::Value) -> Result<(), KumoError> {
         // publish item to Kafka topic
         Ok(())
     }

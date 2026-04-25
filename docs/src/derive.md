@@ -35,11 +35,10 @@ struct Book {
 
 // In parse():
 async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
-    let books: Vec<Book> = res.css("article.product_pod")
-        .iter()
-        .map(|el| Book::extract_sync(&el))
-        .collect::<Result<Vec<_>, _>>()?;
-
+    let mut books = Vec::new();
+    for el in res.css("article.product_pod").iter() {
+        books.push(Book::extract_from(&el, None).await?);
+    }
     Ok(Output::new().items(books))
 }
 ```
