@@ -979,7 +979,10 @@ async fn process_url(
         for pipeline in ctx.pipelines.iter() {
             match pipeline.process(current).await {
                 Ok(Some(v)) => current = v,
-                Ok(None) => continue 'items, // dropped by pipeline
+                Ok(None) => {
+                    tracing::debug!(spider = ctx.spider.name(), url, "item.drop");
+                    continue 'items;
+                }
                 Err(e) => {
                     tracing::warn!(error = %e, "pipeline dropped item due to error");
                     continue 'items;
@@ -989,6 +992,16 @@ async fn process_url(
         ctx.store.store(&current).await?;
         item_count += 1;
     }
+
+    tracing::debug!(
+        spider = ctx.spider.name(),
+        url,
+        status = response.status(),
+        bytes = bytes_downloaded,
+        depth,
+        items = item_count,
+        "fetch.ok"
+    );
 
     let follows = output.follow.into_iter().map(|u| (u, depth + 1)).collect();
 
