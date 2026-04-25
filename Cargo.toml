@@ -50,6 +50,14 @@ redis-frontier = ["dep:redis"]           # RedisFrontier — distributed crawlin
 # Derive macro
 derive = ["dep:kumo-derive"]
 
+# OpenTelemetry OTLP export
+otel = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+    "dep:tracing-opentelemetry",
+]
+
 # ── Dependencies ──────────────────────────────────────────────────────────────
 
 [dependencies]
@@ -91,6 +99,12 @@ rand = "0.9"
 # Logging & tracing
 tracing            = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+# Optional — OpenTelemetry OTLP export
+opentelemetry         = { version = "0.27", optional = true }
+opentelemetry_sdk     = { version = "0.27", optional = true, features = ["rt-tokio"] }
+opentelemetry-otlp    = { version = "0.27", optional = true, features = ["grpc-tonic"] }
+tracing-opentelemetry = { version = "0.28", optional = true }
 
 # Rate limiting
 governor = "0.10.4"
