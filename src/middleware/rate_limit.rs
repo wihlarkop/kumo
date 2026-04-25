@@ -36,8 +36,13 @@ impl RateLimiter {
 #[async_trait::async_trait]
 impl Middleware for RateLimiter {
     /// Blocks until a rate-limit token is available, then proceeds.
-    async fn before_request(&self, _request: &mut Request) -> Result<(), KumoError> {
+    async fn before_request(&self, request: &mut Request) -> Result<(), KumoError> {
+        let start = std::time::Instant::now();
         self.inner.until_ready().await;
+        let delay_ms = start.elapsed().as_millis();
+        if delay_ms > 0 {
+            tracing::debug!(url = %request.url(), delay_ms, "rate.limit");
+        }
         Ok(())
     }
 }
