@@ -1,0 +1,5 @@
+error: unknown transform `slugify` — valid values: trim, lowercase, uppercase
+ --> tests/derive/fail/unknown_transform.rs:6:39
+  |
+6 |     #[extract(css = "h1", transform = "slugify")]
+  |                                       ^^^^^^^^^
