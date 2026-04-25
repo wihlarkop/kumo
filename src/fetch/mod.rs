@@ -25,3 +25,12 @@ use crate::{error::KumoError, extract::Response, middleware::Request};
 pub trait Fetcher: Send + Sync {
     async fn fetch(&self, request: &Request) -> Result<Response, KumoError>;
 }
+
+/// Returns `true` if the Content-Type indicates a text body (should be decoded as UTF-8).
+/// Defaults to `true` when the header is absent.
+pub(crate) fn is_text_content_type(content_type: Option<&str>) -> bool {
+    match content_type {
+        Some(ct) => ct.starts_with("text/") || ct.contains("application/json"),
+        None => true,
+    }
+}

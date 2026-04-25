@@ -545,27 +545,9 @@ impl CrawlEngine {
 
                             if !shutting_down {
                                 for (follow_url, follow_depth) in follows {
-                                    // Respect max_depth.
-                                    if let Some(max) = spider.max_depth()
-                                        && follow_depth > max
-                                    {
-                                        continue;
+                                    if should_enqueue(&follow_url, follow_depth, spider.as_ref()) {
+                                        frontier.push(follow_url, follow_depth).await;
                                     }
-
-                                    // Respect allowed_domains (empty list = allow all).
-                                    let allowed = spider.allowed_domains();
-                                    if !allowed.is_empty() {
-                                        let domain_ok = url::Url::parse(&follow_url)
-                                            .ok()
-                                            .and_then(|u| u.host_str().map(String::from))
-                                            .map(|host| allowed.iter().any(|d| host.ends_with(*d)))
-                                            .unwrap_or(false);
-                                        if !domain_ok {
-                                            continue;
-                                        }
-                                    }
-
-                                    frontier.push(follow_url, follow_depth).await;
                                 }
                             }
                         }
@@ -778,23 +760,9 @@ impl CrawlEngine {
                             if !shutting_down {
                                 let (spider, frontier) = &spider_entries[spider_idx];
                                 for (follow_url, follow_depth) in follows {
-                                    if let Some(max) = spider.max_depth()
-                                        && follow_depth > max
-                                    {
-                                        continue;
+                                    if should_enqueue(&follow_url, follow_depth, spider.as_ref()) {
+                                        frontier.push(follow_url, follow_depth).await;
                                     }
-                                    let allowed = spider.allowed_domains();
-                                    if !allowed.is_empty() {
-                                        let ok = url::Url::parse(&follow_url)
-                                            .ok()
-                                            .and_then(|u| u.host_str().map(String::from))
-                                            .map(|host| allowed.iter().any(|d| host.ends_with(*d)))
-                                            .unwrap_or(false);
-                                        if !ok {
-                                            continue;
-                                        }
-                                    }
-                                    frontier.push(follow_url, follow_depth).await;
                                 }
                             }
                         }
@@ -810,11 +778,22 @@ impl CrawlEngine {
                                     return Err(e);
                                 }
                                 ErrorPolicy::Retry(max) if retry_count < max => {
+                                    tracing::warn!(
+                                        spider = spider.name(),
+                                        url = %url,
+                                        attempt = retry_count + 1,
+                                        max,
+                                        error = %e,
+                                        "re-queuing failed URL"
+                                    );
                                     if !shutting_down {
                                         frontier.push_force(url, depth, retry_count + 1).await;
                                     }
                                 }
-                                _ => {
+                                ErrorPolicy::Retry(_) => {
+                                    tracing::warn!(spider = spider.name(), url = %url, error = %e, "fetch.skip.retry_exhausted");
+                                }
+                                ErrorPolicy::Skip => {
                                     tracing::warn!(spider = spider.name(), url = %url, error = %e, "fetch.skip");
                                 }
                             }
@@ -1041,6 +1020,22 @@ async fn build_raw_fetcher(args: FetcherArgs) -> Result<Arc<dyn Fetcher>, KumoEr
     }
 
     Ok(Arc::new(HttpFetcher::new(args.client, USER_AGENT)))
+}
+
+/// Returns `true` if `url` at `depth` should be enqueued given the spider's constraints.
+fn should_enqueue(url: &str, depth: usize, spider: &dyn ErasedSpider) -> bool {
+    if spider.max_depth().is_some_and(|max| depth > max) {
+        return false;
+    }
+    let allowed = spider.allowed_domains();
+    if allowed.is_empty() {
+        return true;
+    }
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(String::from))
+        .map(|host| allowed.iter().any(|d| host.ends_with(*d)))
+        .unwrap_or(false)
 }
 
 // ── Item Stream API ───────────────────────────────────────────────────────────

@@ -119,16 +119,25 @@ impl Fetcher for StealthHttpFetcher {
             .map_err(|e| KumoError::Browser(format!("stealth fetch: {e}")))?;
         let status = res.status().as_u16();
 
-        let content_type = res
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
+        // Convert rquest headers to reqwest headers before consuming the response body.
+        let headers = {
+            let mut h = reqwest::header::HeaderMap::new();
+            for (name, value) in res.headers() {
+                if let (Ok(n), Ok(v)) = (
+                    reqwest::header::HeaderName::from_bytes(name.as_str().as_bytes()),
+                    reqwest::header::HeaderValue::from_bytes(value.as_bytes()),
+                ) {
+                    h.insert(n, v);
+                }
+            }
+            h
+        };
 
-        let is_text = content_type.starts_with("text/")
-            || content_type.contains("application/json")
-            || content_type.is_empty();
+        let is_text = super::is_text_content_type(
+            headers
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+        );
 
         let body = if is_text {
             ResponseBody::Text(
@@ -149,7 +158,7 @@ impl Fetcher for StealthHttpFetcher {
         Ok(Response::new(
             request.url().to_string(),
             status,
-            reqwest::header::HeaderMap::new(),
+            headers,
             elapsed,
             body,
         ))

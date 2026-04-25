@@ -76,11 +76,11 @@ impl Fetcher for HttpFetcher {
         let headers = res.headers().clone();
 
         // Decode as text for text/* and application/json; store raw bytes otherwise.
-        let is_text = headers
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .map(|ct| ct.starts_with("text/") || ct.contains("application/json"))
-            .unwrap_or(true); // assume text when Content-Type is absent
+        let is_text = super::is_text_content_type(
+            headers
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+        );
 
         let body = if is_text {
             ResponseBody::Text(res.text().await.map_err(KumoError::Fetch)?)
