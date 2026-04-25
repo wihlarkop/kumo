@@ -1,6 +1,6 @@
 site_name: kumo
 site_description: An async web crawling framework for Rust — Scrapy for Rust.
-site_url: https://wihlarkop.github.io/kumo/
+site_url: https://kumo.wihlarkop.com/
 repo_url: https://github.com/wihlarkop/kumo
 repo_name: wihlarkop/kumo
 edit_uri: edit/main/docs/
