@@ -181,6 +181,8 @@ fn impl_extract(input: &DeriveInput) -> syn::Result<TokenStream2> {
             let var = quote::format_ident!("__field_{}", field_name);
             if fi.is_option {
                 quote! { #field_name: #var }
+            } else if let Some(default) = &fi.args.default_val {
+                quote! { #field_name: #var.unwrap_or_else(|| #default.to_string()) }
             } else {
                 quote! { #field_name: #var.unwrap_or_default() }
             }
