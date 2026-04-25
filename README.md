@@ -21,6 +21,7 @@ An async web crawling framework for Rust — Scrapy for Rust.
 - **Rate limiting** — token-bucket `RateLimiter` via `governor`
 - **Auto-throttle** — adaptive delay based on EWMA latency and 429/503 back-off
 - **Retry with backoff** — exponential backoff via `.retry(max, base_delay)`
+- **Item stream** — `CrawlEngine::stream()` returns an async `Stream` for real-time item consumption with natural backpressure
 - **robots.txt** — per-domain fetch + cache, enabled by default
 - **Bloom filter dedup** — O(1) URL deduplication, 1M URLs at 0.1% false-positive rate
 - **HTTP cache** — disk-backed response cache via `.http_cache(dir)`, optional TTL
@@ -99,6 +100,34 @@ async fn main() -> Result<(), KumoError> {
 ```
 
 For more examples — rate limiting, database stores, LLM extraction, browser mode, and all selector types — see the [`examples/`](examples/) folder.
+
+### Item Stream API
+
+`CrawlEngine::stream()` yields items in real time as they are scraped:
+
+```rust
+use kumo::prelude::*;
+
+let mut stream = CrawlEngine::builder()
+    .concurrency(4)
+    .stream(MySpider)
+    .await?;
+
+while let Some(item) = stream.next().await {
+    // process each item as it arrives — no waiting for the crawl to finish
+    println!("{}", item);
+}
+```
+
+The crawl runs in a background Tokio task. Dropping the stream stops the crawl gracefully. Adjust backpressure with `.stream_buffer(n)` (default: 100 items):
+
+```rust
+// Slow consumer — smaller buffer pauses the crawler sooner
+CrawlEngine::builder()
+    .stream_buffer(10)
+    .stream(MySpider)
+    .await?;
+```
 
 ### Sitemap Crawling
 

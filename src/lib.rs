@@ -23,7 +23,6 @@ pub mod store;
 /// ```
 pub mod prelude {
     pub use crate::engine::{CrawlEngine, CrawlStats, ItemStream};
-    pub use tokio_stream::StreamExt;
     pub use crate::error::{ErrorPolicy, KumoError};
     #[cfg(feature = "derive")]
     pub use crate::extract::Extract;
@@ -66,4 +65,5 @@ pub mod prelude {
     pub use crate::store::{CsvStore, JsonStore, JsonlStore, StdoutStore};
     #[cfg(feature = "derive")]
     pub use kumo_derive::Extract as ExtractDerive;
+    pub use tokio_stream::StreamExt;
 }

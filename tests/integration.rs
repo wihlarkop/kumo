@@ -14,11 +14,11 @@ use kumo::{
     spider::{Output, Spider},
     store::{ItemStore, StdoutStore},
 };
-use tokio_stream::StreamExt;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU32, Ordering},
 };
+use tokio_stream::StreamExt;
 
 /// A simple in-memory store that collects items for assertions.
 #[derive(Clone, Default)]
