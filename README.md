@@ -24,7 +24,7 @@ An async web crawling framework for Rust — Scrapy for Rust.
 - **robots.txt** — per-domain fetch + cache, enabled by default
 - **Bloom filter dedup** — O(1) URL deduplication, 1M URLs at 0.1% false-positive rate
 - **HTTP cache** — disk-backed response cache via `.http_cache(dir)`, optional TTL
-- **Link extractor** — `LinkExtractor` middleware auto-enqueues `<a href>` links
+- **Link extractor** — `LinkExtractor` with allow/deny regex, `allow_domains`, `canonicalize`, `restrict_css`, and configurable tags/attrs
 - **Pluggable storage** — `JsonlStore`, `JsonStore`, `CsvStore`, `StdoutStore`, PostgreSQL, SQLite, MySQL
 - **Middleware chain** — `before_request` / `after_response` hooks, proxy rotation, custom headers
 - **Domain + depth filtering** — `allowed_domains()` and `max_depth()` on the `Spider` trait
@@ -98,6 +98,24 @@ async fn main() -> Result<(), KumoError> {
 ```
 
 For more examples — rate limiting, database stores, LLM extraction, browser mode, and all selector types — see the [`examples/`](examples/) folder.
+
+### Link Extraction
+
+`LinkExtractor` collects, filters, and deduplicates links from a response:
+
+```rust
+let links = LinkExtractor::new()
+    .allow_domains(&["example.com"])    // stay on-site (subdomains included)
+    .allow(r"catalogue/\d+")            // only product pages
+    .deny(r"\.(pdf|zip)$")              // skip file downloads
+    .restrict_css("nav.pagination")     // only links inside the pagination nav
+    .canonicalize(true)                 // collapse /page#s1 and /page#s2 → /page
+    .extract(&response);
+
+Output::new().follow_many(links)
+```
+
+`allow_domains` and `allow` are OR-ed — a URL passes if either matches. `deny_domains` and `deny` are OR-ed — a URL is dropped if either matches. By default links are extracted from both `<a href>` and `<area href>`; use `.tags(&["a"])` or `.attrs(&["data-href"])` to customise.
 
 ## Feature Flags
 
