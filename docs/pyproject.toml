@@ -7,5 +7,6 @@ requires-python = ">=3.14"
 dependencies = [
     "cairosvg>=2.9.0",
     "mkdocs-material>=9.7.6",
+    "mkdocs-minify-plugin>=0.8.0",
     "pillow>=12.2.0",
 ]

@@ -37,6 +37,8 @@ theme:
 plugins:
   - search
   - social
+  - minify:
+      minify_html: true
 
 extra:
   social:
@@ -76,6 +78,7 @@ nav:
   - Core Concepts:
     - Spiders: spiders.md
     - Extractors: extractors.md
+    - derive(Extract): derive.md
     - Middleware: middleware.md
     - Stores: stores.md
     - Pipelines: pipelines.md
@@ -89,3 +92,5 @@ nav:
     - Link Extractor: advanced/link-extractor.md
     - Sitemap Spider: advanced/sitemap.md
   - Feature Flags: feature-flags.md
+  - Examples: examples.md
+  - Changelog: changelog.md
