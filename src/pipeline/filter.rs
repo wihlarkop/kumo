@@ -30,6 +30,7 @@ impl Pipeline for RequireFields {
     ) -> Result<Option<serde_json::Value>, KumoError> {
         for field in &self.fields {
             if item.get(field).is_none() {
+                tracing::debug!(missing_field = %field, "item.drop.missing_field");
                 return Ok(None);
             }
         }
@@ -73,6 +74,7 @@ where
         if (self.predicate)(&item) {
             Ok(Some(item))
         } else {
+            tracing::debug!("item.drop.filter");
             Ok(None)
         }
     }

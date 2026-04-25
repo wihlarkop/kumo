@@ -108,6 +108,7 @@ impl Pipeline for DropDuplicates {
 
         let mut inner = self.inner.lock().await;
         if inner.seen.contains(&key) {
+            tracing::debug!(field = %self.field, key = %key, "item.drop.duplicate");
             return Ok(None);
         }
 
