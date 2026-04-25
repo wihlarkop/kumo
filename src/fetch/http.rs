@@ -88,6 +88,17 @@ impl Fetcher for HttpFetcher {
             ResponseBody::Bytes(res.bytes().await.map_err(KumoError::Fetch)?)
         };
         let elapsed = start.elapsed();
+        let byte_count = match &body {
+            ResponseBody::Text(s) => s.len() as u64,
+            ResponseBody::Bytes(b) => b.len() as u64,
+        };
+        tracing::debug!(
+            url = %request.url(),
+            status,
+            bytes = byte_count,
+            elapsed_ms = elapsed.as_millis(),
+            "response"
+        );
 
         Ok(Response::new(
             request.url().to_string(),
