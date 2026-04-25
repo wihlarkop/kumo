@@ -80,8 +80,20 @@ fn impl_extract(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 (_, Some(re)) => quote! { #base.and_then(|e| e.re_first(#re)) },
                 _ => quote! { #base.map(|e| e.text()) },
             };
+            let transform_expr = match fi.args.transform.as_ref().map(|t| t.value()) {
+                Some(ref t) if t == "trim" => {
+                    quote! { .map(|s: String| s.trim().to_string()) }
+                }
+                Some(ref t) if t == "lowercase" => {
+                    quote! { .map(|s: String| s.to_lowercase()) }
+                }
+                Some(ref t) if t == "uppercase" => {
+                    quote! { .map(|s: String| s.to_uppercase()) }
+                }
+                _ => quote! {},
+            };
             let var = quote::format_ident!("__field_{}", field_name);
-            quote! { let mut #var: Option<String> = #valued; }
+            quote! { let mut #var: Option<String> = (#valued)#transform_expr; }
         })
         .collect();
 
