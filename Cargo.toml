@@ -98,7 +98,7 @@ governor = "0.10.4"
 texting_robots = "0.2.2"
 
 # Optional — derive macro
-kumo-derive = { version = "0.1.1", path = "kumo-derive", optional = true }
+kumo-derive = { version = "0.1.2", path = "kumo-derive", optional = true }
 
 # Optional — selectors
 jsonpath-rust = { version = "1.0.4", optional = true }

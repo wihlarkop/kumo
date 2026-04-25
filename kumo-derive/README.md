@@ -52,6 +52,8 @@ async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
 | `attr` | `attr = "href"` | Read an HTML attribute instead of text content. |
 | `re` | `re = r"\d+"` | Apply a regex and return the first match / capture group 1. |
 | `text` | `text` | Explicit text extraction (default; can be omitted). |
+| `default` | `default = "N/A"` | Fallback value for `String` fields when the selector returns empty. Ignored for `Option<String>`. |
+| `transform` | `transform = "trim"` | Apply a named transform after extraction. Values: `trim`, `lowercase`, `uppercase`. Compile error if unknown. |
 | `llm_fallback` | `llm_fallback = "the price"` | Fall back to an LLM when the selector returns empty. Requires an LLM provider feature (`claude`, `openai`, etc.) and passing a client to `extract_from`. |
 | `llm_fallback` (bare) | `llm_fallback` | Same as above, using the field name as the extraction hint. |
 

@@ -5,6 +5,14 @@ All notable changes to `kumo-derive` will be documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] — 2026-04-25
+
+### Added
+
+- `default = "value"` attribute — fallback literal for `String` fields when the selector returns empty
+- `transform = "trim|lowercase|uppercase"` attribute — apply a named transform after extraction
+- Compile error for unknown `transform` values
+
 ## [0.1.1] — 2026-04-25
 
 ### Changed
