@@ -447,8 +447,13 @@ impl CrawlEngine {
 
         spider.open().await?;
 
-        info!(spider = spider.name(), "starting crawl");
-        for url in spider.start_urls() {
+        let start_urls = spider.start_urls();
+        info!(
+            spider = spider.name(),
+            start_urls = start_urls.len(),
+            "spider.open"
+        );
+        for url in start_urls {
             frontier.push(url, 0).await;
         }
 
@@ -593,6 +598,7 @@ impl CrawlEngine {
                                 }
                                 ErrorPolicy::Retry(max) if retry_count < max => {
                                     tracing::warn!(
+                                        spider = spider.name(),
                                         url = %url,
                                         attempt = retry_count + 1,
                                         max,
@@ -604,16 +610,16 @@ impl CrawlEngine {
                                     }
                                 }
                                 ErrorPolicy::Retry(_) => {
-                                    error!(url = %url, error = %e, "retry limit reached, skipping URL");
+                                    tracing::warn!(spider = spider.name(), url = %url, error = %e, "fetch.skip.retry_exhausted");
                                 }
                                 ErrorPolicy::Skip => {
-                                    error!(url = %url, error = %e, "skipping URL");
+                                    tracing::warn!(spider = spider.name(), url = %url, error = %e, "fetch.skip");
                                 }
                             }
                         }
                         Some(Err(join_err)) => {
                             stats.errors += 1;
-                            error!(error = %join_err, "crawl task panicked");
+                            error!(spider = spider.name(), error = %join_err, "crawl task panicked");
                         }
                         None => break,
                     }
@@ -887,7 +893,7 @@ impl CrawlEngine {
                                     }
                                 }
                                 _ => {
-                                    error!(url = %url, error = %e, "skipping URL");
+                                    tracing::warn!(spider = spider.name(), url = %url, error = %e, "fetch.skip");
                                 }
                             }
                         }
