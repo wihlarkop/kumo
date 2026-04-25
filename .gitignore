@@ -33,3 +33,8 @@ docs/superpowers/
 *.pdf
 
 .env
+
+# MkDocs build output and Python virtualenv
+docs/site/
+docs/.venv/
+docs/.python-version

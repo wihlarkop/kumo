@@ -1,0 +1,69 @@
+site_name: kumo
+site_description: An async web crawling framework for Rust — Scrapy for Rust.
+site_url: https://wihlarkop.github.io/kumo/
+repo_url: https://github.com/wihlarkop/kumo
+repo_name: wihlarkop/kumo
+edit_uri: edit/main/docs/
+
+docs_dir: src
+site_dir: site
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - toc.integrate
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+  - tables
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Core Concepts:
+    - Spiders: spiders.md
+    - Extractors: extractors.md
+    - Middleware: middleware.md
+    - Stores: stores.md
+    - Pipelines: pipelines.md
+    - Frontiers: frontier.md
+  - Advanced:
+    - Item Stream: advanced/stream.md
+    - OpenTelemetry: advanced/otel.md
+    - Stealth Mode: advanced/stealth.md
+    - Browser Fetcher: advanced/browser.md
+    - HTTP Cache: advanced/http-cache.md
+    - Link Extractor: advanced/link-extractor.md
+    - Sitemap Spider: advanced/sitemap.md
+  - Feature Flags: feature-flags.md
