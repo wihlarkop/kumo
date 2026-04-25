@@ -12,18 +12,20 @@ theme:
   name: material
   palette:
     - scheme: default
-      primary: deep purple
-      accent: indigo
+      primary: blue grey
+      accent: cyan
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - scheme: slate
-      primary: deep purple
-      accent: indigo
+      primary: blue grey
+      accent: cyan
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
   features:
+    - navigation.instant
+    - navigation.instant.progress
     - navigation.tabs
     - navigation.sections
     - navigation.top
@@ -31,6 +33,26 @@ theme:
     - content.code.copy
     - content.code.annotate
     - content.tabs.link
+
+plugins:
+  - search
+  - social
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/wihlarkop/kumo
+      name: GitHub
+    - icon: fontawesome/solid/cube
+      link: https://crates.io/crates/kumo
+      name: crates.io
+    - icon: material/book-open-variant
+      link: https://docs.rs/kumo
+      name: docs.rs
+
+extra_css: []
+
+copyright: Copyright &copy; 2026 wihlarkop
 
 markdown_extensions:
   - pymdownx.highlight:
