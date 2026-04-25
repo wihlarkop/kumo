@@ -42,6 +42,7 @@ pub async fn init(
     otlp_endpoint: impl Into<String>,
 ) -> Result<(), KumoError> {
     use opentelemetry::KeyValue;
+    use opentelemetry::trace::TracerProvider as _;
     use opentelemetry_otlp::WithExportConfig;
     use opentelemetry_sdk::{Resource, runtime, trace as sdktrace};
     use tracing_subscriber::prelude::*;
@@ -49,10 +50,10 @@ pub async fn init(
     let service_name = service_name.into();
     let endpoint = otlp_endpoint.into();
 
-    let exporter = opentelemetry_otlp::new_exporter()
-        .tonic()
+    let exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_tonic()
         .with_endpoint(&endpoint)
-        .build_span_exporter()
+        .build()
         .map_err(|e| KumoError::store_msg(format!("otel exporter: {e}")))?;
 
     let provider = sdktrace::TracerProvider::builder()

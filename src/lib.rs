@@ -10,6 +10,8 @@ pub use frontier::RedisFrontier;
 pub mod llm;
 pub mod middleware;
 pub mod pipeline;
+#[cfg(feature = "otel")]
+pub mod otel;
 pub mod retry;
 pub mod robots;
 pub mod sitemap;
