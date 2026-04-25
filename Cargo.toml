@@ -6,13 +6,17 @@ resolver = "2"
 name = "kumo"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+authors = ["wihlarkop"]
 description = "An async web crawling framework for Rust — Scrapy for Rust"
 license = "MIT"
 repository = "https://github.com/wihlarkop/kumo"
 homepage = "https://github.com/wihlarkop/kumo"
+documentation = "https://docs.rs/kumo"
 readme = "README.md"
 keywords = ["web", "crawling", "scraping", "spider", "async"]
 categories = ["web-programming", "asynchronous"]
+exclude = [".github/", "docs/"]
 
 # ── Feature flags ─────────────────────────────────────────────────────────────
 
@@ -126,6 +130,10 @@ tempfile = "3.27.0"
 trybuild = { version = "1.0.116", features = ["diff"] }
 
 # ── Examples ──────────────────────────────────────────────────────────────────
+
+[[test]]
+name = "derive_macro"
+required-features = ["derive"]
 
 [[example]]
 name = "postgres"
