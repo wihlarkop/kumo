@@ -44,7 +44,7 @@ pub async fn init(
     use opentelemetry::KeyValue;
     use opentelemetry::trace::TracerProvider as _;
     use opentelemetry_otlp::WithExportConfig;
-    use opentelemetry_sdk::{Resource, runtime, trace as sdktrace};
+    use opentelemetry_sdk::{Resource, runtime, trace::TracerProvider as SdkTracerProvider};
     use tracing_subscriber::prelude::*;
 
     let service_name = service_name.into();
@@ -56,14 +56,12 @@ pub async fn init(
         .build()
         .map_err(|e| KumoError::store_msg(format!("otel exporter: {e}")))?;
 
-    let provider = sdktrace::TracerProvider::builder()
+    let provider = SdkTracerProvider::builder()
         .with_batch_exporter(exporter, runtime::Tokio)
-        .with_config(
-            sdktrace::config().with_resource(Resource::new(vec![KeyValue::new(
-                "service.name",
-                service_name.clone(),
-            )])),
-        )
+        .with_resource(Resource::new(vec![KeyValue::new(
+            "service.name",
+            service_name.clone(),
+        )]))
         .build();
 
     opentelemetry::global::set_tracer_provider(provider.clone());

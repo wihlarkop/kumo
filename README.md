@@ -36,6 +36,7 @@ An async web crawling framework for Rust — Scrapy for Rust.
 - **Persistent frontier** — file-backed URL frontier that survives restarts (feature: `persistence`)
 - **Sitemap spider** — `SitemapSpider` reads `sitemap.xml` / sitemap index files, emits `SitemapEntry` items with `lastmod`, `priority`, `changefreq`; supports URL filtering and robots.txt autodiscovery
 - **Metrics** — periodic stats snapshots via `tracing::info!` using `.metrics_interval()`
+- **OpenTelemetry** — OTLP/gRPC export of all spans to Jaeger, Grafana Tempo, Datadog, etc. (feature: `otel`)
 
 ## Installation
 
@@ -129,6 +130,41 @@ CrawlEngine::builder()
     .await?;
 ```
 
+### OpenTelemetry
+
+Enable the `otel` feature to export all kumo spans and events to any OpenTelemetry-compatible collector (Jaeger, Grafana Tempo, Datadog, Honeycomb, etc.):
+
+```toml
+[dependencies]
+kumo = { version = "0.1", features = ["otel"] }
+```
+
+Call `kumo::otel::init()` once at startup — every request, item scrape, retry, and pipeline drop is automatically traced with structured fields:
+
+```rust
+#[tokio::main]
+async fn main() -> Result<(), kumo::error::KumoError> {
+    // Export to a local Jaeger or OpenTelemetry Collector (gRPC port 4317)
+    kumo::otel::init("my-crawler", "http://localhost:4317").await?;
+
+    CrawlEngine::builder()
+        .concurrency(8)
+        .run(MySpider)
+        .await?;
+
+    kumo::otel::shutdown(); // flush remaining spans before exit
+    Ok(())
+}
+```
+
+To try it locally with Jaeger:
+
+```bash
+docker run -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one
+RUST_LOG=kumo=debug cargo run --features otel --example link_extractor
+# open http://localhost:16686
+```
+
 ### Sitemap Crawling
 
 `SitemapSpider` reads sitemaps and emits structured `SitemapEntry` items:
@@ -193,6 +229,7 @@ Output::new().follow_many(links)
 | `mysql` | `sqlx` | `MySqlStore` |
 | `persistence` | — | `FileFrontier` — file-backed URL frontier that survives restarts |
 | `redis-frontier` | `redis` | `RedisFrontier` — distributed URL frontier via Redis |
+| `otel` | `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`, `tracing-opentelemetry` | OTLP/gRPC export of all spans and events to Jaeger, Grafana Tempo, Datadog, Honeycomb, etc. |
 
 > ¹ The `stealth` feature compiles BoringSSL from source. It requires **cmake** and **nasm** on the build machine (`apt install cmake nasm` on Ubuntu, `brew install cmake nasm` on macOS).
 
