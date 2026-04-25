@@ -1,4 +1,4 @@
-//! Demonstrates LinkExtractor to collect and filter internal links.
+//! Demonstrates the advanced LinkExtractor API.
 //! Run with: cargo run --example link_extractor
 
 use kumo::prelude::*;
@@ -21,8 +21,10 @@ impl Spider for SiteSpider {
 
     async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
         let links = LinkExtractor::new()
-            .allow(r"catalogue/") // only product catalogue pages
-            .deny(r"catalogue/page") // skip pagination links
+            .allow_domains(&["books.toscrape.com"]) // stay on-site
+            .allow(r"catalogue/") // only product pages
+            .deny(r"catalogue/page") // skip pagination
+            .canonicalize(true) // collapse #fragment variants
             .extract(res);
 
         println!("Found {} product links on {}", links.len(), res.url());

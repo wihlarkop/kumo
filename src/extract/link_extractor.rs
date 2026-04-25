@@ -67,8 +67,7 @@ impl LinkExtractor {
     /// Panics if `pattern` is not a valid regex.
     pub fn deny(mut self, pattern: &str) -> Self {
         self.deny.push(
-            Regex::new(pattern)
-                .unwrap_or_else(|e| panic!("invalid deny pattern '{pattern}': {e}")),
+            Regex::new(pattern).unwrap_or_else(|e| panic!("invalid deny pattern '{pattern}': {e}")),
         );
         self
     }
