@@ -56,6 +56,7 @@ jobs:
           - "persistence"
           - "sqlite jsonpath persistence"
           - "llm"
+          - "otel"
     steps:
       - uses: actions/checkout@v6
 
