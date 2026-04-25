@@ -34,7 +34,8 @@ docs/superpowers/
 
 .env
 
-# MkDocs build output and Python virtualenv
+# MkDocs build output, cache and Python virtualenv
 docs/site/
+docs/.cache/
 docs/.venv/
 docs/.python-version
