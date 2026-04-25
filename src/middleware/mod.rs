@@ -14,6 +14,44 @@ pub use user_agent::UserAgentRotator;
 
 use crate::{error::KumoError, extract::Response};
 use reqwest::header::HeaderMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Shared selection strategy used by `UserAgentRotator` and `ProxyRotator`.
+pub(super) enum RotationStrategy {
+    RoundRobin(AtomicUsize),
+    Random(AtomicUsize),
+}
+
+impl RotationStrategy {
+    pub(super) fn round_robin() -> Self {
+        Self::RoundRobin(AtomicUsize::new(0))
+    }
+
+    pub(super) fn random() -> Self {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.subsec_nanos() as usize)
+            .unwrap_or(42);
+        Self::Random(AtomicUsize::new(seed | 1))
+    }
+
+    /// Return the index to use from a list of length `len`.
+    pub(super) fn pick_index(&self, len: usize) -> usize {
+        match self {
+            Self::RoundRobin(counter) => counter.fetch_add(1, Ordering::Relaxed) % len,
+            Self::Random(state) => {
+                // XorShift pseudo-random — no external dependency needed.
+                let mut x = state.load(Ordering::Relaxed);
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                state.store(x, Ordering::Relaxed);
+                x % len
+            }
+        }
+    }
+}
 
 /// A pending HTTP request, passed through the middleware chain before fetching.
 pub struct Request {

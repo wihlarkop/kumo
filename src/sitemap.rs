@@ -61,7 +61,7 @@ impl SitemapSpider {
     }
 
     /// Create a spider with a custom sitemap URL.
-    pub fn with_sitemap(_base_url: impl Into<String>, sitemap_url: impl Into<String>) -> Self {
+    pub fn with_sitemap(sitemap_url: impl Into<String>) -> Self {
         Self {
             sitemap_url: sitemap_url.into(),
             filter_url: None,

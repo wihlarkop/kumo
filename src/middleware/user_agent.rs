@@ -1,11 +1,9 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use async_trait::async_trait;
 use reqwest::header::{HeaderValue, USER_AGENT};
 
 use crate::error::KumoError;
 
-use super::{Middleware, Request};
+use super::{Middleware, Request, RotationStrategy};
 
 /// Common desktop browser User-Agent strings (Chrome, Firefox, Safari across Win/Mac/Linux).
 const COMMON_BROWSERS: &[&str] = &[
@@ -19,11 +17,6 @@ const COMMON_BROWSERS: &[&str] = &[
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
 ];
 
-enum Strategy {
-    RoundRobin(AtomicUsize),
-    Random(AtomicUsize),
-}
-
 /// Middleware that rotates the `User-Agent` header on every request.
 ///
 /// # Examples
@@ -34,7 +27,7 @@ enum Strategy {
 /// ```
 pub struct UserAgentRotator {
     agents: Vec<String>,
-    strategy: Strategy,
+    strategy: RotationStrategy,
 }
 
 impl UserAgentRotator {
@@ -42,20 +35,15 @@ impl UserAgentRotator {
     pub fn new(agents: Vec<impl Into<String>>) -> Self {
         Self {
             agents: agents.into_iter().map(Into::into).collect(),
-            strategy: Strategy::RoundRobin(AtomicUsize::new(0)),
+            strategy: RotationStrategy::round_robin(),
         }
     }
 
     /// Pick randomly from `agents` on each request.
     pub fn random(agents: Vec<impl Into<String>>) -> Self {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let seed = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.subsec_nanos() as usize)
-            .unwrap_or(42);
         Self {
             agents: agents.into_iter().map(Into::into).collect(),
-            strategy: Strategy::Random(AtomicUsize::new(seed | 1)),
+            strategy: RotationStrategy::random(),
         }
     }
 
@@ -68,21 +56,7 @@ impl UserAgentRotator {
         if self.agents.is_empty() {
             return None;
         }
-        let idx = match &self.strategy {
-            Strategy::RoundRobin(counter) => {
-                counter.fetch_add(1, Ordering::Relaxed) % self.agents.len()
-            }
-            Strategy::Random(state) => {
-                // XorShift pseudo-random — no external dependency needed.
-                let mut x = state.load(Ordering::Relaxed);
-                x ^= x << 13;
-                x ^= x >> 7;
-                x ^= x << 17;
-                state.store(x, Ordering::Relaxed);
-                x % self.agents.len()
-            }
-        };
-        Some(&self.agents[idx])
+        Some(&self.agents[self.strategy.pick_index(self.agents.len())])
     }
 }
 

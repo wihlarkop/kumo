@@ -2,6 +2,8 @@ use std::{sync::Arc, time::Duration};
 use tokio::task::JoinSet;
 use tracing::{error, info};
 
+const USER_AGENT: &str = concat!("kumo/", env!("CARGO_PKG_VERSION"));
+
 use crate::{
     error::{ErrorPolicy, KumoError},
     extract::Response,
@@ -413,84 +415,19 @@ impl CrawlEngine {
         let crawl_delay = self.crawl_delay;
         let concurrency = self.concurrency;
         let retry_policy = self.retry_policy;
-        let robots_cache = if self.respect_robots {
-            Some(Arc::new(RobotsCache::with_ttl(
-                concat!("kumo/", env!("CARGO_PKG_VERSION")),
-                self.robots_ttl,
-            )))
-        } else {
-            None
-        };
-
-        // Single shared reqwest client — used for robots.txt and plain HTTP fetching.
-        let client = {
-            let mut builder = reqwest::Client::builder()
-                .cookie_store(true)
-                .user_agent(concat!("kumo/", env!("CARGO_PKG_VERSION")));
-            if let Some(customize) = self.http_client_builder {
-                builder = customize(builder);
-            }
-            builder.build().map_err(KumoError::Fetch)?
-        };
-
-        // Build the fetcher: use override if provided, else stealth/browser/plain HTTP.
-        let fetcher: Arc<dyn Fetcher> = if let Some(f) = self.fetcher_override {
-            f
-        } else {
+        let robots_cache = build_robots_cache(self.respect_robots, self.robots_ttl);
+        let client = build_http_client(self.http_client_builder)?;
+        let fetcher = build_raw_fetcher(FetcherArgs {
+            fetcher_override: self.fetcher_override,
+            client: client.clone(),
+            concurrency,
             #[cfg(feature = "stealth")]
-            if let Some(profile) = self.stealth_profile {
-                Arc::new(crate::fetch::StealthHttpFetcher::new(profile)?)
-            } else {
-                #[cfg(not(feature = "browser"))]
-                {
-                    Arc::new(HttpFetcher::new(
-                        client.clone(),
-                        concat!("kumo/", env!("CARGO_PKG_VERSION")),
-                    ))
-                }
-                #[cfg(feature = "browser")]
-                {
-                    match self.browser {
-                        Some(cfg) => Arc::new(BrowserFetcher::launch(cfg, concurrency).await?),
-                        None => Arc::new(HttpFetcher::new(
-                            client.clone(),
-                            concat!("kumo/", env!("CARGO_PKG_VERSION")),
-                        )),
-                    }
-                }
-            }
-            #[cfg(not(feature = "stealth"))]
-            {
-                #[cfg(not(feature = "browser"))]
-                {
-                    Arc::new(HttpFetcher::new(
-                        client.clone(),
-                        concat!("kumo/", env!("CARGO_PKG_VERSION")),
-                    ))
-                }
-                #[cfg(feature = "browser")]
-                {
-                    match self.browser {
-                        Some(cfg) => Arc::new(BrowserFetcher::launch(cfg, concurrency).await?),
-                        None => Arc::new(HttpFetcher::new(
-                            client.clone(),
-                            concat!("kumo/", env!("CARGO_PKG_VERSION")),
-                        )),
-                    }
-                }
-            }
-        };
-
-        // Wrap with disk cache if configured.
-        let fetcher: Arc<dyn Fetcher> = if let Some(dir) = self.cache_dir {
-            let mut cf = crate::fetch::CachingFetcher::new(ArcFetcher(fetcher), dir)?;
-            if let Some(ttl) = self.cache_ttl {
-                cf = cf.ttl(ttl);
-            }
-            Arc::new(cf)
-        } else {
-            fetcher
-        };
+            stealth_profile: self.stealth_profile,
+            #[cfg(feature = "browser")]
+            browser: self.browser,
+        })
+        .await?;
+        let fetcher = wrap_with_cache(fetcher, self.cache_dir, self.cache_ttl)?;
 
         spider.open().await?;
 
@@ -736,81 +673,19 @@ impl CrawlEngine {
         let concurrency = self.concurrency;
         let retry_policy = self.retry_policy;
 
-        let client = {
-            let mut builder = reqwest::Client::builder()
-                .cookie_store(true)
-                .user_agent(concat!("kumo/", env!("CARGO_PKG_VERSION")));
-            if let Some(customize) = self.http_client_builder {
-                builder = customize(builder);
-            }
-            builder.build().map_err(KumoError::Fetch)?
-        };
-
-        let fetcher: Arc<dyn Fetcher> = if let Some(f) = self.fetcher_override {
-            f
-        } else {
+        let client = build_http_client(self.http_client_builder)?;
+        let fetcher = build_raw_fetcher(FetcherArgs {
+            fetcher_override: self.fetcher_override,
+            client: client.clone(),
+            concurrency,
             #[cfg(feature = "stealth")]
-            if let Some(profile) = self.stealth_profile {
-                Arc::new(crate::fetch::StealthHttpFetcher::new(profile)?)
-            } else {
-                #[cfg(not(feature = "browser"))]
-                {
-                    Arc::new(HttpFetcher::new(
-                        client.clone(),
-                        concat!("kumo/", env!("CARGO_PKG_VERSION")),
-                    ))
-                }
-                #[cfg(feature = "browser")]
-                {
-                    match self.browser {
-                        Some(cfg) => Arc::new(BrowserFetcher::launch(cfg, concurrency).await?),
-                        None => Arc::new(HttpFetcher::new(
-                            client.clone(),
-                            concat!("kumo/", env!("CARGO_PKG_VERSION")),
-                        )),
-                    }
-                }
-            }
-            #[cfg(not(feature = "stealth"))]
-            {
-                #[cfg(not(feature = "browser"))]
-                {
-                    Arc::new(HttpFetcher::new(
-                        client.clone(),
-                        concat!("kumo/", env!("CARGO_PKG_VERSION")),
-                    ))
-                }
-                #[cfg(feature = "browser")]
-                {
-                    match self.browser {
-                        Some(cfg) => Arc::new(BrowserFetcher::launch(cfg, concurrency).await?),
-                        None => Arc::new(HttpFetcher::new(
-                            client.clone(),
-                            concat!("kumo/", env!("CARGO_PKG_VERSION")),
-                        )),
-                    }
-                }
-            }
-        };
-
-        let fetcher: Arc<dyn Fetcher> = if let Some(dir) = self.cache_dir {
-            let mut cf = crate::fetch::CachingFetcher::new(ArcFetcher(fetcher), dir)?;
-            if let Some(ttl) = self.cache_ttl {
-                cf = cf.ttl(ttl);
-            }
-            Arc::new(cf)
-        } else {
-            fetcher
-        };
-
-        let robots_cache = if self.respect_robots {
-            Some(Arc::new(RobotsCache::with_ttl(
-                concat!("kumo/", env!("CARGO_PKG_VERSION")),
-                self.robots_ttl,
-            )))
-        } else {
-            None
-        };
+            stealth_profile: self.stealth_profile,
+            #[cfg(feature = "browser")]
+            browser: self.browser,
+        })
+        .await?;
+        let fetcher = wrap_with_cache(fetcher, self.cache_dir, self.cache_ttl)?;
+        let robots_cache = build_robots_cache(self.respect_robots, self.robots_ttl);
 
         for (spider, _) in &spider_entries {
             spider.open().await?;
@@ -1096,6 +971,76 @@ impl Fetcher for ArcFetcher {
     async fn fetch(&self, request: &crate::middleware::Request) -> Result<Response, KumoError> {
         self.0.fetch(request).await
     }
+}
+
+// ── Engine setup helpers ─────────────────────────────────────────────────────
+
+fn build_http_client(
+    customize: Option<Box<dyn FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder + Send>>,
+) -> Result<reqwest::Client, KumoError> {
+    let mut builder = reqwest::Client::builder()
+        .cookie_store(true)
+        .user_agent(USER_AGENT);
+    if let Some(f) = customize {
+        builder = f(builder);
+    }
+    builder.build().map_err(KumoError::Fetch)
+}
+
+fn build_robots_cache(respect: bool, ttl: Duration) -> Option<Arc<RobotsCache>> {
+    if respect {
+        Some(Arc::new(RobotsCache::with_ttl(USER_AGENT, ttl)))
+    } else {
+        None
+    }
+}
+
+fn wrap_with_cache(
+    fetcher: Arc<dyn Fetcher>,
+    cache_dir: Option<std::path::PathBuf>,
+    cache_ttl: Option<Duration>,
+) -> Result<Arc<dyn Fetcher>, KumoError> {
+    if let Some(dir) = cache_dir {
+        let mut cf = crate::fetch::CachingFetcher::new(ArcFetcher(fetcher), dir)?;
+        if let Some(ttl) = cache_ttl {
+            cf = cf.ttl(ttl);
+        }
+        Ok(Arc::new(cf))
+    } else {
+        Ok(fetcher)
+    }
+}
+
+/// Arguments for `build_raw_fetcher` — grouped to avoid repeating the cfg-gated fields.
+#[allow(dead_code)]
+struct FetcherArgs {
+    fetcher_override: Option<Arc<dyn Fetcher>>,
+    client: reqwest::Client,
+    concurrency: usize,
+    #[cfg(feature = "stealth")]
+    stealth_profile: Option<crate::fetch::StealthProfile>,
+    #[cfg(feature = "browser")]
+    browser: Option<BrowserConfig>,
+}
+
+async fn build_raw_fetcher(args: FetcherArgs) -> Result<Arc<dyn Fetcher>, KumoError> {
+    if let Some(f) = args.fetcher_override {
+        return Ok(f);
+    }
+
+    #[cfg(feature = "stealth")]
+    if let Some(profile) = args.stealth_profile {
+        return Ok(Arc::new(crate::fetch::StealthHttpFetcher::new(profile)?));
+    }
+
+    #[cfg(feature = "browser")]
+    if let Some(cfg) = args.browser {
+        return Ok(Arc::new(
+            BrowserFetcher::launch(cfg, args.concurrency).await?,
+        ));
+    }
+
+    Ok(Arc::new(HttpFetcher::new(args.client, USER_AGENT)))
 }
 
 // ── Item Stream API ───────────────────────────────────────────────────────────

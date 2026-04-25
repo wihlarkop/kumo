@@ -1,15 +1,8 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use async_trait::async_trait;
 
 use crate::error::KumoError;
 
-use super::{Middleware, Request};
-
-enum Strategy {
-    RoundRobin(AtomicUsize),
-    Random(AtomicUsize),
-}
+use super::{Middleware, Request, RotationStrategy};
 
 /// Middleware that assigns a proxy URL to each request, rotating through a pool.
 ///
@@ -37,7 +30,7 @@ enum Strategy {
 /// ```
 pub struct ProxyRotator {
     proxies: Vec<String>,
-    strategy: Strategy,
+    strategy: RotationStrategy,
 }
 
 impl ProxyRotator {
@@ -45,20 +38,15 @@ impl ProxyRotator {
     pub fn new(proxies: Vec<impl Into<String>>) -> Self {
         Self {
             proxies: proxies.into_iter().map(Into::into).collect(),
-            strategy: Strategy::RoundRobin(AtomicUsize::new(0)),
+            strategy: RotationStrategy::round_robin(),
         }
     }
 
     /// Pick a proxy pseudo-randomly on each request.
     pub fn random(proxies: Vec<impl Into<String>>) -> Self {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let seed = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.subsec_nanos() as usize)
-            .unwrap_or(42);
         Self {
             proxies: proxies.into_iter().map(Into::into).collect(),
-            strategy: Strategy::Random(AtomicUsize::new(seed | 1)),
+            strategy: RotationStrategy::random(),
         }
     }
 
@@ -66,20 +54,7 @@ impl ProxyRotator {
         if self.proxies.is_empty() {
             return None;
         }
-        let idx = match &self.strategy {
-            Strategy::RoundRobin(counter) => {
-                counter.fetch_add(1, Ordering::Relaxed) % self.proxies.len()
-            }
-            Strategy::Random(state) => {
-                let mut x = state.load(Ordering::Relaxed);
-                x ^= x << 13;
-                x ^= x >> 7;
-                x ^= x << 17;
-                state.store(x, Ordering::Relaxed);
-                x % self.proxies.len()
-            }
-        };
-        Some(&self.proxies[idx])
+        Some(&self.proxies[self.strategy.pick_index(self.proxies.len())])
     }
 }
 
