@@ -36,11 +36,11 @@ It gives you a trait-based, async-first API for writing spiders that scrape, fol
 
 | | **kumo** | Colly (Go) | Scrapy (Python) |
 |---|---|---|---|
-| Real site — Items/s | **68.4** | 68.8 | 51.4 |
-| Local server — Items/s | **12 346** | 4 310 | 179 |
-| Peak RSS | **14.2 MB** | 33.6 MB | 77.1 MB |
+| Real site — Items/s | **69.7** | 69.1 | 51.9 |
+| Local server — Items/s | **12 500** | 3 650 | 181 |
+| Peak RSS | **14.1 MB** | 31.1 MB | 77.3 MB |
 
-On raw parsing throughput (local server, no network): **2.9× faster than Colly, 69× faster than Scrapy**. Full methodology and reproduction steps in [`benchmark/`](https://github.com/wihlarkop/kumo/tree/main/benchmark).
+On raw parsing throughput (local server, no network): **3.4× faster than Colly, 69× faster than Scrapy**. Full methodology and reproduction steps in [`benchmark/`](https://github.com/wihlarkop/kumo/tree/main/benchmark).
 
 ## Quick Install
 
