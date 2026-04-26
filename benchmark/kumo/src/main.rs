@@ -80,9 +80,13 @@ fn peak_rss_kb() -> u64 {
 #[tokio::main]
 async fn main() -> Result<(), KumoError> {
     let start = Instant::now();
+    let concurrency: usize = std::env::var("CONCURRENCY")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(16);
 
     let stats = CrawlEngine::builder()
-        .concurrency(16)
+        .concurrency(concurrency)
         .respect_robots_txt(false)
         .store(JsonlStore::new("/results/kumo.jsonl")?)
         .run(BooksSpider::new())
@@ -96,6 +100,7 @@ async fn main() -> Result<(), KumoError> {
         "items": stats.items_scraped,
         "pages": stats.pages_crawled,
         "peak_rss_kb": rss_kb,
+        "concurrency": concurrency,
     });
     std::fs::write("/results/kumo_stats.json", result.to_string()).ok();
 
