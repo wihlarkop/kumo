@@ -175,5 +175,8 @@ jobs:
       - name: Clippy (mysql feature)
         run: cargo clippy --all-targets --features mysql -- -D warnings
 
+      - name: Clippy (cloud feature)
+        run: cargo clippy --all-targets --features cloud -- -D warnings
+
       - name: Format check
         run: cargo fmt --check
