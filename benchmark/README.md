@@ -10,12 +10,12 @@ Network I/O dominates here; this measures end-to-end throughput over the wire.
 
 | Framework | Language | Time (s) | Items/s | Peak RSS |
 |-----------|----------|--------:|--------:|---------:|
-| **kumo** | Rust | **14.6** | **68.4** | **14.2 MB** |
-| Colly | Go | 14.5 | 68.8 | 33.6 MB |
-| Scrapy | Python | 19.5 | 51.4 | 77.1 MB |
+| **kumo** | Rust | **13.0** | **76.7** | **12.5 MB** |
+| Colly | Go | 13.6 | 73.5 | 31.4 MB |
+| Scrapy | Python | 18.7 | 53.3 | 77.2 MB |
 
-- kumo uses **2.4× less memory** than Colly and **5.4× less** than Scrapy
-- kumo and Colly reach the same network ceiling; Scrapy trails by ~25%
+- kumo uses **2.5× less memory** than Colly and **6.2× less** than Scrapy
+- kumo is **4% faster** than Colly; Scrapy trails by ~31%
 
 ## Results — Local Mock Server
 
@@ -23,12 +23,12 @@ Network removed; this measures raw framework throughput (parsing, routing, concu
 
 | Framework | Language | Time (s) | Items/s | Peak RSS |
 |-----------|----------|--------:|--------:|---------:|
-| **kumo** | Rust | **0.08** | **12 346** | **11.5 MB** |
-| Colly | Go | 0.23 | 4 310 | 14.3 MB |
-| Scrapy | Python | 5.59 | 179 | 69.7 MB |
+| **kumo** | Rust | **0.08** | **12 346** | **11.3 MB** |
+| Colly | Go | 0.24 | 4 098 | 15.8 MB |
+| Scrapy | Python | 5.57 | 180 | 69.9 MB |
 
-- kumo is **2.9× faster** than Colly and **69× faster** than Scrapy at raw parsing throughput
-- kumo's memory advantage grows: **1.2× over Colly**, **6× over Scrapy**
+- kumo is **3.0× faster** than Colly and **69× faster** than Scrapy at raw parsing throughput
+- kumo's memory advantage: **1.4× over Colly**, **6.2× over Scrapy**
 
 ## Hardware
 

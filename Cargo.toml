@@ -75,7 +75,15 @@ tokio-stream = "0.1"
 async-trait = "0.1.89"
 
 # HTTP
-reqwest = { version = "0.13.2", features = ["json", "cookies"] }
+reqwest = { version = "0.13.2", default-features = false, features = [
+    "rustls",
+    "http2",
+    "gzip",
+    "brotli",
+    "deflate",
+    "json",
+    "cookies",
+] }
 url     = "2.5.8"
 bytes   = "1.11.1"
 
