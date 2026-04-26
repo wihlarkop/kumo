@@ -39,3 +39,7 @@ docs/site/
 docs/.cache/
 docs/.venv/
 docs/.python-version
+
+# Benchmark rolling result files (generated on every run — not source)
+benchmark/results/*.json
+benchmark/results/*.jsonl
