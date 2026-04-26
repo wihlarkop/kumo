@@ -85,6 +85,7 @@ nav:
     - Frontiers: frontier.md
     - Feature Flags: feature-flags.md
   - Advanced:
+    - Performance: advanced/performance.md
     - Item Stream: advanced/stream.md
     - OpenTelemetry: advanced/otel.md
     - Stealth Mode: advanced/stealth.md
