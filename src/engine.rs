@@ -125,6 +125,7 @@ pub struct CrawlEngine {
     robots_ttl: Duration,
     metrics_interval: Option<Duration>,
     stream_buffer: usize,
+    request_timeout: Option<Duration>,
     spiders: Vec<Arc<dyn ErasedSpider>>,
     fetcher_override: Option<Arc<dyn Fetcher>>,
     cache_dir: Option<std::path::PathBuf>,
@@ -152,6 +153,7 @@ impl Default for CrawlEngine {
             robots_ttl: Duration::from_secs(24 * 60 * 60),
             metrics_interval: None,
             stream_buffer: 100,
+            request_timeout: None,
             spiders: Vec::new(),
             fetcher_override: None,
             cache_dir: None,
@@ -343,6 +345,13 @@ impl CrawlEngine {
         self
     }
 
+    /// Set a per-request timeout. Requests exceeding this duration return `KumoError::Fetch`.
+    /// Default: no timeout.
+    pub fn request_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = Some(timeout);
+        self
+    }
+
     /// Run the crawl in the background and stream items as they are scraped.
     ///
     /// Unlike [`run`](Self::run), this returns immediately with an [`ItemStream`].
@@ -416,7 +425,7 @@ impl CrawlEngine {
         let concurrency = self.concurrency;
         let retry_policy = self.retry_policy;
         let robots_cache = build_robots_cache(self.respect_robots, self.robots_ttl);
-        let client = build_http_client(self.http_client_builder)?;
+        let client = build_http_client(concurrency, self.request_timeout, self.http_client_builder)?;
         let fetcher = build_raw_fetcher(FetcherArgs {
             fetcher_override: self.fetcher_override,
             client: client.clone(),
@@ -655,7 +664,7 @@ impl CrawlEngine {
         let concurrency = self.concurrency;
         let retry_policy = self.retry_policy;
 
-        let client = build_http_client(self.http_client_builder)?;
+        let client = build_http_client(concurrency, self.request_timeout, self.http_client_builder)?;
         let fetcher = build_raw_fetcher(FetcherArgs {
             fetcher_override: self.fetcher_override,
             client: client.clone(),
@@ -955,11 +964,18 @@ impl Fetcher for ArcFetcher {
 // ── Engine setup helpers ─────────────────────────────────────────────────────
 
 fn build_http_client(
+    concurrency: usize,
+    timeout: Option<Duration>,
     customize: Option<Box<dyn FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder + Send>>,
 ) -> Result<reqwest::Client, KumoError> {
     let mut builder = reqwest::Client::builder()
         .cookie_store(true)
-        .user_agent(USER_AGENT);
+        .user_agent(USER_AGENT)
+        .pool_max_idle_per_host(concurrency)
+        .tcp_keepalive(Duration::from_secs(60));
+    if let Some(t) = timeout {
+        builder = builder.timeout(t);
+    }
     if let Some(f) = customize {
         builder = f(builder);
     }
@@ -1074,5 +1090,16 @@ impl tokio_stream::Stream for ItemStream {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         std::pin::Pin::new(&mut self.inner).poll_next(cx)
+    }
+}
+
+#[cfg(test)]
+mod pool_tests {
+    use super::*;
+
+    #[test]
+    fn build_http_client_accepts_concurrency() {
+        let _c1 = build_http_client(16, None, None).unwrap();
+        let _c2 = build_http_client(1, None, None).unwrap();
     }
 }
