@@ -30,6 +30,21 @@ Network removed; this measures raw framework throughput (parsing, routing, concu
 - kumo is **3.0× faster** than Colly and **69× faster** than Scrapy at raw parsing throughput
 - kumo's memory advantage: **1.4× over Colly**, **6.2× over Scrapy**
 
+## Scaling Results — Local Mock Server
+
+How throughput (items/s) scales with concurrency. 1 run per level, local mock server:
+
+| Concurrency | **kumo** | Colly (Go) | Scrapy (Python) |
+|------------:|--------:|-----------:|----------------:|
+| 16 | **4 831** | 3 937 | 181 |
+| 32 | **11 765** | 4 608 | 177 |
+| 64 | **12 048** | 4 237 | 181 |
+| 128 | **12 987** | 3 891 | 181 |
+
+- kumo scales **2.7× from 16→32** then plateaus near nginx's static-file serving ceiling (~13 000 items/s)
+- Colly plateaus at ~4 000–4 600 items/s regardless of concurrency — goroutine scheduling overhead limits further gain
+- Scrapy is flat at ~180 items/s across all levels — the Python GIL prevents true parallel I/O beyond a narrow window
+
 ## Hardware
 
 - **CPU:** Intel Core i7-9750H @ 2.60 GHz (6 cores / 12 threads)

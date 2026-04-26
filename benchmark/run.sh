@@ -63,7 +63,7 @@ print("-" * (13 + 14 * len(services)))
 for c in levels:
     print(f"{c:>13}", end="")
     for svc in services:
-        path = f"results/scale/{svc}_c{c}_stats.json"
+        path = os.path.join("results", "scale", f"{svc}_c{c}_stats.json")
         if os.path.exists(path):
             with open(path) as f:
                 s = json.load(f)
