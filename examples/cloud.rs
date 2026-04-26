@@ -44,7 +44,11 @@ impl Spider for QuotesSpider {
             .css(".quote")
             .iter()
             .map(|el| Quote {
-                text: el.css(".text").first().map(|e| e.text()).unwrap_or_default(),
+                text: el
+                    .css(".text")
+                    .first()
+                    .map(|e| e.text())
+                    .unwrap_or_default(),
                 author: el
                     .css(".author")
                     .first()
@@ -77,9 +81,8 @@ async fn main() -> Result<(), KumoError> {
     let out_dir = std::env::temp_dir().join("kumo-cloud-demo");
     std::fs::create_dir_all(&out_dir).expect("create output directory");
 
-    let backend = Arc::new(
-        LocalFileSystem::new_with_prefix(&out_dir).expect("create LocalFileSystem"),
-    );
+    let backend =
+        Arc::new(LocalFileSystem::new_with_prefix(&out_dir).expect("create LocalFileSystem"));
 
     // Swap `backend` for any object_store implementation to target S3, GCS, etc.
     let store = CloudStore::builder(backend).prefix("quotes").build();

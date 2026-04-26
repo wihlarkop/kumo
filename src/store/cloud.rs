@@ -122,9 +122,9 @@ impl ItemStore for CloudStore {
 mod tests {
     use std::sync::Arc;
 
+    use object_store::ObjectStore;
     use object_store::memory::InMemory;
     use object_store::path::Path as StorePath;
-    use object_store::ObjectStore;
     use serde_json::json;
 
     use super::*;
