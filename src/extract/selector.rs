@@ -1,3 +1,23 @@
+use std::sync::{Arc, RwLock};
+
+static SELECTOR_CACHE: std::sync::LazyLock<RwLock<std::collections::HashMap<String, Arc<scraper::Selector>>>> =
+    std::sync::LazyLock::new(|| RwLock::new(std::collections::HashMap::new()));
+
+/// Returns a compiled selector from the global cache, inserting on first use.
+/// Returns `None` for invalid selector strings.
+pub(crate) fn get_selector(s: &str) -> Option<Arc<scraper::Selector>> {
+    {
+        let cache = SELECTOR_CACHE.read().unwrap();
+        if let Some(sel) = cache.get(s) {
+            return Some(Arc::clone(sel));
+        }
+    }
+    let compiled = scraper::Selector::parse(s).ok()?;
+    let arc = Arc::new(compiled);
+    SELECTOR_CACHE.write().unwrap().insert(s.to_string(), Arc::clone(&arc));
+    Some(arc)
+}
+
 // Cached root selector — avoids recompiling "*" on every attr/inner_html call.
 static ROOT_SELECTOR: std::sync::LazyLock<scraper::Selector> =
     std::sync::LazyLock::new(|| scraper::Selector::parse("*").unwrap());
@@ -83,7 +103,7 @@ impl Element {
     /// Select child elements via a CSS selector.
     pub fn css(&self, selector: &str) -> ElementList {
         let fragment = scraper::Html::parse_fragment(&self.outer_html);
-        let Ok(sel) = scraper::Selector::parse(selector) else {
+        let Some(sel) = get_selector(selector) else {
             return ElementList { elements: vec![] };
         };
         let elements = fragment
@@ -127,6 +147,21 @@ impl Element {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn selector_cache_reuses_compiled_selector() {
+        let s1 = get_selector("h1");
+        let s2 = get_selector("h1");
+        assert!(s1.is_some());
+        assert!(s2.is_some());
+        assert!(Arc::ptr_eq(s1.as_ref().unwrap(), s2.as_ref().unwrap()));
+    }
+
+    #[test]
+    fn selector_cache_returns_none_for_invalid() {
+        assert!(get_selector("!!!bad").is_none());
+    }
 
     fn make_element(html: &str) -> Element {
         Element {
