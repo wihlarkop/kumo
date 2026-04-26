@@ -16,9 +16,7 @@ impl BooksSpider {
     fn new() -> Self {
         Self {
             start_url: std::env::var("TARGET_URL")
-                .unwrap_or_else(|_| {
-                    "https://books.toscrape.com/catalogue/page-1.html".into()
-                }),
+                .unwrap_or_else(|_| "https://books.toscrape.com/catalogue/page-1.html".into()),
         }
     }
 }
