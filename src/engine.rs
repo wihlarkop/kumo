@@ -425,7 +425,8 @@ impl CrawlEngine {
         let concurrency = self.concurrency;
         let retry_policy = self.retry_policy;
         let robots_cache = build_robots_cache(self.respect_robots, self.robots_ttl);
-        let client = build_http_client(concurrency, self.request_timeout, self.http_client_builder)?;
+        let client =
+            build_http_client(concurrency, self.request_timeout, self.http_client_builder)?;
         let fetcher = build_raw_fetcher(FetcherArgs {
             fetcher_override: self.fetcher_override,
             client: client.clone(),
@@ -664,7 +665,8 @@ impl CrawlEngine {
         let concurrency = self.concurrency;
         let retry_policy = self.retry_policy;
 
-        let client = build_http_client(concurrency, self.request_timeout, self.http_client_builder)?;
+        let client =
+            build_http_client(concurrency, self.request_timeout, self.http_client_builder)?;
         let fetcher = build_raw_fetcher(FetcherArgs {
             fetcher_override: self.fetcher_override,
             client: client.clone(),
