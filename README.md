@@ -139,24 +139,6 @@ async fn main() -> Result<(), KumoError> {
 
 For more examples — rate limiting, database stores, LLM extraction, browser mode, and all selector types — see the [`examples/`](examples/) folder.
 
-## Performance Tips
-
-For long-running crawls (minutes or longer), using [jemalloc](https://github.com/tikv/jemallocator) as your global allocator can improve throughput by reducing allocator fragmentation and contention under concurrent workloads:
-
-```toml
-# Cargo.toml
-[dependencies]
-tikv-jemallocator = "0.6"
-```
-
-```rust
-// main.rs
-#[global_allocator]
-static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
-```
-
-Note: jemalloc pre-allocates arena space so peak RSS will appear higher than the system allocator — this is expected and not a memory leak.
-
 ## Documentation
 
 Full documentation at **[kumo.wihlarkop.com](https://kumo.wihlarkop.com)**

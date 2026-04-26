@@ -118,10 +118,10 @@ impl Response {
         let Some(text) = self.text() else {
             return ElementList { elements: vec![] };
         };
-        let document = scraper::Html::parse_document(text);
-        let Ok(sel) = scraper::Selector::parse(selector) else {
+        let Some(sel) = crate::extract::selector::get_selector(selector) else {
             return ElementList { elements: vec![] };
         };
+        let document = scraper::Html::parse_document(text);
         let elements = document
             .select(&sel)
             .map(|el| Element {
