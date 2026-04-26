@@ -1,0 +1,12 @@
+min_version: 1.5.0
+
+pre-commit:
+  parallel: false
+  commands:
+    fmt:
+      glob: "**/*.rs"
+      run: cargo fmt
+      stage_fixed: true
+    clippy:
+      glob: "**/*.rs"
+      run: cargo clippy --all-targets -- -D warnings

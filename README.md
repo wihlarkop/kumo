@@ -153,6 +153,26 @@ Full documentation at **[kumo.wihlarkop.com](https://kumo.wihlarkop.com)**
 - [Examples](https://kumo.wihlarkop.com/examples/)
 - [Feature Flags](https://kumo.wihlarkop.com/feature-flags/)
 
+## Contributing
+
+```bash
+# Install lefthook (one-time setup)
+# macOS
+brew install lefthook
+
+# Windows
+scoop install lefthook
+# or: winget install lefthook
+
+# Linux
+curl -1sLf 'https://dl.lefthook.dev/setup.sh' | sh
+
+# Activate the hooks
+lefthook install
+```
+
+After `lefthook install`, every `git commit` will automatically run `cargo fmt` (auto-fix) and `cargo clippy` before the commit goes through.
+
 ## License
 
 MIT
