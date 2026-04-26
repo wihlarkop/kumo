@@ -2,22 +2,22 @@
   {
     "framework": "kumo",
     "items": 1000,
-    "elapsed_s": 0.08,
-    "items_per_s": 12500.0,
-    "peak_rss_mb": 11.4
+    "elapsed_s": 0.081,
+    "items_per_s": 12345.7,
+    "peak_rss_mb": 11.3
   },
   {
     "framework": "scrapy",
     "items": 1000,
-    "elapsed_s": 5.538,
-    "items_per_s": 180.6,
-    "peak_rss_mb": 69.7
+    "elapsed_s": 5.568,
+    "items_per_s": 179.6,
+    "peak_rss_mb": 69.9
   },
   {
     "framework": "colly",
     "items": 1000,
-    "elapsed_s": 0.274,
-    "items_per_s": 3649.6,
-    "peak_rss_mb": 15.0
+    "elapsed_s": 0.244,
+    "items_per_s": 4098.4,
+    "peak_rss_mb": 15.8
   }
 ]

@@ -35,11 +35,11 @@ An async web crawling framework for Rust — Scrapy for Rust.
 
 | | **kumo** | Colly (Go) | Scrapy (Python) |
 |---|---|---|---|
-| Real site — Items/s | **69.7** | 69.1 | 51.9 |
-| Local server — Items/s | **12 500** | 3 650 | 181 |
-| Peak RSS | **14.1 MB** | 31.1 MB | 77.3 MB |
+| Real site — Items/s | **76.7** | 73.5 | 53.3 |
+| Local server — Items/s | **12 346** | 4 098 | 180 |
+| Peak RSS | **12.5 MB** | 31.4 MB | 77.2 MB |
 
-On raw parsing throughput (local server, no network): **3.4× faster than Colly, 69× faster than Scrapy**. See [`benchmark/`](benchmark/) for full methodology and reproduction steps.
+On raw parsing throughput (local server, no network): **3.0× faster than Colly, 69× faster than Scrapy**. See [`benchmark/`](benchmark/) for full methodology and reproduction steps.
 
 ## Features
 
