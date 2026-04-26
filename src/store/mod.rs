@@ -8,6 +8,8 @@ pub mod postgres;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 pub mod stdout;
+#[cfg(feature = "cloud")]
+pub mod cloud;
 
 pub use csv::CsvStore;
 pub use json::JsonStore;
@@ -19,6 +21,8 @@ pub use postgres::{PostgresStore, PostgresStoreBuilder};
 #[cfg(feature = "sqlite")]
 pub use sqlite::{SqliteStore, SqliteStoreBuilder};
 pub use stdout::StdoutStore;
+#[cfg(feature = "cloud")]
+pub use cloud::{CloudFormat, CloudStore, CloudStoreBuilder};
 
 use crate::error::KumoError;
 

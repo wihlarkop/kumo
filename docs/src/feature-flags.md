@@ -20,6 +20,10 @@ All optional capabilities in kumo are behind feature flags, so you only compile 
 | `postgres` | `sqlx` | `PostgresStore` |
 | `sqlite` | `sqlx` | `SqliteStore` |
 | `mysql` | `sqlx` | `MySqlStore` |
+| `cloud` | `object_store` | `CloudStore` — backend-agnostic cloud storage (LocalFileSystem + InMemory included) |
+| `cloud-s3` | `object_store/aws` | Adds Amazon S3 backend support to `CloudStore` |
+| `cloud-gcs` | `object_store/gcp` | Adds Google Cloud Storage backend support to `CloudStore` |
+| `cloud-azure` | `object_store/azure` | Adds Azure Blob Storage backend support to `CloudStore` |
 | `persistence` | — | `FileFrontier` — file-backed URL frontier that survives restarts |
 | `redis-frontier` | `redis` | `RedisFrontier` — distributed URL frontier via Redis |
 | `otel` | `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`, `tracing-opentelemetry` | OTLP/gRPC export of all spans and events |
@@ -40,6 +44,19 @@ kumo = { version = "0.1", features = ["sqlite", "derive"] }
 kumo = { version = "0.1", features = ["postgres", "redis-frontier", "otel"] }
 ```
 
+### Cloud storage
+
+```toml
+# Write to S3
+kumo = { version = "0.1", features = ["cloud-s3"] }
+
+# Write to GCS
+kumo = { version = "0.1", features = ["cloud-gcs"] }
+
+# Write to Azure Blob
+kumo = { version = "0.1", features = ["cloud-azure"] }
+```
+
 ### LLM extraction
 
 ```toml
@@ -58,6 +75,7 @@ kumo = { version = "0.1", features = [
     "browser", "stealth",
     "claude",
     "postgres", "redis-frontier",
+    "cloud-s3",
     "otel",
 ] }
 ```

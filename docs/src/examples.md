@@ -98,6 +98,14 @@ Stores scraped items into PostgreSQL. Requires a running Postgres instance.
 cargo run --example postgres --features postgres
 ```
 
+### `cloud.rs` — Cloud storage (S3 / GCS / Azure / local)
+
+Stores scraped items as JSONL via the backend-agnostic `CloudStore`. The example uses `LocalFileSystem` — no cloud credentials needed. Swap the backend for `AmazonS3`, `GoogleCloudStorage`, or `MicrosoftAzure` with no other code changes.
+
+```bash
+cargo run --example cloud --features cloud
+```
+
 ## LLM Extraction
 
 ### `llm_extract.rs` — LLM extraction

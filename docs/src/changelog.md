@@ -12,6 +12,13 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### Unreleased
+
+- `CloudStore` — backend-agnostic cloud storage via [`object_store`](https://docs.rs/object_store); supports S3, GCS, Azure Blob, local filesystem, and in-memory backends through a unified `Arc<dyn ObjectStore>` interface
+- New feature flags: `cloud`, `cloud-s3`, `cloud-gcs`, `cloud-azure`
+- `CloudFormat::Jsonl` (default) and `CloudFormat::Json` output formats
+- Auto-generated timestamped filenames; configurable via `.filename()` and `.prefix()`
+
 ### 0.1.0 — 2026-04-13
 
 - Async-first crawl engine via Tokio (`CrawlEngine::builder()`)
