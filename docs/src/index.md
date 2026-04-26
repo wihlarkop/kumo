@@ -14,16 +14,33 @@ It gives you a trait-based, async-first API for writing spiders that scrape, fol
 
 ## Why kumo?
 
-| Feature | Scrapy (Python) | gocolly (Go) | **kumo (Rust)** |
-|---------|----------------|--------------|-----------------|
-| Async-first | ✅ (Twisted) | ✅ | ✅ (Tokio) |
-| Type-safe items | ❌ (dicts) | ❌ | ✅ |
-| CSS selectors | ✅ | ✅ | ✅ |
-| XPath selectors | ✅ | ❌ | ✅ |
-| LLM extraction | ❌ | ❌ | ✅ |
-| Item Stream API | ❌ | ❌ | ✅ |
-| OpenTelemetry | plugin | ❌ | ✅ |
-| Stealth / TLS spoof | plugin | ❌ | ✅ |
+|  | **kumo** | **Scrapy** (Python) | **Colly** (Go) |
+|---|---|---|---|
+| Language | Rust | Python | Go |
+| Type safety | Compile-time | Runtime | Partial |
+| Async model | Tokio (true async) | Twisted (event loop) | goroutines |
+| Memory safety | Guaranteed | GC | GC |
+| CSS / XPath / Regex / JSONPath | ✅ | ✅ | CSS only |
+| `#[derive(Extract)]` macro | ✅ | ❌ | ❌ |
+| LLM extraction (Claude / OpenAI / Gemini / Ollama) | ✅ | ❌ | ❌ |
+| Browser / JS rendering | ✅ (chromiumoxide) | ✅ (Playwright) | ❌ |
+| Stealth mode (TLS/HTTP2 fingerprint spoofing) | ✅ | ❌ | ❌ |
+| Distributed frontier (Redis) | ✅ | ✅ (scrapy-redis) | ❌ |
+| Item stream (Kafka, WebSocket) | ✅ | ❌ | ❌ |
+| OpenTelemetry export | ✅ | ❌ | ❌ |
+| Pluggable stores (JSONL, CSV, Postgres, SQLite, MySQL) | ✅ | ✅ (pipelines) | ❌ |
+| Single binary deploy | ✅ | ❌ | ✅ |
+| Binary size / startup | Small / instant | Large / slow | Small / fast |
+
+**Benchmark results** — 1 000 books, concurrency 16, median of 3 runs:
+
+| | **kumo** | Colly (Go) | Scrapy (Python) |
+|---|---|---|---|
+| Real site — Items/s | **68.4** | 68.8 | 51.4 |
+| Local server — Items/s | **12 346** | 4 310 | 179 |
+| Peak RSS | **14.2 MB** | 33.6 MB | 77.1 MB |
+
+On raw parsing throughput (local server, no network): **2.9× faster than Colly, 69× faster than Scrapy**. Full methodology and reproduction steps in [`benchmark/`](https://github.com/wihlarkop/kumo/tree/main/benchmark).
 
 ## Quick Install
 

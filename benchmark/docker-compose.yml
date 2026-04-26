@@ -1,0 +1,40 @@
+services:
+  kumo:
+    build:
+      context: ..
+      dockerfile: benchmark/kumo/Dockerfile
+    environment:
+      - TARGET_URL=${TARGET_URL:-https://books.toscrape.com/catalogue/page-1.html}
+    volumes:
+      - ./results:/results
+    networks:
+      - bench
+
+  scrapy:
+    build:
+      context: ./scrapy
+    environment:
+      - TARGET_URL=${TARGET_URL:-https://books.toscrape.com/catalogue/page-1.html}
+    volumes:
+      - ./results:/results
+    networks:
+      - bench
+
+  colly:
+    build:
+      context: ./colly
+    environment:
+      - TARGET_URL=${TARGET_URL:-https://books.toscrape.com/catalogue/page-1.html}
+    volumes:
+      - ./results:/results
+    networks:
+      - bench
+
+  mockserver:
+    build:
+      context: ./mockserver
+    networks:
+      - bench
+
+networks:
+  bench:
