@@ -6,11 +6,15 @@ cd "$SCRIPT_DIR"
 
 RUNS=3
 LOCAL=false
+SCALE=false
+CONCURRENCY=16
 
 for arg in "$@"; do
     case $arg in
         --local) LOCAL=true ;;
         --runs=*) RUNS="${arg#*=}" ;;
+        --concurrency=*) CONCURRENCY="${arg#*=}" ;;
+        --scale) SCALE=true; LOCAL=true ;;
     esac
 done
 
@@ -18,6 +22,62 @@ mkdir -p results
 
 echo "==> Building images..."
 docker compose build
+
+if $SCALE; then
+    echo ""
+    echo "==> Scaling benchmark (local mock, concurrency: 16 32 64 128)..."
+    docker compose up -d mockserver
+    sleep 1
+    export TARGET_URL="http://mockserver/catalogue/page-1.html"
+
+    mkdir -p results/scale
+
+    for c in 16 32 64 128; do
+        echo ""
+        echo "--- concurrency=$c ---"
+        export CONCURRENCY=$c
+        for svc in kumo scrapy colly; do
+            echo "    $svc @ concurrency=$c"
+            docker compose run --rm "$svc"
+            cp "results/${svc}_stats.json" "results/scale/${svc}_c${c}_stats.json"
+        done
+    done
+
+    docker compose stop mockserver
+    unset CONCURRENCY
+
+    echo ""
+    echo "=== Scaling Results (items/s) ==="
+    python - <<EOF
+import json, os
+
+services = ["kumo", "scrapy", "colly"]
+levels = [16, 32, 64, 128]
+
+print(f"{'Concurrency':>13}", end="")
+for svc in services:
+    print(f"  {svc:>12}", end="")
+print()
+print("-" * (13 + 14 * len(services)))
+
+for c in levels:
+    print(f"{c:>13}", end="")
+    for svc in services:
+        path = os.path.join("results", "scale", f"{svc}_c{c}_stats.json")
+        if os.path.exists(path):
+            with open(path) as f:
+                s = json.load(f)
+            rps = round(s.get("items", 0) / s.get("elapsed_s", 1), 0)
+            print(f"  {rps:>12.0f}", end="")
+        else:
+            print(f"  {'n/a':>12}", end="")
+    print()
+
+print()
+print("(items/s per framework at each concurrency level, local mock server)")
+EOF
+    exit 0
+fi
 
 if $LOCAL; then
     echo ""
@@ -27,6 +87,9 @@ if $LOCAL; then
     export TARGET_URL="http://mockserver/catalogue/page-1.html"
     echo "    TARGET_URL=$TARGET_URL"
 fi
+
+export CONCURRENCY=$CONCURRENCY
+echo "    CONCURRENCY=$CONCURRENCY"
 
 for svc in kumo scrapy colly; do
     echo ""

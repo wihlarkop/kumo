@@ -19,10 +19,11 @@ type Book struct {
 }
 
 type Stats struct {
-	ElapsedS   float64 `json:"elapsed_s"`
-	Items      int     `json:"items"`
-	Pages      int     `json:"pages"`
-	PeakRSSKB  int64   `json:"peak_rss_kb"`
+	ElapsedS    float64 `json:"elapsed_s"`
+	Items       int     `json:"items"`
+	Pages       int     `json:"pages"`
+	PeakRSSKB   int64   `json:"peak_rss_kb"`
+	Concurrency int     `json:"concurrency"`
 }
 
 func peakRSSKB() int64 {
@@ -48,6 +49,13 @@ func main() {
 		startURL = "https://books.toscrape.com/catalogue/page-1.html"
 	}
 
+	concurrency := 16
+	if v := os.Getenv("CONCURRENCY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			concurrency = n
+		}
+	}
+
 	start := time.Now()
 
 	outFile, err := os.Create("/results/colly.jsonl")
@@ -64,7 +72,7 @@ func main() {
 	c := colly.NewCollector()
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 16,
+		Parallelism: concurrency,
 	})
 
 	c.OnHTML("article.product_pod", func(e *colly.HTMLElement) {
@@ -97,10 +105,11 @@ func main() {
 	rssKB := peakRSSKB()
 
 	stats := Stats{
-		ElapsedS:  math.Round(elapsed*1000) / 1000,
-		Items:     itemCount,
-		Pages:     pageCount,
-		PeakRSSKB: rssKB,
+		ElapsedS:    math.Round(elapsed*1000) / 1000,
+		Items:       itemCount,
+		Pages:       pageCount,
+		PeakRSSKB:   rssKB,
+		Concurrency: concurrency,
 	}
 	statsData, _ := json.Marshal(stats)
 	os.WriteFile("/results/colly_stats.json", statsData, 0644)
