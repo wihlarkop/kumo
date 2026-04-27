@@ -6,6 +6,7 @@ use object_store::path::Path as StorePath;
 use super::ItemStore;
 use crate::error::KumoError;
 
+#[derive(Debug)]
 pub enum CloudFormat {
     Jsonl,
     Json,
@@ -80,6 +81,25 @@ impl CloudStoreBuilder {
     }
 }
 
+impl std::fmt::Debug for CloudStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CloudStore")
+            .field("path", &self.path)
+            .field("format", &self.format)
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for CloudStoreBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CloudStoreBuilder")
+            .field("prefix", &self.prefix)
+            .field("format", &self.format)
+            .field("filename", &self.filename)
+            .finish_non_exhaustive()
+    }
+}
+
 #[async_trait]
 impl ItemStore for CloudStore {
     async fn store(&self, item: &serde_json::Value) -> Result<(), KumoError> {
@@ -131,6 +151,28 @@ mod tests {
 
     fn mem_store() -> Arc<InMemory> {
         Arc::new(InMemory::new())
+    }
+
+    #[test]
+    fn cloud_format_is_debug() {
+        assert_eq!(format!("{:?}", CloudFormat::Jsonl), "Jsonl");
+        assert_eq!(format!("{:?}", CloudFormat::Json), "Json");
+    }
+
+    #[test]
+    fn cloud_store_is_debug() {
+        let s = CloudStore::builder(mem_store()).filename("x.jsonl").build();
+        let dbg = format!("{s:?}");
+        assert!(dbg.contains("CloudStore"), "got: {dbg}");
+    }
+
+    #[test]
+    fn cloud_store_builder_is_debug() {
+        let b = CloudStore::builder(mem_store())
+            .prefix("p")
+            .filename("f.jsonl");
+        let dbg = format!("{b:?}");
+        assert!(dbg.contains("CloudStoreBuilder"), "got: {dbg}");
     }
 
     #[test]
