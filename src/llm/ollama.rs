@@ -1,8 +1,8 @@
-use super::{TokenUsage, UsageCounters, prompt, shared};
+use super::{TokenUsage, UsageCounters, shared};
 use crate::error::KumoError;
 use async_trait::async_trait;
 use rig::client::{CompletionClient, Nothing};
-use rig::completion::{CompletionModel, ToolDefinition};
+use rig::completion::CompletionModel;
 use rig::providers::ollama;
 use serde_json::Value;
 use std::sync::Arc;
@@ -108,33 +108,19 @@ impl super::LlmClient for OllamaClient {
         schema: &Value,
         html: &str,
     ) -> Result<(Value, TokenUsage), KumoError> {
-        let html = if self.strip_scripts {
-            prompt::strip_scripts_and_styles(html)
-        } else {
-            html.to_string()
-        };
-
-        let user_template = self
-            .prompt_template
-            .as_deref()
-            .unwrap_or(prompt::DEFAULT_USER_PROMPT);
-        let user_content = prompt::render_user_prompt(user_template, &html);
-        let system = self
-            .system_prompt
-            .as_deref()
-            .unwrap_or(prompt::DEFAULT_SYSTEM_PROMPT);
-
-        let tool = ToolDefinition {
-            name: "extract".to_string(),
-            description: "Extract structured data from the provided HTML.".to_string(),
-            parameters: schema.clone(),
-        };
+        let args = shared::build_extract_args(
+            schema,
+            html,
+            self.system_prompt.as_deref(),
+            self.prompt_template.as_deref(),
+            self.strip_scripts,
+        );
 
         let model = self.inner.completion_model(&self.model);
         let request = model
-            .completion_request(user_content)
-            .preamble(system.to_string())
-            .tool(tool)
+            .completion_request(args.user_content)
+            .preamble(args.system)
+            .tool(args.tool)
             .max_tokens(self.max_tokens)
             .build();
 

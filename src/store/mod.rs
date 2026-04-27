@@ -58,3 +58,18 @@ pub(super) fn validate_table_name(name: &str) -> Result<(), crate::error::KumoEr
     }
     Ok(())
 }
+
+/// Convert an optional JSON value to the `Option<String>` form expected by sqlx bindings.
+/// Null JSON values map to SQL NULL; strings are used as-is; everything else is serialized.
+#[cfg(any(feature = "postgres", feature = "sqlite", feature = "mysql"))]
+pub(super) fn json_val_to_sql_string(val: Option<&serde_json::Value>) -> Option<String> {
+    val.and_then(|v| {
+        if v.is_null() {
+            None
+        } else if let Some(s) = v.as_str() {
+            Some(s.to_string())
+        } else {
+            Some(v.to_string())
+        }
+    })
+}
