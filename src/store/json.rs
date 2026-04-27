@@ -7,6 +7,7 @@ use std::{path::PathBuf, sync::Mutex};
 ///
 /// Best for small-to-medium crawls where you want human-readable output.
 /// For streaming/large crawls, prefer `JsonlStore`.
+#[derive(Debug)]
 pub struct JsonStore {
     path: PathBuf,
     items: Mutex<Vec<serde_json::Value>>,
@@ -40,5 +41,18 @@ impl ItemStore for JsonStore {
             serde_json::to_string_pretty(&*items).map_err(|e| KumoError::store("json store", e))?;
         std::fs::write(&self.path, json).map_err(|e| KumoError::store("json store", e))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_store_is_debug() {
+        let store = JsonStore::new("test_debug.json").unwrap();
+        let s = format!("{store:?}");
+        assert!(s.contains("JsonStore"), "got: {s}");
+        let _ = std::fs::remove_file("test_debug.json");
     }
 }
