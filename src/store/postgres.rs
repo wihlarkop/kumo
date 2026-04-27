@@ -115,17 +115,7 @@ impl ItemStore for PostgresStore {
         );
         let mut q = sqlx::query(&sql).bind(item);
         for name in &self.extra_columns {
-            let val = item.get(name);
-            let bound: Option<String> = val.and_then(|v| {
-                if v.is_null() {
-                    None
-                } else if let Some(s) = v.as_str() {
-                    Some(s.to_string())
-                } else {
-                    Some(v.to_string())
-                }
-            });
-            q = q.bind(bound);
+            q = q.bind(super::json_val_to_sql_string(item.get(name)));
         }
         q.execute(&self.pool)
             .await
