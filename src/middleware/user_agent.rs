@@ -60,6 +60,12 @@ impl UserAgentRotator {
     }
 }
 
+impl Default for UserAgentRotator {
+    fn default() -> Self {
+        Self::common_browsers()
+    }
+}
+
 #[async_trait]
 impl Middleware for UserAgentRotator {
     async fn before_request(&self, request: &mut Request) -> Result<(), KumoError> {
@@ -79,6 +85,18 @@ mod tests {
 
     fn make_request() -> Request {
         Request::new("https://example.com", 0)
+    }
+
+    #[tokio::test]
+    async fn default_uses_common_browsers() {
+        let rotator = UserAgentRotator::default();
+        let mut req = make_request();
+        rotator.before_request(&mut req).await.unwrap();
+        let ua = req.headers[USER_AGENT].to_str().unwrap();
+        assert!(
+            ua.contains("Mozilla"),
+            "default UA should be a browser UA, got: {ua}"
+        );
     }
 
     #[tokio::test]

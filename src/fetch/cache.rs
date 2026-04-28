@@ -86,6 +86,15 @@ impl CachingFetcher {
     }
 }
 
+impl std::fmt::Debug for CachingFetcher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CachingFetcher")
+            .field("dir", &self.dir)
+            .field("ttl", &self.ttl)
+            .finish_non_exhaustive()
+    }
+}
+
 #[async_trait]
 impl Fetcher for CachingFetcher {
     async fn fetch(&self, request: &Request) -> Result<Response, KumoError> {
@@ -136,6 +145,15 @@ mod tests {
 
     fn req(url: &str) -> Request {
         Request::new(url, 0)
+    }
+
+    #[test]
+    fn caching_fetcher_is_debug() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let inner = MockFetcher::new();
+        let cf = CachingFetcher::new(inner, tmp.path()).unwrap();
+        let s = format!("{cf:?}");
+        assert!(s.contains("CachingFetcher"), "got: {s}");
     }
 
     #[tokio::test]

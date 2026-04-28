@@ -10,6 +10,7 @@ use std::{
 ///
 /// Creates the file and all parent directories on construction.
 /// Uses a `std::sync::Mutex`-guarded `BufWriter` for thread-safe writes.
+#[derive(Debug)]
 pub struct JsonlStore {
     writer: Mutex<BufWriter<std::fs::File>>,
 }
@@ -48,5 +49,18 @@ impl ItemStore for JsonlStore {
             .unwrap()
             .flush()
             .map_err(|e| KumoError::store("jsonl store", e))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn jsonl_store_is_debug() {
+        let store = JsonlStore::new("test_debug.jsonl").unwrap();
+        let s = format!("{store:?}");
+        assert!(s.contains("JsonlStore"), "got: {s}");
+        let _ = std::fs::remove_file("test_debug.jsonl");
     }
 }

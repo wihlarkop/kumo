@@ -16,6 +16,7 @@ use tokio::sync::RwLock;
 /// lazily builds and caches a dedicated `Client` for that proxy URL so
 /// connection pooling is preserved across requests through the same proxy.
 /// Proxy clients inherit the same User-Agent as the default client.
+#[derive(Debug)]
 pub struct HttpFetcher {
     client: Client,
     default_user_agent: String,
@@ -107,5 +108,18 @@ impl Fetcher for HttpFetcher {
             elapsed,
             body,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn http_fetcher_is_debug() {
+        let client = reqwest::Client::new();
+        let fetcher = HttpFetcher::new(client, "test-ua");
+        let s = format!("{fetcher:?}");
+        assert!(s.contains("HttpFetcher"), "got: {s}");
     }
 }

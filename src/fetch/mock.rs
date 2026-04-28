@@ -26,6 +26,7 @@ use crate::{
 ///     .run(MySpider)
 ///     .await?;
 /// ```
+#[derive(Debug)]
 pub struct MockFetcher {
     responses: HashMap<String, (u16, String)>,
     default: Option<(u16, String)>,
@@ -99,6 +100,13 @@ mod tests {
 
     fn req(url: &str) -> Request {
         Request::new(url, 0)
+    }
+
+    #[test]
+    fn mock_fetcher_is_debug() {
+        let mock = MockFetcher::new().with_response("https://example.com", 200, "body");
+        let s = format!("{mock:?}");
+        assert!(s.contains("MockFetcher"), "got: {s}");
     }
 
     #[tokio::test]
