@@ -36,7 +36,9 @@ Use a smaller buffer when the consumer is slow (e.g. writing to a remote API). U
 
 ## Stopping Early
 
-Dropping the stream stops the crawl gracefully:
+Dropping the stream stops the crawl gracefully. Any request already in flight is
+allowed to finish, then the background crawl stops when it next tries to send an
+item to the closed stream:
 
 ```rust
 let mut stream = CrawlEngine::builder()

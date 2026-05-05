@@ -3,7 +3,23 @@ name: Publish
 on:
   push:
     tags:
-      - "v*"
+      - "kumo-v*"
+      - "kumo-derive-v*"
+  workflow_dispatch:
+    inputs:
+      crate:
+        description: "Crate to publish"
+        required: true
+        default: "kumo"
+        type: choice
+        options:
+          - kumo
+          - kumo-derive
+      dry_run_only:
+        description: "Only run publish dry-run"
+        required: true
+        default: true
+        type: boolean
 
 env:
   CARGO_TERM_COLOR: always
@@ -29,7 +45,20 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Run tests before publishing
-        run: cargo test
+        run: cargo test --workspace
 
-      - name: Publish to crates.io
-        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Dry-run kumo-derive publish
+        if: ${{ startsWith(github.ref_name, 'kumo-derive-v') || inputs.crate == 'kumo-derive' }}
+        run: cargo publish -p kumo-derive --dry-run
+
+      - name: Dry-run kumo publish
+        if: ${{ startsWith(github.ref_name, 'kumo-v') || inputs.crate == 'kumo' }}
+        run: cargo publish -p kumo --dry-run
+
+      - name: Publish kumo-derive to crates.io
+        if: ${{ (startsWith(github.ref_name, 'kumo-derive-v') || inputs.crate == 'kumo-derive') && inputs.dry_run_only != true }}
+        run: cargo publish -p kumo-derive --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish kumo to crates.io
+        if: ${{ (startsWith(github.ref_name, 'kumo-v') || inputs.crate == 'kumo') && inputs.dry_run_only != true }}
+        run: cargo publish -p kumo --token ${{ secrets.CARGO_REGISTRY_TOKEN }}

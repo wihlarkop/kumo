@@ -14,6 +14,15 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### Unreleased
 
+- Fixed `CrawlEngine::stream()` cancellation so dropping the item stream stops
+  the background crawl after the next attempted send instead of continuing to
+  drain the frontier.
+- Updated `rustls-webpki` in `Cargo.lock` to address `RUSTSEC-2026-0104`.
+- Added security policy and audit configuration for the optional MySQL
+  dependency advisory that has no upstream fix yet.
+- Hardened release CI with broad feature checks, docs build checks, package
+  dry-runs, and separate publish paths for `kumo` and `kumo-derive`.
+
 - `CloudStore` — backend-agnostic cloud storage via [`object_store`](https://docs.rs/object_store); supports S3, GCS, Azure Blob, local filesystem, and in-memory backends through a unified `Arc<dyn ObjectStore>` interface
 - New feature flags: `cloud`, `cloud-s3`, `cloud-gcs`, `cloud-azure`
 - `CloudFormat::Jsonl` (default) and `CloudFormat::Json` output formats

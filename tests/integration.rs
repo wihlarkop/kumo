@@ -528,6 +528,74 @@ async fn dropping_stream_does_not_panic() {
 }
 
 #[tokio::test]
+async fn dropping_stream_stops_background_crawl() {
+    struct CountingFetcher {
+        calls: Arc<AtomicU32>,
+    }
+
+    #[async_trait::async_trait]
+    impl Fetcher for CountingFetcher {
+        async fn fetch(&self, req: &Request) -> Result<Response, KumoError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(Response::from_parts(req.url(), 200, "<html></html>"))
+        }
+    }
+
+    struct EndlessSpider;
+
+    #[async_trait::async_trait]
+    impl Spider for EndlessSpider {
+        type Item = serde_json::Value;
+
+        fn name(&self) -> &str {
+            "endless-stream"
+        }
+
+        fn start_urls(&self) -> Vec<String> {
+            vec!["https://example.com/page/0".into()]
+        }
+
+        async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
+            let current = res
+                .url()
+                .rsplit('/')
+                .next()
+                .and_then(|n| n.parse::<u32>().ok())
+                .unwrap_or_default();
+            Ok(Output::new()
+                .item(serde_json::json!({ "page": current }))
+                .follow(format!("https://example.com/page/{}", current + 1)))
+        }
+    }
+
+    let calls = Arc::new(AtomicU32::new(0));
+    let fetcher = CountingFetcher {
+        calls: calls.clone(),
+    };
+
+    let mut stream = CrawlEngine::builder()
+        .concurrency(1)
+        .stream_buffer(1)
+        .fetcher(fetcher)
+        .respect_robots_txt(false)
+        .stream(EndlessSpider)
+        .await
+        .unwrap();
+
+    let first = stream.next().await.expect("stream should yield one item");
+    assert_eq!(first["page"], 0);
+
+    drop(stream);
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    assert!(
+        calls.load(Ordering::SeqCst) <= 2,
+        "background crawl kept fetching after stream drop: {} calls",
+        calls.load(Ordering::SeqCst)
+    );
+}
+
+#[tokio::test]
 async fn response_from_file_loads_html() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(tmp.path(), "<h1>From File</h1>").unwrap();
