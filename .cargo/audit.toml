@@ -1,0 +1,7 @@
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071 is pulled in by sqlx-mysql via rsa 0.9.x.
+    # RustSec currently lists no fixed upgrade. The MySQL store is optional
+    # and disabled by default; remove this ignore once sqlx ships a fix.
+    "RUSTSEC-2023-0071",
+]

@@ -92,6 +92,30 @@ jobs:
             cargo test --features "$FEATURES"
           fi
 
+  broad-feature-check:
+    name: Broad non-stealth feature check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-broad-features-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-broad-features-
+
+      - name: Check broad feature set
+        run: >
+          cargo check --workspace --all-targets
+          --features "postgres sqlite mysql llm claude openai gemini ollama jsonpath xpath browser persistence redis-frontier derive otel cloud cloud-s3 cloud-gcs cloud-azure"
+
   stealth:
     name: Stealth feature (BoringSSL)
     runs-on: ubuntu-latest
@@ -180,3 +204,61 @@ jobs:
 
       - name: Format check
         run: cargo fmt --check
+
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Run cargo audit
+        run: cargo audit
+
+  package:
+    name: Package dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-package-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-package-
+
+      - name: Dry-run kumo-derive package
+        run: cargo publish -p kumo-derive --dry-run
+
+      - name: Dry-run kumo package
+        run: cargo publish -p kumo --dry-run
+
+  docs:
+    name: Docs build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          working-directory: docs
+
+      - name: Install docs dependencies
+        run: uv sync
+        working-directory: docs
+
+      - name: Build docs strictly
+        run: uv run mkdocs build --strict
+        working-directory: docs

@@ -24,6 +24,14 @@ cargo test --features sqlite
 cargo test --features derive --test derive_macro
 ```
 
+Before release-sensitive changes, also run:
+
+```bash
+cargo fmt --check
+cargo clippy --workspace -- -D warnings
+cargo check --workspace --all-targets --features "postgres sqlite mysql llm claude openai gemini ollama jsonpath xpath browser persistence redis-frontier derive otel cloud cloud-s3 cloud-gcs cloud-azure"
+```
+
 ## Running Examples
 
 ```bash
@@ -43,6 +51,8 @@ See [`examples/README.md`](examples/README.md) for the full list.
 ## Reporting Bugs
 
 Use the [bug report template](https://github.com/wihlarkop/kumo/issues/new?template=bug_report.md).
+
+Please report security vulnerabilities privately. See [SECURITY.md](SECURITY.md).
 
 ## Requesting Features
 

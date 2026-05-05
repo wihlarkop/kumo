@@ -1,4 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 use tokio::task::JoinSet;
 use tracing::{error, info};
 
@@ -132,6 +138,7 @@ pub struct CrawlEngine {
     cache_ttl: Option<Duration>,
     http_client_builder:
         Option<Box<dyn FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder + Send>>,
+    stream_cancelled: Option<Arc<AtomicBool>>,
     #[cfg(feature = "browser")]
     browser: Option<BrowserConfig>,
     #[cfg(feature = "stealth")]
@@ -159,6 +166,7 @@ impl Default for CrawlEngine {
             cache_dir: None,
             cache_ttl: None,
             http_client_builder: None,
+            stream_cancelled: None,
             #[cfg(feature = "browser")]
             browser: None,
             #[cfg(feature = "stealth")]
@@ -377,7 +385,12 @@ impl CrawlEngine {
     {
         let buffer = self.stream_buffer;
         let (tx, rx) = tokio::sync::mpsc::channel(buffer);
-        let engine = self.store(ChannelStore { tx });
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let mut engine = self.store(ChannelStore {
+            tx,
+            cancelled: cancelled.clone(),
+        });
+        engine.stream_cancelled = Some(cancelled);
         tokio::spawn(async move {
             if let Err(e) = engine.run(spider).await {
                 tracing::error!(error = %e, "stream crawl error");
@@ -395,6 +408,7 @@ impl CrawlEngine {
     {
         let start = std::time::Instant::now();
         let metrics_interval = self.metrics_interval;
+        let stream_cancelled = self.stream_cancelled.clone();
         let spider: Arc<dyn ErasedSpider> = Arc::new(SpiderErased(spider));
         let frontier: Arc<dyn Frontier> = self
             .frontier
@@ -493,6 +507,11 @@ impl CrawlEngine {
         let mut shutting_down = false;
 
         loop {
+            if is_cancelled(&stream_cancelled) {
+                shutting_down = true;
+                stats.interrupted = true;
+            }
+
             if !shutting_down {
                 // Fill up to the concurrency limit.
                 while join_set.len() < concurrency {
@@ -514,6 +533,7 @@ impl CrawlEngine {
                                 fetcher: fetcher.clone(),
                                 crawl_delay,
                                 retry_policy: retry_policy.clone(),
+                                stream_cancelled: stream_cancelled.clone(),
                             };
 
                             join_set.spawn(async move {
@@ -543,6 +563,10 @@ impl CrawlEngine {
                             stats.pages_crawled += 1;
                             stats.items_scraped += item_count;
                             stats.bytes_downloaded += bytes;
+                            if is_cancelled(&stream_cancelled) {
+                                shutting_down = true;
+                                stats.interrupted = true;
+                            }
                             // Keep live snapshot up to date for the metrics task.
                             if metrics_interval.is_some() {
                                 let mut snap = live_stats.lock().await;
@@ -736,6 +760,7 @@ impl CrawlEngine {
                                 fetcher: fetcher.clone(),
                                 crawl_delay,
                                 retry_policy: retry_policy.clone(),
+                                stream_cancelled: None,
                             };
                             join_set.spawn(async move {
                                 let result = process_url_with_retry(url.clone(), depth, ctx).await;
@@ -858,6 +883,7 @@ struct TaskContext {
     fetcher: Arc<dyn Fetcher>,
     crawl_delay: Option<Duration>,
     retry_policy: crate::retry::RetryPolicy,
+    stream_cancelled: Option<Arc<AtomicBool>>,
 }
 
 /// Fetch, run middleware, parse, and store items for a single URL.
@@ -887,6 +913,10 @@ async fn process_url(
 
     let mut item_count = 0u64;
     'items: for item in output.items {
+        if is_cancelled(&ctx.stream_cancelled) {
+            break 'items;
+        }
+
         let mut current = item;
         for pipeline in ctx.pipelines.iter() {
             match pipeline.process(current).await {
@@ -902,6 +932,9 @@ async fn process_url(
             }
         }
         ctx.store.store(&current).await?;
+        if is_cancelled(&ctx.stream_cancelled) {
+            return Ok((item_count, bytes_downloaded, Vec::new()));
+        }
         item_count += 1;
     }
 
@@ -1056,19 +1089,27 @@ fn should_enqueue(url: &str, depth: usize, spider: &dyn ErasedSpider) -> bool {
         .unwrap_or(false)
 }
 
+fn is_cancelled(cancelled: &Option<Arc<AtomicBool>>) -> bool {
+    cancelled
+        .as_ref()
+        .is_some_and(|flag| flag.load(Ordering::Relaxed))
+}
+
 // ── Item Stream API ───────────────────────────────────────────────────────────
 
 /// Internal `ItemStore` that forwards items into an mpsc channel.
 /// Used by `CrawlEngine::stream()` — not part of the public API.
 struct ChannelStore {
     tx: tokio::sync::mpsc::Sender<serde_json::Value>,
+    cancelled: Arc<AtomicBool>,
 }
 
 #[async_trait::async_trait]
 impl crate::store::ItemStore for ChannelStore {
     async fn store(&self, item: &serde_json::Value) -> Result<(), KumoError> {
-        // If the receiver was dropped (consumer cancelled), ignore the send error.
-        self.tx.send(item.clone()).await.ok();
+        if self.tx.send(item.clone()).await.is_err() {
+            self.cancelled.store(true, Ordering::Relaxed);
+        }
         Ok(())
     }
 }
