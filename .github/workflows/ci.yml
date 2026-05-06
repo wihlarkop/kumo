@@ -37,7 +37,7 @@ jobs:
         run: cargo test --lib
 
       - name: Run integration tests
-        run: cargo test --test integration
+        run: cargo test --tests
 
       - name: Run derive macro tests
         run: cargo test --features derive --test derive_macro
