@@ -1,98 +1,40 @@
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
 use tokio::task::JoinSet;
 use tracing::{error, info};
 
-const USER_AGENT: &str = concat!("kumo/", env!("CARGO_PKG_VERSION"));
+mod erased;
+mod setup;
+mod stream;
+mod task;
+
+pub use stream::ItemStream;
+
+use erased::{ErasedSpider, SpiderErased};
+use setup::{
+    FetcherArgs, build_http_client, build_raw_fetcher, build_robots_cache, wrap_with_cache,
+};
+use stream::ChannelStore;
+use task::{TaskContext, is_cancelled, process_url_with_retry, should_enqueue};
+
+pub(super) const USER_AGENT: &str = concat!("kumo/", env!("CARGO_PKG_VERSION"));
 
 use crate::{
     error::{ErrorPolicy, KumoError},
-    extract::Response,
-    fetch::{Fetcher, http::HttpFetcher},
+    fetch::Fetcher,
     frontier::{Frontier, memory::MemoryFrontier},
-    middleware::{Middleware, Request},
+    middleware::Middleware,
     pipeline::Pipeline,
-    robots::RobotsCache,
-    spider::{Output, Spider},
+    spider::Spider,
     store::ItemStore,
 };
-
-// ── Type erasure ──────────────────────────────────────────────────────────────
-//
-// `Spider::Item` is an associated type, which makes `dyn Spider` non-object-safe.
-// `ErasedSpider` is an internal object-safe twin that serializes items to
-// `serde_json::Value` inside `parse_erased`, allowing the engine to use
-// `Arc<dyn ErasedSpider>` for its task contexts.
-
-struct ErasedOutput {
-    items: Vec<serde_json::Value>,
-    follow: Vec<String>,
-}
-
-#[async_trait::async_trait]
-trait ErasedSpider: Send + Sync {
-    fn name(&self) -> &str;
-    fn start_urls(&self) -> Vec<String>;
-    async fn parse_erased(&self, response: &Response) -> Result<ErasedOutput, KumoError>;
-    fn on_error(&self, url: &str, err: &KumoError) -> ErrorPolicy;
-    fn max_depth(&self) -> Option<usize>;
-    fn allowed_domains(&self) -> Vec<&str>;
-    async fn open(&self) -> Result<(), KumoError>;
-    async fn close(&self, stats: &CrawlStats) -> Result<(), KumoError>;
-}
-
-struct SpiderErased<S>(S);
-
-#[async_trait::async_trait]
-impl<S: Spider + 'static> ErasedSpider for SpiderErased<S> {
-    fn name(&self) -> &str {
-        self.0.name()
-    }
-    fn start_urls(&self) -> Vec<String> {
-        self.0.start_urls()
-    }
-
-    async fn parse_erased(&self, response: &Response) -> Result<ErasedOutput, KumoError> {
-        let output: Output<S::Item> = self.0.parse(response).await?;
-        let items = output
-            .items
-            .into_iter()
-            .map(|item| {
-                serde_json::to_value(item).map_err(|e| KumoError::parse("item serialization", e))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(ErasedOutput {
-            items,
-            follow: output.follow,
-        })
-    }
-
-    fn on_error(&self, url: &str, err: &KumoError) -> ErrorPolicy {
-        self.0.on_error(url, err)
-    }
-    fn max_depth(&self) -> Option<usize> {
-        self.0.max_depth()
-    }
-    fn allowed_domains(&self) -> Vec<&str> {
-        self.0.allowed_domains()
-    }
-    async fn open(&self) -> Result<(), KumoError> {
-        self.0.open().await
-    }
-    async fn close(&self, stats: &CrawlStats) -> Result<(), KumoError> {
-        self.0.close(stats).await
-    }
-}
 
 type FrontierOverride = Option<Arc<dyn Frontier>>;
 
 #[cfg(feature = "browser")]
-use crate::fetch::{BrowserConfig, BrowserFetcher};
+use crate::fetch::BrowserConfig;
 
 /// Statistics returned by `CrawlEngine::run` after the crawl finishes.
 #[derive(Debug, Default, Clone)]
@@ -386,19 +328,14 @@ impl CrawlEngine {
         let buffer = self.stream_buffer;
         let (tx, rx) = tokio::sync::mpsc::channel(buffer);
         let cancelled = Arc::new(AtomicBool::new(false));
-        let mut engine = self.store(ChannelStore {
-            tx,
-            cancelled: cancelled.clone(),
-        });
+        let mut engine = self.store(ChannelStore::new(tx, cancelled.clone()));
         engine.stream_cancelled = Some(cancelled);
         tokio::spawn(async move {
             if let Err(e) = engine.run(spider).await {
                 tracing::error!(error = %e, "stream crawl error");
             }
         });
-        Ok(ItemStream {
-            inner: tokio_stream::wrappers::ReceiverStream::new(rx),
-        })
+        Ok(ItemStream::new(rx))
     }
 
     /// Consume the engine, run the spider, and return crawl statistics.
@@ -871,278 +808,5 @@ impl CrawlEngine {
         }
 
         Ok(stats_vec)
-    }
-}
-
-/// Shared context cloned into each spawned task.
-struct TaskContext {
-    spider: Arc<dyn ErasedSpider>,
-    store: Arc<dyn ItemStore>,
-    middleware: Arc<Vec<Arc<dyn Middleware>>>,
-    pipelines: Arc<Vec<Arc<dyn Pipeline>>>,
-    fetcher: Arc<dyn Fetcher>,
-    crawl_delay: Option<Duration>,
-    retry_policy: crate::retry::RetryPolicy,
-    stream_cancelled: Option<Arc<AtomicBool>>,
-}
-
-/// Fetch, run middleware, parse, and store items for a single URL.
-/// Returns (items_stored, bytes_downloaded, follow_urls_with_depth).
-async fn process_url(
-    url: &str,
-    depth: usize,
-    ctx: &TaskContext,
-) -> Result<(u64, u64, Vec<(String, usize)>), KumoError> {
-    if let Some(delay) = ctx.crawl_delay {
-        tokio::time::sleep(delay).await;
-    }
-
-    let mut request = Request::new(url, depth);
-    for mw in ctx.middleware.iter() {
-        mw.before_request(&mut request).await?;
-    }
-
-    let mut response = ctx.fetcher.fetch(&request).await?;
-    let bytes_downloaded = response.bytes().len() as u64;
-
-    for mw in ctx.middleware.iter() {
-        mw.after_response(&mut response).await?;
-    }
-
-    let output = ctx.spider.parse_erased(&response).await?;
-
-    let mut item_count = 0u64;
-    'items: for item in output.items {
-        if is_cancelled(&ctx.stream_cancelled) {
-            break 'items;
-        }
-
-        let mut current = item;
-        for pipeline in ctx.pipelines.iter() {
-            match pipeline.process(current).await {
-                Ok(Some(v)) => current = v,
-                Ok(None) => {
-                    tracing::debug!(spider = ctx.spider.name(), url, "item.drop");
-                    continue 'items;
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "pipeline dropped item due to error");
-                    continue 'items;
-                }
-            }
-        }
-        ctx.store.store(&current).await?;
-        if is_cancelled(&ctx.stream_cancelled) {
-            return Ok((item_count, bytes_downloaded, Vec::new()));
-        }
-        item_count += 1;
-    }
-
-    tracing::debug!(
-        spider = ctx.spider.name(),
-        url,
-        status = response.status(),
-        bytes = bytes_downloaded,
-        depth,
-        items = item_count,
-        "fetch.ok"
-    );
-
-    let follows = output.follow.into_iter().map(|u| (u, depth + 1)).collect();
-
-    Ok((item_count, bytes_downloaded, follows))
-}
-
-/// Wraps `process_url` with exponential-backoff retry driven by `RetryPolicy`.
-async fn process_url_with_retry(
-    url: String,
-    depth: usize,
-    ctx: TaskContext,
-) -> Result<(u64, u64, Vec<(String, usize)>), KumoError> {
-    let mut attempt = 0u32;
-    loop {
-        match process_url(&url, depth, &ctx).await {
-            Ok(result) => return Ok(result),
-            Err(e)
-                if attempt < ctx.retry_policy.max_attempts && ctx.retry_policy.is_retriable(&e) =>
-            {
-                for mw in ctx.middleware.iter() {
-                    mw.on_error(&url, &e).await;
-                }
-                let delay = ctx.retry_policy.delay_for(attempt);
-                tracing::warn!(
-                    url = %url,
-                    attempt = attempt + 1,
-                    max = ctx.retry_policy.max_attempts,
-                    retry_in_ms = delay.as_millis(),
-                    error = %e,
-                    "retrying URL"
-                );
-                tokio::time::sleep(delay).await;
-                attempt += 1;
-            }
-            Err(e) => return Err(e),
-        }
-    }
-}
-
-/// Newtype so `Arc<dyn Fetcher>` can be passed where `impl Fetcher + 'static` is required.
-struct ArcFetcher(Arc<dyn Fetcher>);
-
-#[async_trait::async_trait]
-impl Fetcher for ArcFetcher {
-    async fn fetch(&self, request: &crate::middleware::Request) -> Result<Response, KumoError> {
-        self.0.fetch(request).await
-    }
-}
-
-// ── Engine setup helpers ─────────────────────────────────────────────────────
-
-fn build_http_client(
-    concurrency: usize,
-    timeout: Option<Duration>,
-    customize: Option<Box<dyn FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder + Send>>,
-) -> Result<reqwest::Client, KumoError> {
-    let mut builder = reqwest::Client::builder()
-        .cookie_store(true)
-        .user_agent(USER_AGENT)
-        .pool_max_idle_per_host(concurrency)
-        .tcp_keepalive(Duration::from_secs(60));
-    if let Some(t) = timeout {
-        builder = builder.timeout(t);
-    }
-    if let Some(f) = customize {
-        builder = f(builder);
-    }
-    builder.build().map_err(KumoError::Fetch)
-}
-
-fn build_robots_cache(respect: bool, ttl: Duration) -> Option<Arc<RobotsCache>> {
-    if respect {
-        Some(Arc::new(RobotsCache::with_ttl(USER_AGENT, ttl)))
-    } else {
-        None
-    }
-}
-
-fn wrap_with_cache(
-    fetcher: Arc<dyn Fetcher>,
-    cache_dir: Option<std::path::PathBuf>,
-    cache_ttl: Option<Duration>,
-) -> Result<Arc<dyn Fetcher>, KumoError> {
-    if let Some(dir) = cache_dir {
-        let mut cf = crate::fetch::CachingFetcher::new(ArcFetcher(fetcher), dir)?;
-        if let Some(ttl) = cache_ttl {
-            cf = cf.ttl(ttl);
-        }
-        Ok(Arc::new(cf))
-    } else {
-        Ok(fetcher)
-    }
-}
-
-/// Arguments for `build_raw_fetcher` — grouped to avoid repeating the cfg-gated fields.
-#[allow(dead_code)]
-struct FetcherArgs {
-    fetcher_override: Option<Arc<dyn Fetcher>>,
-    client: reqwest::Client,
-    concurrency: usize,
-    #[cfg(feature = "stealth")]
-    stealth_profile: Option<crate::fetch::StealthProfile>,
-    #[cfg(feature = "browser")]
-    browser: Option<BrowserConfig>,
-}
-
-async fn build_raw_fetcher(args: FetcherArgs) -> Result<Arc<dyn Fetcher>, KumoError> {
-    if let Some(f) = args.fetcher_override {
-        return Ok(f);
-    }
-
-    #[cfg(feature = "stealth")]
-    if let Some(profile) = args.stealth_profile {
-        return Ok(Arc::new(crate::fetch::StealthHttpFetcher::new(profile)?));
-    }
-
-    #[cfg(feature = "browser")]
-    if let Some(cfg) = args.browser {
-        return Ok(Arc::new(
-            BrowserFetcher::launch(cfg, args.concurrency).await?,
-        ));
-    }
-
-    Ok(Arc::new(HttpFetcher::new(args.client, USER_AGENT)))
-}
-
-/// Returns `true` if `url` at `depth` should be enqueued given the spider's constraints.
-fn should_enqueue(url: &str, depth: usize, spider: &dyn ErasedSpider) -> bool {
-    if spider.max_depth().is_some_and(|max| depth > max) {
-        return false;
-    }
-    let allowed = spider.allowed_domains();
-    if allowed.is_empty() {
-        return true;
-    }
-    url::Url::parse(url)
-        .ok()
-        .and_then(|u| u.host_str().map(String::from))
-        .map(|host| allowed.iter().any(|d| host.ends_with(*d)))
-        .unwrap_or(false)
-}
-
-fn is_cancelled(cancelled: &Option<Arc<AtomicBool>>) -> bool {
-    cancelled
-        .as_ref()
-        .is_some_and(|flag| flag.load(Ordering::Relaxed))
-}
-
-// ── Item Stream API ───────────────────────────────────────────────────────────
-
-/// Internal `ItemStore` that forwards items into an mpsc channel.
-/// Used by `CrawlEngine::stream()` — not part of the public API.
-struct ChannelStore {
-    tx: tokio::sync::mpsc::Sender<serde_json::Value>,
-    cancelled: Arc<AtomicBool>,
-}
-
-#[async_trait::async_trait]
-impl crate::store::ItemStore for ChannelStore {
-    async fn store(&self, item: &serde_json::Value) -> Result<(), KumoError> {
-        if self.tx.send(item.clone()).await.is_err() {
-            self.cancelled.store(true, Ordering::Relaxed);
-        }
-        Ok(())
-    }
-}
-
-/// An async stream of scraped items returned by [`CrawlEngine::stream`].
-///
-/// Implements [`tokio_stream::Stream`]`<Item = serde_json::Value>`.
-/// Use [`tokio_stream::StreamExt::next`] to consume items one by one.
-///
-/// Dropping this stream closes the channel, which causes the background
-/// crawl engine to stop gracefully on its next attempted send.
-pub struct ItemStream {
-    inner: tokio_stream::wrappers::ReceiverStream<serde_json::Value>,
-}
-
-impl tokio_stream::Stream for ItemStream {
-    type Item = serde_json::Value;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        std::pin::Pin::new(&mut self.inner).poll_next(cx)
-    }
-}
-
-#[cfg(test)]
-mod pool_tests {
-    use super::*;
-
-    #[test]
-    fn build_http_client_accepts_concurrency() {
-        let _c1 = build_http_client(16, None, None).unwrap();
-        let _c2 = build_http_client(1, None, None).unwrap();
     }
 }
