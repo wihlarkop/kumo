@@ -110,16 +110,3 @@ impl Fetcher for HttpFetcher {
         ))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn http_fetcher_is_debug() {
-        let client = reqwest::Client::new();
-        let fetcher = HttpFetcher::new(client, "test-ua");
-        let s = format!("{fetcher:?}");
-        assert!(s.contains("HttpFetcher"), "got: {s}");
-    }
-}

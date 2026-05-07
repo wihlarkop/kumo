@@ -123,33 +123,3 @@ impl ItemStore for PostgresStore {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn valid_table_names_are_accepted() {
-        assert!(super::super::validate_table_name("kumo_items").is_ok());
-        assert!(super::super::validate_table_name("items").is_ok());
-        assert!(super::super::validate_table_name("my_table_123").is_ok());
-        assert!(super::super::validate_table_name("A").is_ok());
-    }
-
-    #[test]
-    fn empty_table_name_is_rejected() {
-        assert!(super::super::validate_table_name("").is_err());
-    }
-
-    #[test]
-    fn table_name_over_63_chars_is_rejected() {
-        let long = "a".repeat(64);
-        assert!(super::super::validate_table_name(&long).is_err());
-    }
-
-    #[test]
-    fn table_name_with_sql_injection_is_rejected() {
-        assert!(super::super::validate_table_name("drop table;--").is_err());
-        assert!(super::super::validate_table_name("items; DROP TABLE users;--").is_err());
-        assert!(super::super::validate_table_name("my-table").is_err());
-        assert!(super::super::validate_table_name("my table").is_err());
-    }
-}

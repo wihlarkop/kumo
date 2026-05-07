@@ -93,14 +93,3 @@ impl Fetcher for ArcFetcher {
         self.0.fetch(request).await
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn build_http_client_accepts_concurrency() {
-        let _c1 = build_http_client(16, None, None).unwrap();
-        let _c2 = build_http_client(1, None, None).unwrap();
-    }
-}

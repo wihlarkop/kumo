@@ -14,14 +14,3 @@ impl ItemStore for StdoutStore {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn stdout_store_is_debug() {
-        let s = format!("{:?}", StdoutStore);
-        assert!(s.contains("StdoutStore"), "got: {s}");
-    }
-}

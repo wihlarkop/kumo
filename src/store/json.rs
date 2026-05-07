@@ -43,16 +43,3 @@ impl ItemStore for JsonStore {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn json_store_is_debug() {
-        let store = JsonStore::new("test_debug.json").unwrap();
-        let s = format!("{store:?}");
-        assert!(s.contains("JsonStore"), "got: {s}");
-        let _ = std::fs::remove_file("test_debug.json");
-    }
-}

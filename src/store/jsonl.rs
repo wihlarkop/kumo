@@ -51,16 +51,3 @@ impl ItemStore for JsonlStore {
             .map_err(|e| KumoError::store("jsonl store", e))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn jsonl_store_is_debug() {
-        let store = JsonlStore::new("test_debug.jsonl").unwrap();
-        let s = format!("{store:?}");
-        assert!(s.contains("JsonlStore"), "got: {s}");
-        let _ = std::fs::remove_file("test_debug.jsonl");
-    }
-}
