@@ -91,6 +91,7 @@ jobs:
           fi
 
       - name: Run tests before publishing
+        if: ${{ steps.crates_io.outputs.published != 'true' }}
         run: cargo test --workspace
 
       - name: Dry-run kumo-derive publish
