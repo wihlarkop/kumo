@@ -44,21 +44,65 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      - name: Resolve crate version
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_REF_NAME}" == kumo-derive-v* ]]; then
+            crate="kumo-derive"
+            version="${GITHUB_REF_NAME#kumo-derive-v}"
+          elif [[ "${GITHUB_REF_NAME}" == kumo-v* ]]; then
+            crate="kumo"
+            version="${GITHUB_REF_NAME#kumo-v}"
+          else
+            crate="${{ inputs.crate }}"
+            version="$(cargo metadata --no-deps --format-version 1 \
+              | jq -r --arg crate "$crate" '.packages[] | select(.name == $crate) | .version')"
+          fi
+
+          if [[ -z "${version}" || "${version}" == "null" ]]; then
+            echo "Could not resolve version for crate: ${crate}" >&2
+            exit 1
+          fi
+
+          echo "crate=${crate}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Check crates.io version
+        id: crates_io
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          crate="${{ steps.release.outputs.crate }}"
+          version="${{ steps.release.outputs.version }}"
+          url="https://crates.io/api/v1/crates/${crate}/${version}"
+
+          if curl --fail --silent --show-error "$url" > /dev/null; then
+            echo "${crate}@${version} already exists on crates.io; publish will be skipped."
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "${crate}@${version} is not on crates.io yet."
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run tests before publishing
         run: cargo test --workspace
 
       - name: Dry-run kumo-derive publish
-        if: ${{ startsWith(github.ref_name, 'kumo-derive-v') || inputs.crate == 'kumo-derive' }}
+        if: ${{ steps.release.outputs.crate == 'kumo-derive' && steps.crates_io.outputs.published != 'true' }}
         run: cargo publish -p kumo-derive --dry-run
 
       - name: Dry-run kumo publish
-        if: ${{ startsWith(github.ref_name, 'kumo-v') || inputs.crate == 'kumo' }}
+        if: ${{ steps.release.outputs.crate == 'kumo' && steps.crates_io.outputs.published != 'true' }}
         run: cargo publish -p kumo --dry-run
 
       - name: Publish kumo-derive to crates.io
-        if: ${{ (startsWith(github.ref_name, 'kumo-derive-v') || inputs.crate == 'kumo-derive') && inputs.dry_run_only != true }}
+        if: ${{ steps.release.outputs.crate == 'kumo-derive' && steps.crates_io.outputs.published != 'true' && inputs.dry_run_only != true }}
         run: cargo publish -p kumo-derive --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Publish kumo to crates.io
-        if: ${{ (startsWith(github.ref_name, 'kumo-v') || inputs.crate == 'kumo') && inputs.dry_run_only != true }}
+        if: ${{ steps.release.outputs.crate == 'kumo' && steps.crates_io.outputs.published != 'true' && inputs.dry_run_only != true }}
         run: cargo publish -p kumo --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
