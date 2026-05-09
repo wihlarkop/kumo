@@ -80,7 +80,9 @@ jobs:
           version="${{ steps.release.outputs.version }}"
           url="https://crates.io/api/v1/crates/${crate}/${version}"
 
-          if curl --fail --silent --show-error "$url" > /dev/null; then
+          if curl --fail --silent --show-error \
+            --user-agent "wihlarkop/kumo publish workflow" \
+            "$url" > /dev/null; then
             echo "${crate}@${version} already exists on crates.io; publish will be skipped."
             echo "published=true" >> "$GITHUB_OUTPUT"
           else
