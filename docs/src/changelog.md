@@ -14,6 +14,13 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### Unreleased
 
+### 0.1.1 — 2026-05-10
+
+- Updated crate metadata so the crates.io documentation link points to
+  `https://kumo.wihlarkop.com`.
+
+### 0.1.0 — 2026-05-10
+
 - Fixed `CrawlEngine::stream()` cancellation so dropping the item stream stops
   the background crawl after the next attempted send instead of continuing to
   drain the frontier.
@@ -33,7 +40,7 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - `CloudFormat::Jsonl` (default) and `CloudFormat::Json` output formats
 - Auto-generated timestamped filenames; configurable via `.filename()` and `.prefix()`
 
-### 0.1.0 — 2026-04-13
+#### Initial feature set
 
 - Async-first crawl engine via Tokio (`CrawlEngine::builder()`)
 - CSS, regex, XPath, JSONPath selectors

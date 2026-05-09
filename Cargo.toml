@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "kumo"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.88"
 authors = ["wihlarkop"]
@@ -12,7 +12,7 @@ description = "An async web crawling framework for Rust — Scrapy for Rust"
 license = "MIT"
 repository = "https://github.com/wihlarkop/kumo"
 homepage = "https://github.com/wihlarkop/kumo"
-documentation = "https://docs.rs/kumo"
+documentation = "https://kumo.wihlarkop.com"
 readme = "README.md"
 keywords = ["web", "crawling", "scraping", "spider", "async"]
 categories = ["web-programming", "asynchronous"]
