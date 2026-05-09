@@ -3,7 +3,7 @@ use regex::Regex;
 
 use crate::{error::KumoError, extract::Response};
 
-use super::{Middleware, Request};
+use super::{FetchRequest, Middleware};
 
 /// Default HTTP status codes that should trigger an automatic retry.
 const DEFAULT_RETRY_CODES: &[u16] = &[429, 500, 502, 503, 504];
@@ -84,7 +84,7 @@ impl Default for StatusRetry {
 
 #[async_trait]
 impl Middleware for StatusRetry {
-    async fn before_request(&self, _request: &mut Request) -> Result<(), KumoError> {
+    async fn before_request(&self, _request: &mut FetchRequest) -> Result<(), KumoError> {
         Ok(())
     }
 

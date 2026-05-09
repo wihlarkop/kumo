@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use crate::error::KumoError;
 
-use super::{Middleware, Request, RotationStrategy};
+use super::{FetchRequest, Middleware, RotationStrategy};
 
 /// Middleware that assigns a proxy URL to each request, rotating through a pool.
 ///
@@ -60,7 +60,7 @@ impl ProxyRotator {
 
 #[async_trait]
 impl Middleware for ProxyRotator {
-    async fn before_request(&self, request: &mut Request) -> Result<(), KumoError> {
+    async fn before_request(&self, request: &mut FetchRequest) -> Result<(), KumoError> {
         if let Some(proxy) = self.pick() {
             request.proxy = Some(proxy.to_string());
         }

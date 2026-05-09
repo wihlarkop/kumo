@@ -106,15 +106,16 @@ Implement the `Middleware` trait:
 ```rust
 use kumo::prelude::*;
 use async_trait::async_trait;
+use reqwest::header::{HeaderName, HeaderValue};
 
 pub struct AddApiKey(String);
 
 #[async_trait]
 impl Middleware for AddApiKey {
-    async fn before_request(&self, req: &mut Request) -> Result<(), KumoError> {
+    async fn before_request(&self, req: &mut FetchRequest) -> Result<(), KumoError> {
         req.headers_mut().insert(
-            "X-Api-Key",
-            self.0.parse().unwrap(),
+            HeaderName::from_static("x-api-key"),
+            HeaderValue::from_str(&self.0).unwrap(),
         );
         Ok(())
     }

@@ -95,6 +95,6 @@ This crawls all pages, writes each `Quote` as a JSON line to `quotes.jsonl`, and
 ## What's Next?
 
 - [Spiders](spiders.md) — full Spider trait API, lifecycle hooks, error handling
-- [Extractors](extractors.md) — CSS, XPath, Regex, JSONPath, `#[derive(ExtractDerive)]`, LLM
+- [Extractors](extractors.md) — CSS, XPath, Regex, JSONPath, `#[derive(Extract)]`, LLM
 - [Stores](stores.md) — JSONL, JSON, CSV, PostgreSQL, SQLite, MySQL
 - [Middleware](middleware.md) — rate limiting, auto-throttle, retry, proxy rotation

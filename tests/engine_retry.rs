@@ -5,7 +5,7 @@ use kumo::{
     error::KumoError,
     extract::Response,
     fetch::Fetcher,
-    middleware::{Request, StatusRetry},
+    middleware::{FetchRequest, StatusRetry},
     retry::RetryPolicy,
     spider::{Output, Spider},
     store::StdoutStore,
@@ -23,7 +23,7 @@ struct SequentialFetcher {
 
 #[async_trait::async_trait]
 impl Fetcher for SequentialFetcher {
-    async fn fetch(&self, req: &Request) -> Result<Response, KumoError> {
+    async fn fetch(&self, req: &FetchRequest) -> Result<Response, KumoError> {
         let n = self.calls.fetch_add(1, Ordering::SeqCst);
         let status = if n < self.fail_times { 503 } else { 200 };
         Ok(Response::from_parts(

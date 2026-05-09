@@ -1,4 +1,4 @@
-use super::{Middleware, Request};
+use super::{FetchRequest, Middleware};
 use crate::error::KumoError;
 use reqwest::header::{HeaderName, HeaderValue};
 use std::collections::HashMap;
@@ -38,7 +38,7 @@ impl Default for DefaultHeaders {
 
 #[async_trait::async_trait]
 impl Middleware for DefaultHeaders {
-    async fn before_request(&self, request: &mut Request) -> Result<(), KumoError> {
+    async fn before_request(&self, request: &mut FetchRequest) -> Result<(), KumoError> {
         for (name, value) in &self.headers {
             if let (Ok(n), Ok(v)) = (
                 HeaderName::from_bytes(name.as_bytes()),

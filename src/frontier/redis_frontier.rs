@@ -1,6 +1,9 @@
 use redis::{AsyncCommands, Client};
 
-use crate::error::KumoError;
+use crate::{
+    error::KumoError,
+    request::{CrawlRequest, FrontierRequest, StoredFrontierRequest},
+};
 
 use super::Frontier;
 
@@ -80,37 +83,68 @@ impl RedisFrontier {
 #[async_trait::async_trait]
 impl Frontier for RedisFrontier {
     async fn push(&self, url: String, depth: usize) -> bool {
+        self.push_request(CrawlRequest::get(url), depth).await
+    }
+
+    async fn push_force(&self, url: String, depth: usize, retry_count: u32) {
+        self.push_request_force(FrontierRequest::new(
+            CrawlRequest::get(url),
+            depth,
+            retry_count,
+        ))
+        .await;
+    }
+
+    async fn pop(&self) -> Option<(String, usize, u32)> {
+        self.pop_request().await.map(|queued| {
+            (
+                queued.request().url().to_string(),
+                queued.depth(),
+                queued.retry_count(),
+            )
+        })
+    }
+
+    async fn push_request(&self, request: CrawlRequest, depth: usize) -> bool {
         let Ok(mut conn) = self.conn().await else {
             return false;
         };
         // SADD returns 1 if new member, 0 if already present.
-        let added: i64 = conn.sadd(&self.seen_key, &url).await.unwrap_or(0);
-        if added == 0 {
+        let added: i64 = if request.dont_filter_enabled() {
+            1
+        } else {
+            conn.sadd(&self.seen_key, request.url()).await.unwrap_or(0)
+        };
+        if !request.dont_filter_enabled() && added == 0 {
             return false;
         }
-        let entry = serde_json::json!([url, depth, 0u32]).to_string();
+        let Ok(entry) = serde_json::to_string(&StoredFrontierRequest::from(&FrontierRequest::new(
+            request, depth, 0,
+        ))) else {
+            return false;
+        };
         let _: () = conn.rpush(&self.queue_key, entry).await.unwrap_or(());
         true
     }
 
-    async fn push_force(&self, url: String, depth: usize, retry_count: u32) {
+    async fn push_request_force(&self, queued: FrontierRequest) {
         let Ok(mut conn) = self.conn().await else {
             return;
         };
-        let entry = serde_json::json!([url, depth, retry_count]).to_string();
+        let Ok(entry) = serde_json::to_string(&StoredFrontierRequest::from(&queued)) else {
+            return;
+        };
         let _: () = conn.rpush(&self.queue_key, entry).await.unwrap_or(());
     }
 
-    async fn pop(&self) -> Option<(String, usize, u32)> {
+    async fn pop_request(&self) -> Option<FrontierRequest> {
         let mut conn = self.conn().await.ok()?;
         // LPOP returns the leftmost element (oldest enqueued).
         let raw: Option<String> = conn.lpop(&self.queue_key, None).await.ok()?;
         let raw = raw?;
-        let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
-        let url = v[0].as_str()?.to_string();
-        let depth = v[1].as_u64()? as usize;
-        let retry = v[2].as_u64().unwrap_or(0) as u32;
-        Some((url, depth, retry))
+        serde_json::from_str::<StoredFrontierRequest>(&raw)
+            .ok()
+            .and_then(|stored| FrontierRequest::try_from(stored).ok())
     }
 
     async fn len(&self) -> usize {

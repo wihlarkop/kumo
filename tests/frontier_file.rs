@@ -1,6 +1,10 @@
 #![cfg(feature = "persistence")]
 
-use kumo::frontier::{FileFrontier, Frontier};
+use kumo::{
+    CrawlRequest,
+    frontier::{FileFrontier, Frontier},
+};
+use reqwest::header::{HeaderName, HeaderValue};
 use tempfile::tempdir;
 
 #[tokio::test]
@@ -56,4 +60,58 @@ async fn resumes_dedup_from_disk() {
     let f2 = FileFrontier::open(dir.path()).unwrap();
     f2.pop().await;
     assert!(!f2.push("https://a.com".into(), 0).await);
+}
+
+#[tokio::test]
+async fn request_metadata_survives_flush_and_resume() {
+    let dir = tempdir().unwrap();
+    {
+        let f = FileFrontier::open(dir.path()).unwrap();
+        f.push_request(
+            CrawlRequest::post("https://example.com/api", br#"{"page":2}"#.to_vec())
+                .header(
+                    HeaderName::from_static("x-api-key"),
+                    HeaderValue::from_static("secret"),
+                )
+                .priority(10)
+                .meta("kind", "listing"),
+            2,
+        )
+        .await;
+        f.flush().await.unwrap();
+    }
+
+    let f = FileFrontier::open(dir.path()).unwrap();
+    let queued = f.pop_request().await.unwrap();
+    assert_eq!(queued.depth(), 2);
+    assert_eq!(queued.request().url(), "https://example.com/api");
+    assert_eq!(queued.request().method_ref(), reqwest::Method::POST);
+    assert_eq!(queued.request().body_bytes(), Some(&br#"{"page":2}"#[..]));
+    assert_eq!(
+        queued.request().headers()["x-api-key"],
+        HeaderValue::from_static("secret")
+    );
+    assert_eq!(queued.request().priority_value(), 10);
+    assert_eq!(
+        queued.request().meta_value("kind"),
+        Some(&serde_json::json!("listing"))
+    );
+}
+
+#[tokio::test]
+async fn dont_filter_allows_duplicate_url() {
+    let dir = tempdir().unwrap();
+    let f = FileFrontier::open(dir.path()).unwrap();
+    assert!(
+        f.push_request(CrawlRequest::get("https://example.com"), 0)
+            .await
+    );
+    assert!(
+        f.push_request(
+            CrawlRequest::get("https://example.com").dont_filter(true),
+            0,
+        )
+        .await
+    );
+    assert_eq!(f.len().await, 2);
 }

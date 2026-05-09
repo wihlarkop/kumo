@@ -18,12 +18,12 @@ pub use browser::{BrowserConfig, BrowserFetcher};
 #[cfg(feature = "stealth")]
 pub use stealth_http::{StealthHttpFetcher, StealthProfile};
 
-use crate::{error::KumoError, extract::Response, middleware::Request};
+use crate::{error::KumoError, extract::Response, middleware::FetchRequest};
 
 /// Abstracts over different HTTP backends.
 #[async_trait::async_trait]
 pub trait Fetcher: Send + Sync {
-    async fn fetch(&self, request: &Request) -> Result<Response, KumoError>;
+    async fn fetch(&self, request: &FetchRequest) -> Result<Response, KumoError>;
 }
 
 /// Returns `true` if the Content-Type indicates a text body (should be decoded as UTF-8).

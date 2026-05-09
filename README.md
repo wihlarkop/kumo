@@ -20,7 +20,7 @@ An async web crawling framework for Rust — Scrapy for Rust.
 | Async model | Tokio (true async) | Twisted (event loop) | goroutines |
 | Memory safety | Guaranteed | GC | GC |
 | CSS / XPath / Regex / JSONPath | ✓ | ✓ | CSS only |
-| `#[derive(ExtractDerive)]` macro | ✓ | ✗ | ✗ |
+| `#[derive(Extract)]` macro | ✓ | ✗ | ✗ |
 | LLM extraction (Claude / OpenAI / Gemini / Ollama) | ✓ | ✗ | ✗ |
 | Browser / JS rendering | ✓ (chromiumoxide) | ✓ (Playwright) | ✗ |
 | Stealth mode (TLS/HTTP2 fingerprint spoofing) | ✓ | ✗ | ✗ |
@@ -48,13 +48,14 @@ On raw parsing throughput (local server, no network): **3.0× faster than Colly,
 - **XPath selectors** — `res.xpath("//h1/text()")` for XML/HTML documents (feature: `xpath`)
 - **Regex selectors** — `res.re(r"\d+")`, `el.re_first(r"...")`, works on `Response`, `Element`, and `ElementList`
 - **JSONPath selectors** — `res.jsonpath("$.store.books[*].title")` for JSON responses (feature: `jsonpath`)
-- **`#[derive(ExtractDerive)]`** — generate CSS extraction boilerplate from field annotations (feature: `derive`)
+- **`#[derive(Extract)]`** — generate CSS extraction boilerplate from field annotations (feature: `derive`)
 - **Rate limiting** — token-bucket `RateLimiter` via `governor`
 - **Auto-throttle** — adaptive delay based on EWMA latency and 429/503 back-off
 - **Retry with backoff** — exponential backoff via `.retry(max, base_delay)`
 - **Item stream** — `CrawlEngine::stream()` returns an async `Stream` for real-time item consumption
 - **robots.txt** — per-domain fetch + cache, enabled by default
 - **Bloom filter dedup** — O(1) URL deduplication, 1M URLs at 0.1% false-positive rate
+- **Request scheduling** — `CrawlRequest` supports priority, headers, method/body, metadata, and `dont_filter`
 - **HTTP cache** — disk-backed response cache via `.http_cache(dir)`, optional TTL
 - **Link extractor** — `LinkExtractor` with allow/deny regex, `allow_domains`, `canonicalize`, `restrict_css`
 - **Pluggable storage** — `JsonlStore`, `JsonStore`, `CsvStore`, `StdoutStore`, PostgreSQL, SQLite, MySQL
@@ -79,7 +80,7 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 ```
 
-For `#[derive(ExtractDerive)]`:
+For `#[derive(Extract)]`:
 
 ```toml
 kumo = { version = "0.1", features = ["derive"] }
@@ -146,7 +147,7 @@ Full documentation at **[kumo.wihlarkop.com](https://kumo.wihlarkop.com)**
 - [Getting Started](https://kumo.wihlarkop.com/getting-started/)
 - [Spiders](https://kumo.wihlarkop.com/spiders/)
 - [Extractors](https://kumo.wihlarkop.com/extractors/)
-- [derive(ExtractDerive)](https://kumo.wihlarkop.com/derive/)
+- [derive(Extract)](https://kumo.wihlarkop.com/derive/)
 - [Middleware](https://kumo.wihlarkop.com/middleware/)
 - [Stores](https://kumo.wihlarkop.com/stores/)
 - [Advanced topics](https://kumo.wihlarkop.com/advanced/stream/) — item stream, OpenTelemetry, stealth, browser, and more

@@ -1,10 +1,10 @@
 use kumo::{
     fetch::{Fetcher, MockFetcher},
-    middleware::Request,
+    middleware::FetchRequest,
 };
 
-fn req(url: &str) -> Request {
-    Request::new(url, 0)
+fn req(url: &str) -> FetchRequest {
+    FetchRequest::new(url, 0)
 }
 
 #[tokio::test]

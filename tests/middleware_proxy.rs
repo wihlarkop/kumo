@@ -1,7 +1,7 @@
-use kumo::middleware::{Middleware, ProxyRotator, Request};
+use kumo::middleware::{FetchRequest, Middleware, ProxyRotator};
 
-fn make_request() -> Request {
-    Request::new("https://example.com", 0)
+fn make_request() -> FetchRequest {
+    FetchRequest::new("https://example.com", 0)
 }
 
 #[tokio::test]

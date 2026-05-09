@@ -40,17 +40,24 @@ pub trait Spider: Send + Sync {
 
 ## Output
 
-`parse()` returns `Output<T>` — a builder that collects items and URLs to follow:
+`parse()` returns `Output<T>` — a builder that collects items and requests to follow:
 
 ```rust
 Output::new()
-    .item(my_item)               // add one item
-    .items(vec![a, b, c])        // add many items
-    .follow("https://next-page") // enqueue a URL
-    .follow_many(links)          // enqueue many URLs
+    .item(my_item)                    // add one item
+    .items(vec![a, b, c])             // add many items
+    .follow("https://next-page")      // enqueue a GET request
+    .follow_many(links)               // enqueue many GET requests
+    .request(
+        CrawlRequest::get("https://example.com/high-priority")
+            .priority(10)
+            .dont_filter(true),
+    )
 ```
 
 Items are serialized to JSON exactly once and passed to pipelines and the store.
+Use `CrawlRequest` when a follow-up request needs custom priority, headers,
+method/body, metadata, or duplicate filtering behavior.
 
 ## Lifecycle Hooks
 

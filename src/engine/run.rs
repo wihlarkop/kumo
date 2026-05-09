@@ -8,6 +8,7 @@ use crate::{
     frontier::{Frontier, memory::MemoryFrontier},
     middleware::Middleware,
     pipeline::Pipeline,
+    request::{CrawlRequest, FrontierRequest},
     spider::Spider,
 };
 
@@ -17,7 +18,7 @@ use super::{
     setup::{
         FetcherArgs, build_http_client, build_raw_fetcher, build_robots_cache, wrap_with_cache,
     },
-    task::{TaskContext, is_cancelled, process_url_with_retry, should_enqueue},
+    task::{TaskContext, is_cancelled, process_request_with_retry, should_enqueue},
 };
 
 impl CrawlEngine {
@@ -82,14 +83,12 @@ impl CrawlEngine {
             "spider.open"
         );
         for url in start_urls {
-            frontier.push(url, 0).await;
+            frontier.push_request(CrawlRequest::get(url), 0).await;
         }
 
         type TaskResult = (
-            String,
-            usize,
-            u32,
-            Result<(u64, u64, Vec<(String, usize)>), KumoError>,
+            FrontierRequest,
+            Result<(u64, u64, Vec<(CrawlRequest, usize)>), KumoError>,
         );
         let mut join_set: JoinSet<TaskResult> = JoinSet::new();
         let mut stats = CrawlStats::default();
@@ -135,13 +134,13 @@ impl CrawlEngine {
             if !shutting_down {
                 // Fill up to the concurrency limit.
                 while join_set.len() < concurrency {
-                    match frontier.pop().await {
-                        Some((url, depth, retry_count)) => {
+                    match frontier.pop_request().await {
+                        Some(queued) => {
                             // Check robots.txt before dispatching.
                             if let Some(ref cache) = robots_cache
-                                && !cache.is_allowed(&client, &url).await
+                                && !cache.is_allowed(&client, queued.request.url()).await
                             {
-                                tracing::debug!(url = %url, "blocked by robots.txt, skipping");
+                                tracing::debug!(url = %queued.request.url(), "blocked by robots.txt, skipping");
                                 continue;
                             }
 
@@ -157,8 +156,8 @@ impl CrawlEngine {
                             };
 
                             join_set.spawn(async move {
-                                let result = process_url_with_retry(url.clone(), depth, ctx).await;
-                                (url, depth, retry_count, result)
+                                let result = process_request_with_retry(queued.clone(), ctx).await;
+                                (queued, result)
                             });
                         }
                         // Frontier currently empty â€” tasks may still add URLs.
@@ -179,7 +178,7 @@ impl CrawlEngine {
                 }
                 result = join_set.join_next() => {
                     match result {
-                        Some(Ok((_url, _depth, _retry_count, Ok((item_count, bytes, follows))))) => {
+                        Some(Ok((_queued, Ok((item_count, bytes, follows))))) => {
                             stats.pages_crawled += 1;
                             stats.items_scraped += item_count;
                             stats.bytes_downloaded += bytes;
@@ -198,15 +197,16 @@ impl CrawlEngine {
                             }
 
                             if !shutting_down {
-                                for (follow_url, follow_depth) in follows {
-                                    if should_enqueue(&follow_url, follow_depth, spider.as_ref()) {
-                                        frontier.push(follow_url, follow_depth).await;
+                                for (follow_request, follow_depth) in follows {
+                                    if should_enqueue(&follow_request, follow_depth, spider.as_ref()) {
+                                        frontier.push_request(follow_request, follow_depth).await;
                                     }
                                 }
                             }
                         }
-                        Some(Ok((url, depth, retry_count, Err(e)))) => {
+                        Some(Ok((queued, Err(e)))) => {
                             stats.errors += 1;
+                            let url = queued.request.url().to_string();
                             // Notify all middleware of the permanent failure.
                             for mw in middleware.iter() {
                                 mw.on_error(&url, &e).await;
@@ -216,17 +216,21 @@ impl CrawlEngine {
                                     error!(url = %url, error = %e, "aborting crawl");
                                     return Err(e);
                                 }
-                                ErrorPolicy::Retry(max) if retry_count < max => {
+                                ErrorPolicy::Retry(max) if queued.retry_count < max => {
                                     tracing::warn!(
                                         spider = spider.name(),
                                         url = %url,
-                                        attempt = retry_count + 1,
+                                        attempt = queued.retry_count + 1,
                                         max,
                                         error = %e,
                                         "re-queuing failed URL"
                                     );
                                     if !shutting_down {
-                                        frontier.push_force(url, depth, retry_count + 1).await;
+                                        frontier.push_request_force(FrontierRequest::new(
+                                            queued.request,
+                                            queued.depth,
+                                            queued.retry_count + 1,
+                                        )).await;
                                     }
                                 }
                                 ErrorPolicy::Retry(_) => {

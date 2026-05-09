@@ -1,8 +1,8 @@
-use kumo::middleware::{Middleware, Request, UserAgentRotator};
+use kumo::middleware::{FetchRequest, Middleware, UserAgentRotator};
 use reqwest::header::USER_AGENT;
 
-fn make_request() -> Request {
-    Request::new("https://example.com", 0)
+fn make_request() -> FetchRequest {
+    FetchRequest::new("https://example.com", 0)
 }
 
 #[tokio::test]

@@ -1,10 +1,12 @@
 # URL Frontiers
 
-The frontier is the queue of URLs to crawl. kumo deduplicates URLs with a Bloom filter (O(1), 1M URLs at 0.1% false-positive rate by default).
+The frontier is the queue of crawl requests. kumo deduplicates URLs with a Bloom filter (O(1), 1M URLs at 0.1% false-positive rate by default).
 
 ## MemoryFrontier (default)
 
 The default — no configuration needed. Held in RAM; lost when the process exits.
+It supports `CrawlRequest` priority scheduling: higher priority requests are
+fetched first, and requests with equal priority keep FIFO order.
 
 ```rust
 CrawlEngine::builder()
@@ -56,6 +58,10 @@ CrawlEngine::builder()
 ```
 
 Multiple processes can use the same Redis queue and seen keys — they share the queue and deduplication set. Use this for distributed crawls where a single process can't saturate the target site's bandwidth.
+
+`CrawlRequest::dont_filter(true)` bypasses URL deduplication for an individual
+request. This is useful for deliberate revisits such as retrying a page after a
+state change or fetching the same endpoint with a different request body.
 
 ## Tuning the Bloom Filter
 

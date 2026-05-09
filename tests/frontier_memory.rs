@@ -1,4 +1,7 @@
-use kumo::frontier::{Frontier, MemoryFrontier};
+use kumo::{
+    CrawlRequest,
+    frontier::{Frontier, MemoryFrontier},
+};
 
 #[tokio::test]
 async fn push_new_url_returns_true() {
@@ -38,6 +41,61 @@ async fn pop_is_fifo() {
     assert_eq!(frontier.pop().await.unwrap().0, "https://a.com");
     assert_eq!(frontier.pop().await.unwrap().0, "https://b.com");
     assert_eq!(frontier.pop().await.unwrap().0, "https://c.com");
+}
+
+#[tokio::test]
+async fn higher_priority_pops_first() {
+    let frontier = MemoryFrontier::new(1000);
+    frontier
+        .push_request(CrawlRequest::get("https://low.com").priority(-1), 0)
+        .await;
+    frontier
+        .push_request(CrawlRequest::get("https://high.com").priority(10), 0)
+        .await;
+    frontier
+        .push_request(CrawlRequest::get("https://mid.com").priority(2), 0)
+        .await;
+
+    assert_eq!(frontier.pop().await.unwrap().0, "https://high.com");
+    assert_eq!(frontier.pop().await.unwrap().0, "https://mid.com");
+    assert_eq!(frontier.pop().await.unwrap().0, "https://low.com");
+}
+
+#[tokio::test]
+async fn equal_priority_preserves_fifo_order() {
+    let frontier = MemoryFrontier::new(1000);
+    frontier
+        .push_request(CrawlRequest::get("https://a.com").priority(5), 0)
+        .await;
+    frontier
+        .push_request(CrawlRequest::get("https://b.com").priority(5), 0)
+        .await;
+    frontier
+        .push_request(CrawlRequest::get("https://c.com").priority(5), 0)
+        .await;
+
+    assert_eq!(frontier.pop().await.unwrap().0, "https://a.com");
+    assert_eq!(frontier.pop().await.unwrap().0, "https://b.com");
+    assert_eq!(frontier.pop().await.unwrap().0, "https://c.com");
+}
+
+#[tokio::test]
+async fn dont_filter_allows_duplicate_url() {
+    let frontier = MemoryFrontier::new(1000);
+    assert!(
+        frontier
+            .push_request(CrawlRequest::get("https://example.com"), 0)
+            .await
+    );
+    assert!(
+        frontier
+            .push_request(
+                CrawlRequest::get("https://example.com").dont_filter(true),
+                0,
+            )
+            .await
+    );
+    assert_eq!(frontier.len().await, 2);
 }
 
 #[tokio::test]

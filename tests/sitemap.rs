@@ -4,6 +4,10 @@ use kumo::{
     spider::{Output, Spider},
 };
 
+fn followed_urls<T: serde::Serialize>(output: &Output<T>) -> Vec<&str> {
+    output.follow.iter().map(|request| request.url()).collect()
+}
+
 #[test]
 fn new_sets_default_sitemap_url() {
     let spider = SitemapSpider::new("https://example.com");
@@ -35,7 +39,7 @@ async fn sitemap_index_follows_child_sitemaps() {
         .await
         .unwrap();
     assert_eq!(
-        output.follow,
+        followed_urls(&output),
         vec![
             "https://example.com/sitemap-1.xml",
             "https://example.com/sitemap-2.xml",
@@ -56,7 +60,7 @@ async fn urlset_entries_are_enqueued() {
         .await
         .unwrap();
     assert_eq!(
-        output.follow,
+        followed_urls(&output),
         vec!["https://example.com/page1", "https://example.com/page2"]
     );
 }
@@ -74,7 +78,7 @@ async fn filter_url_limits_urlset_follow_links() {
         .parse(&response)
         .await
         .unwrap();
-    assert_eq!(output.follow, vec!["https://example.com/blog/1"]);
+    assert_eq!(followed_urls(&output), vec!["https://example.com/blog/1"]);
 }
 
 #[tokio::test]
@@ -85,5 +89,8 @@ async fn robots_body_follows_sitemap_directives() {
         .parse(&response)
         .await
         .unwrap();
-    assert_eq!(output.follow, vec!["https://example.com/sitemap.xml"]);
+    assert_eq!(
+        followed_urls(&output),
+        vec!["https://example.com/sitemap.xml"]
+    );
 }

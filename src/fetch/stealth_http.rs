@@ -9,7 +9,7 @@ use super::Fetcher;
 use crate::{
     error::KumoError,
     extract::{Response, response::ResponseBody},
-    middleware::Request,
+    middleware::FetchRequest,
 };
 use rquest_util::Emulation;
 use std::collections::HashMap;
@@ -76,7 +76,7 @@ impl StealthHttpFetcher {
         })
     }
 
-    async fn client_for(&self, request: &Request) -> Result<rquest::Client, KumoError> {
+    async fn client_for(&self, request: &FetchRequest) -> Result<rquest::Client, KumoError> {
         let Some(ref proxy_url) = request.proxy else {
             return Ok(self.client.clone());
         };
@@ -104,12 +104,15 @@ impl StealthHttpFetcher {
 
 #[async_trait::async_trait]
 impl Fetcher for StealthHttpFetcher {
-    async fn fetch(&self, request: &Request) -> Result<Response, KumoError> {
+    async fn fetch(&self, request: &FetchRequest) -> Result<Response, KumoError> {
         let client = self.client_for(request).await?;
 
-        let mut builder = client.get(request.url());
+        let mut builder = client.request(request.method.clone(), request.url());
         for (name, value) in &request.headers {
             builder = builder.header(name.as_str(), value.to_str().unwrap_or(""));
+        }
+        if let Some(body) = &request.body {
+            builder = builder.body(body.clone());
         }
 
         let start = std::time::Instant::now();

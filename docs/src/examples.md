@@ -24,9 +24,9 @@ Scrapes all 1000 books from [books.toscrape.com](https://books.toscrape.com) acr
 cargo run --example books
 ```
 
-### `books_derive.rs` — `#[derive(ExtractDerive)]`
+### `books_derive.rs` — `#[derive(Extract)]`
 
-Same as `books.rs` but uses `#[derive(ExtractDerive)]` with field annotations instead of manual CSS selectors.
+Same as `books.rs` but uses `#[derive(Extract)]` with field annotations instead of manual CSS selectors.
 
 ```bash
 cargo run --example books_derive --features derive
@@ -149,6 +149,14 @@ Demonstrates `LinkExtractor` with `allow_domains`, `allow`, `deny`, `restrict_cs
 
 ```bash
 cargo run --example link_extractor
+```
+
+### `request_scheduling.rs` — request scheduling
+
+Demonstrates `CrawlRequest` with custom method/body, headers, priority, and metadata.
+
+```bash
+cargo run --example request_scheduling
 ```
 
 ### `browser.rs` — headless browser

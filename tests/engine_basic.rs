@@ -1,6 +1,7 @@
 mod support;
 
 use kumo::{
+    CrawlRequest,
     engine::CrawlEngine,
     error::KumoError,
     extract::Response,
@@ -39,6 +40,17 @@ struct PaginatedSpider {
     page1: String,
 }
 
+struct PrioritySpider {
+    start: String,
+    low: String,
+    high: String,
+}
+
+struct DontFilterSpider {
+    start: String,
+    target: String,
+}
+
 #[async_trait::async_trait]
 impl Spider for PaginatedSpider {
     type Item = serde_json::Value;
@@ -64,6 +76,50 @@ impl Spider for PaginatedSpider {
             output = output.follow(url);
         }
         Ok(output)
+    }
+}
+
+#[async_trait::async_trait]
+impl Spider for PrioritySpider {
+    type Item = serde_json::Value;
+
+    fn name(&self) -> &str {
+        "priority"
+    }
+
+    fn start_urls(&self) -> Vec<String> {
+        vec![self.start.clone()]
+    }
+
+    async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
+        if res.url() == self.start {
+            return Ok(Output::new()
+                .request(CrawlRequest::get(&self.low).priority(-1))
+                .request(CrawlRequest::get(&self.high).priority(10)));
+        }
+        Ok(Output::new().item(serde_json::json!({ "url": res.url() })))
+    }
+}
+
+#[async_trait::async_trait]
+impl Spider for DontFilterSpider {
+    type Item = serde_json::Value;
+
+    fn name(&self) -> &str {
+        "dont-filter"
+    }
+
+    fn start_urls(&self) -> Vec<String> {
+        vec![self.start.clone()]
+    }
+
+    async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
+        if res.url() == self.start {
+            return Ok(Output::new()
+                .request(CrawlRequest::get(&self.target).dont_filter(true))
+                .request(CrawlRequest::get(&self.target).dont_filter(true)));
+        }
+        Ok(Output::new().item(serde_json::json!({ "url": res.url() })))
     }
 }
 
@@ -131,6 +187,61 @@ async fn engine_follows_pagination() {
     assert_eq!(stats.pages_crawled, 2);
     assert_eq!(stats.items_scraped, 2);
     assert_eq!(stats.errors, 0);
+}
+
+#[tokio::test]
+async fn engine_schedules_higher_priority_request_first() {
+    let start = "https://example.com/start";
+    let low = "https://example.com/low";
+    let high = "https://example.com/high";
+    let store = VecStore::default();
+    let mock = MockFetcher::new()
+        .with_response(start, 200, "<a>start</a>")
+        .with_response(low, 200, "<h1>low</h1>")
+        .with_response(high, 200, "<h1>high</h1>");
+
+    let stats = CrawlEngine::builder()
+        .concurrency(1)
+        .respect_robots_txt(false)
+        .fetcher(mock)
+        .store(store.clone())
+        .run(PrioritySpider {
+            start: start.to_string(),
+            low: low.to_string(),
+            high: high.to_string(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(stats.pages_crawled, 3);
+    let items = store.collected();
+    assert_eq!(items[0]["url"], high);
+    assert_eq!(items[1]["url"], low);
+}
+
+#[tokio::test]
+async fn engine_respects_dont_filter_requests() {
+    let start = "https://example.com/start";
+    let target = "https://example.com/revisit";
+    let store = VecStore::default();
+    let mock = MockFetcher::new()
+        .with_response(start, 200, "<a>start</a>")
+        .with_response(target, 200, "<h1>target</h1>");
+
+    let stats = CrawlEngine::builder()
+        .concurrency(1)
+        .respect_robots_txt(false)
+        .fetcher(mock)
+        .store(store.clone())
+        .run(DontFilterSpider {
+            start: start.to_string(),
+            target: target.to_string(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(stats.pages_crawled, 3);
+    assert_eq!(store.collected().len(), 2);
 }
 
 #[tokio::test]

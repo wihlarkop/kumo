@@ -37,8 +37,10 @@ docs/superpowers/
 # MkDocs build output, cache and Python virtualenv
 docs/site/
 docs/.cache/
+docs/.uv-cache/
 docs/.venv/
 docs/.python-version
+.uv-cache/
 
 # Benchmark rolling result files (generated on every run — not source)
 benchmark/results/*.json

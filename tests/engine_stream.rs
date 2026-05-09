@@ -3,7 +3,7 @@ use kumo::{
     error::KumoError,
     extract::Response,
     fetch::{Fetcher, MockFetcher},
-    middleware::Request,
+    middleware::FetchRequest,
     spider::{Output, Spider},
 };
 use std::sync::{
@@ -97,7 +97,7 @@ async fn dropping_stream_stops_background_crawl() {
 
     #[async_trait::async_trait]
     impl Fetcher for CountingFetcher {
-        async fn fetch(&self, req: &Request) -> Result<Response, KumoError> {
+        async fn fetch(&self, req: &FetchRequest) -> Result<Response, KumoError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             Ok(Response::from_parts(req.url(), 200, "<html></html>"))
         }

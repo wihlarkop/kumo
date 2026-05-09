@@ -10,7 +10,7 @@ use kumo::prelude::*;
 use serde::Serialize;
 use std::sync::Arc;
 
-#[derive(ExtractDerive, Serialize, Debug)]
+#[derive(Extract, Serialize, Debug)]
 struct Book {
     #[extract(css = "h3 a", attr = "title")]
     title: String,

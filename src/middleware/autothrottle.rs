@@ -1,4 +1,4 @@
-use super::{Middleware, Request};
+use super::{FetchRequest, Middleware};
 use crate::{error::KumoError, extract::Response};
 use std::{
     sync::{Arc, Mutex},
@@ -91,7 +91,7 @@ impl Default for AutoThrottle {
 
 #[async_trait::async_trait]
 impl Middleware for AutoThrottle {
-    async fn before_request(&self, _request: &mut Request) -> Result<(), KumoError> {
+    async fn before_request(&self, _request: &mut FetchRequest) -> Result<(), KumoError> {
         let delay = self.state.lock().unwrap().current_delay;
         tokio::time::sleep(delay).await;
         Ok(())

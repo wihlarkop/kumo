@@ -14,6 +14,8 @@ pub use file::FileFrontier;
 #[cfg(feature = "redis-frontier")]
 pub use redis_frontier::RedisFrontier;
 
+use crate::request::{CrawlRequest, FrontierRequest};
+
 /// URL queue with deduplication. The frontier drives the crawl loop.
 #[async_trait::async_trait]
 pub trait Frontier: Send + Sync {
@@ -28,6 +30,28 @@ pub trait Frontier: Send + Sync {
 
     /// Dequeue the next URL. Returns `None` if the queue is currently empty.
     async fn pop(&self) -> Option<(String, usize, u32)>;
+
+    /// Enqueue a crawl request if it has not been seen before.
+    async fn push_request(&self, request: CrawlRequest, depth: usize) -> bool {
+        self.push(request.url().to_string(), depth).await
+    }
+
+    /// Enqueue a crawl request unconditionally, bypassing deduplication.
+    async fn push_request_force(&self, queued: FrontierRequest) {
+        self.push_force(
+            queued.request.url().to_string(),
+            queued.depth,
+            queued.retry_count,
+        )
+        .await;
+    }
+
+    /// Dequeue the next crawl request.
+    async fn pop_request(&self) -> Option<FrontierRequest> {
+        self.pop().await.map(|(url, depth, retry_count)| {
+            FrontierRequest::new(CrawlRequest::get(url), depth, retry_count)
+        })
+    }
 
     /// Number of URLs waiting in the queue.
     async fn len(&self) -> usize;

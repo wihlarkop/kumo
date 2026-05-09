@@ -89,7 +89,10 @@ struct ArcFetcher(Arc<dyn Fetcher>);
 
 #[async_trait::async_trait]
 impl Fetcher for ArcFetcher {
-    async fn fetch(&self, request: &crate::middleware::Request) -> Result<Response, KumoError> {
+    async fn fetch(
+        &self,
+        request: &crate::middleware::FetchRequest,
+    ) -> Result<Response, KumoError> {
         self.0.fetch(request).await
     }
 }

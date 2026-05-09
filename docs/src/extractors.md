@@ -71,7 +71,7 @@ let first  = res.jsonpath("$.items[0].name")?;
 
 Use for JSON API responses where CSS/XPath would be meaningless.
 
-## `#[derive(ExtractDerive)]`
+## `#[derive(Extract)]`
 
 Requires `features = ["derive"]`. Generates CSS-based extraction boilerplate from field annotations.
 
@@ -82,7 +82,7 @@ kumo = { version = "0.1", features = ["derive"] }
 ```rust
 use kumo::prelude::*;
 
-#[derive(Debug, Serialize, ExtractDerive)]
+#[derive(Debug, Serialize, Extract)]
 struct Product {
     #[extract(css = "h1.title")]
     name: String,
@@ -140,7 +140,7 @@ Available clients:
 Use `#[extract(llm_fallback = "hint")]` to try CSS first and fall back to LLM only when the selector produces nothing:
 
 ```rust
-#[derive(Debug, Serialize, ExtractDerive)]
+#[derive(Debug, Serialize, Extract)]
 struct Article {
     #[extract(css = "h1")]
     title: String,

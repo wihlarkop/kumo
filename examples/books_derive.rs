@@ -1,10 +1,10 @@
-//! Same as books.rs but uses #[derive(ExtractDerive)] to eliminate manual field extraction.
+//! Same as books.rs but uses #[derive(Extract)] to eliminate manual field extraction.
 //! Run with: cargo run --example books_derive --features derive
 
 use kumo::prelude::*;
 use serde::Serialize;
 
-#[derive(ExtractDerive, Serialize)]
+#[derive(Extract, Serialize)]
 struct Book {
     #[extract(css = "h3 a", attr = "title")]
     title: String,

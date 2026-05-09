@@ -22,6 +22,11 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   dependency advisory that has no upstream fix yet.
 - Hardened release CI with broad feature checks, docs build checks, package
   dry-runs, and separate publish paths for `kumo` and `kumo-derive`.
+- Added `CrawlRequest` for follow-up request scheduling with priority,
+  custom headers, method/body, metadata, and per-request duplicate-filter
+  bypass.
+- Renamed the middleware request context to `FetchRequest` before the 0.1.0
+  release to avoid confusion with spider-scheduled crawl requests.
 
 - `CloudStore` — backend-agnostic cloud storage via [`object_store`](https://docs.rs/object_store); supports S3, GCS, Azure Blob, local filesystem, and in-memory backends through a unified `Arc<dyn ObjectStore>` interface
 - New feature flags: `cloud`, `cloud-s3`, `cloud-gcs`, `cloud-azure`
@@ -61,7 +66,7 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### 0.1.0 — 2026-04-21
 
-- `#[derive(ExtractDerive)]` proc-macro for structs with named fields
+- `#[derive(Extract)]` proc-macro for structs with named fields
 - `css`, `attr`, `re`, `text` field options
 - `llm_fallback` — CSS-first with LLM fallback
 - `String` fields default to `""`, `Option<String>` to `None`

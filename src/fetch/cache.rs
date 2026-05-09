@@ -14,7 +14,7 @@ use super::Fetcher;
 use crate::{
     error::KumoError,
     extract::{Response, response::ResponseBody},
-    middleware::Request,
+    middleware::FetchRequest,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -97,7 +97,7 @@ impl std::fmt::Debug for CachingFetcher {
 
 #[async_trait]
 impl Fetcher for CachingFetcher {
-    async fn fetch(&self, request: &Request) -> Result<Response, KumoError> {
+    async fn fetch(&self, request: &FetchRequest) -> Result<Response, KumoError> {
         let path = self.cache_path(request.url());
 
         // Try cache hit.

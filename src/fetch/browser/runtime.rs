@@ -8,14 +8,14 @@ use crate::{
     error::KumoError,
     extract::{Response, response::ResponseBody},
     fetch::Fetcher,
-    middleware::Request,
+    middleware::FetchRequest,
 };
 
 static STEALTH_PATCHES_JS: &str = include_str!("../stealth_patches.js");
 
 #[async_trait]
 impl Fetcher for BrowserFetcher {
-    async fn fetch(&self, request: &Request) -> Result<Response, KumoError> {
+    async fn fetch(&self, request: &FetchRequest) -> Result<Response, KumoError> {
         let start = std::time::Instant::now();
 
         let _permit = self

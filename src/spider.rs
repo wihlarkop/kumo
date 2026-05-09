@@ -2,6 +2,7 @@ use crate::{
     engine::CrawlStats,
     error::{ErrorPolicy, KumoError},
     extract::Response,
+    request::CrawlRequest,
 };
 
 /// Carries extracted items and URLs to follow — returned by `Spider::parse`.
@@ -11,8 +12,8 @@ use crate::{
 /// to the item-pipeline / store, avoiding redundant allocations.
 pub struct Output<T: serde::Serialize> {
     pub(crate) items: Vec<T>,
-    /// URLs to enqueue for crawling.
-    pub follow: Vec<String>,
+    /// Requests to enqueue for crawling.
+    pub follow: Vec<CrawlRequest>,
 }
 
 impl<T: serde::Serialize> Output<T> {
@@ -37,13 +38,25 @@ impl<T: serde::Serialize> Output<T> {
 
     /// Enqueue a single URL to follow.
     pub fn follow(mut self, url: impl Into<String>) -> Self {
-        self.follow.push(url.into());
+        self.follow.push(CrawlRequest::get(url));
         self
     }
 
     /// Enqueue multiple URLs to follow.
     pub fn follow_many(mut self, urls: Vec<String>) -> Self {
-        self.follow.extend(urls);
+        self.follow.extend(urls.into_iter().map(CrawlRequest::get));
+        self
+    }
+
+    /// Enqueue a fully configured crawl request.
+    pub fn request(mut self, request: CrawlRequest) -> Self {
+        self.follow.push(request);
+        self
+    }
+
+    /// Enqueue multiple fully configured crawl requests.
+    pub fn requests(mut self, requests: Vec<CrawlRequest>) -> Self {
+        self.follow.extend(requests);
         self
     }
 }

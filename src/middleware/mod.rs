@@ -13,7 +13,10 @@ pub use status_retry::StatusRetry;
 pub use user_agent::UserAgentRotator;
 
 use crate::{error::KumoError, extract::Response};
-use reqwest::header::HeaderMap;
+use reqwest::{
+    Method,
+    header::{HeaderMap, HeaderName, HeaderValue},
+};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Shared selection strategy used by `UserAgentRotator` and `ProxyRotator`.
@@ -53,21 +56,25 @@ impl RotationStrategy {
     }
 }
 
-/// A pending HTTP request, passed through the middleware chain before fetching.
-pub struct Request {
+/// A fetch-time HTTP request, passed through middleware before fetching.
+pub struct FetchRequest {
     url: String,
+    pub method: Method,
     pub headers: HeaderMap,
+    pub body: Option<Vec<u8>>,
     pub depth: usize,
     /// Proxy URL set by `ProxyRotator` middleware (e.g. `"http://user:pass@host:port"`).
     /// The `HttpFetcher` reads this field to route the request through the specified proxy.
     pub proxy: Option<String>,
 }
 
-impl Request {
+impl FetchRequest {
     pub fn new(url: impl Into<String>, depth: usize) -> Self {
         Self {
             url: url.into(),
+            method: Method::GET,
             headers: HeaderMap::new(),
+            body: None,
             depth,
             proxy: None,
         }
@@ -77,6 +84,28 @@ impl Request {
     pub fn url(&self) -> &str {
         &self.url
     }
+
+    /// Mutable access to headers before the request is fetched.
+    pub fn headers_mut(&mut self) -> &mut HeaderMap {
+        &mut self.headers
+    }
+
+    /// Set or replace one header before the request is fetched.
+    pub fn header(&mut self, name: HeaderName, value: HeaderValue) -> &mut Self {
+        self.headers.insert(name, value);
+        self
+    }
+
+    pub(crate) fn from_crawl_request(request: &crate::request::CrawlRequest, depth: usize) -> Self {
+        Self {
+            url: request.url().to_string(),
+            method: request.method_ref().clone(),
+            headers: request.headers().clone(),
+            body: request.body_bytes().map(ToOwned::to_owned),
+            depth,
+            proxy: None,
+        }
+    }
 }
 
 /// Wraps the fetch cycle with pre/post-request hooks.
@@ -85,7 +114,7 @@ impl Request {
 pub trait Middleware: Send + Sync {
     /// Called before the HTTP request is sent.
     /// Modify `request` in place (e.g., inject headers, enforce rate limits).
-    async fn before_request(&self, request: &mut Request) -> Result<(), KumoError>;
+    async fn before_request(&self, request: &mut FetchRequest) -> Result<(), KumoError>;
 
     /// Called after a successful HTTP response.
     /// Modify `response` in place, or return an error to trigger the spider's error policy.

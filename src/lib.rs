@@ -12,6 +12,8 @@ pub mod middleware;
 #[cfg(feature = "otel")]
 pub mod otel;
 pub mod pipeline;
+pub mod request;
+pub use request::CrawlRequest;
 pub mod retry;
 pub mod robots;
 pub mod sitemap;
@@ -51,10 +53,11 @@ pub mod prelude {
     pub use crate::llm::ResponseExtractExt;
     pub use crate::llm::{LlmClient, TokenUsage};
     pub use crate::middleware::{
-        AutoThrottle, DefaultHeaders, Middleware, ProxyRotator, RateLimiter, Request, StatusRetry,
-        UserAgentRotator,
+        AutoThrottle, DefaultHeaders, FetchRequest, Middleware, ProxyRotator, RateLimiter,
+        StatusRetry, UserAgentRotator,
     };
     pub use crate::pipeline::{DropDuplicates, FilterPipeline, Pipeline, RequireFields};
+    pub use crate::request::CrawlRequest;
     pub use crate::retry::RetryPolicy;
     pub use crate::sitemap::{SitemapEntry, SitemapSpider};
     pub use crate::spider::{Output, Spider};
@@ -66,6 +69,6 @@ pub mod prelude {
     pub use crate::store::SqliteStore;
     pub use crate::store::{CsvStore, JsonStore, JsonlStore, StdoutStore};
     #[cfg(feature = "derive")]
-    pub use kumo_derive::Extract as ExtractDerive;
+    pub use kumo_derive::Extract;
     pub use tokio_stream::StreamExt;
 }

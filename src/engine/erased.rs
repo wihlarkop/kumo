@@ -2,12 +2,13 @@ use crate::{
     engine::CrawlStats,
     error::{ErrorPolicy, KumoError},
     extract::Response,
+    request::CrawlRequest,
     spider::{Output, Spider},
 };
 
 pub(super) struct ErasedOutput {
     pub(super) items: Vec<serde_json::Value>,
-    pub(super) follow: Vec<String>,
+    pub(super) follow: Vec<CrawlRequest>,
 }
 
 #[async_trait::async_trait]

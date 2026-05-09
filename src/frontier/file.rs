@@ -7,7 +7,10 @@ use std::{
 use bloomfilter::Bloom;
 use tokio::sync::Mutex;
 
-use crate::error::KumoError;
+use crate::{
+    error::KumoError,
+    request::{CrawlRequest, FrontierRequest, StoredFrontierRequest},
+};
 
 use super::Frontier;
 
@@ -32,7 +35,7 @@ const BLOOM_CAPACITY: usize = 1_000_000;
 ///     .frontier(FileFrontier::open("./crawl-state")?)
 /// ```
 pub struct FileFrontier {
-    queue: Mutex<VecDeque<(String, usize, u32)>>,
+    queue: Mutex<VecDeque<FrontierRequest>>,
     seen_bloom: Mutex<Bloom<String>>,
     /// Exact list of seen URLs — persisted so the Bloom filter can be rebuilt on resume.
     seen_exact: Mutex<Vec<String>>,
@@ -79,10 +82,16 @@ impl FileFrontier {
             Vec::new()
         };
 
-        let queue: VecDeque<(String, usize, u32)> = if queue_path.exists() {
+        let queue: VecDeque<FrontierRequest> = if queue_path.exists() {
             let data = std::fs::read_to_string(&queue_path)
                 .map_err(|e| KumoError::store("read queue.json", e))?;
-            serde_json::from_str(&data).map_err(|e| KumoError::store("parse queue.json", e))?
+            let stored: VecDeque<StoredFrontierRequest> =
+                serde_json::from_str(&data).map_err(|e| KumoError::store("parse queue.json", e))?;
+            stored
+                .into_iter()
+                .map(FrontierRequest::try_from)
+                .collect::<Result<_, _>>()
+                .map_err(KumoError::store_msg)?
         } else {
             VecDeque::new()
         };
@@ -107,8 +116,10 @@ impl FileFrontier {
         let queue = self.queue.lock().await;
         let seen = self.seen_exact.lock().await;
 
-        let queue_json =
-            serde_json::to_string(&*queue).map_err(|e| KumoError::store("serialize queue", e))?;
+        let stored_queue: VecDeque<StoredFrontierRequest> =
+            queue.iter().map(StoredFrontierRequest::from).collect();
+        let queue_json = serde_json::to_string(&stored_queue)
+            .map_err(|e| KumoError::store("serialize queue", e))?;
         let seen_json =
             serde_json::to_string(&*seen).map_err(|e| KumoError::store("serialize seen", e))?;
 
@@ -130,15 +141,51 @@ impl FileFrontier {
 #[async_trait::async_trait]
 impl Frontier for FileFrontier {
     async fn push(&self, url: String, depth: usize) -> bool {
-        let mut bloom = self.seen_bloom.lock().await;
-        if bloom.check(&url) {
-            return false;
-        }
-        bloom.set(&url);
-        drop(bloom);
+        self.push_request(CrawlRequest::get(url), depth).await
+    }
 
-        self.seen_exact.lock().await.push(url.clone());
-        self.queue.lock().await.push_back((url, depth, 0));
+    async fn push_force(&self, url: String, depth: usize, retry_count: u32) {
+        self.push_request_force(FrontierRequest::new(
+            CrawlRequest::get(url),
+            depth,
+            retry_count,
+        ))
+        .await;
+    }
+
+    async fn pop(&self) -> Option<(String, usize, u32)> {
+        self.pop_request().await.map(|queued| {
+            (
+                queued.request().url().to_string(),
+                queued.depth(),
+                queued.retry_count(),
+            )
+        })
+    }
+
+    async fn push_request(&self, request: CrawlRequest, depth: usize) -> bool {
+        let url = request.url().to_string();
+        if !request.dont_filter_enabled() {
+            let maybe_seen = {
+                let mut bloom = self.seen_bloom.lock().await;
+                let maybe_seen = bloom.check(&url);
+                if !maybe_seen {
+                    bloom.set(&url);
+                }
+                maybe_seen
+            };
+
+            let mut seen = self.seen_exact.lock().await;
+            if maybe_seen && seen.iter().any(|seen_url| seen_url == &url) {
+                return false;
+            }
+            seen.push(url);
+        }
+
+        self.queue
+            .lock()
+            .await
+            .push_back(FrontierRequest::new(request, depth, 0));
 
         let count = self.push_count.fetch_add(1, Ordering::Relaxed) + 1;
         if count.is_multiple_of(self.flush_every) {
@@ -147,15 +194,15 @@ impl Frontier for FileFrontier {
         true
     }
 
-    async fn push_force(&self, url: String, depth: usize, retry_count: u32) {
-        self.queue.lock().await.push_back((url, depth, retry_count));
+    async fn push_request_force(&self, queued: FrontierRequest) {
+        self.queue.lock().await.push_back(queued);
         let count = self.push_count.fetch_add(1, Ordering::Relaxed) + 1;
         if count.is_multiple_of(self.flush_every) {
             self.flush_to_disk().await.ok();
         }
     }
 
-    async fn pop(&self) -> Option<(String, usize, u32)> {
+    async fn pop_request(&self) -> Option<FrontierRequest> {
         self.queue.lock().await.pop_front()
     }
 

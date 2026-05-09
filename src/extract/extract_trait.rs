@@ -4,9 +4,9 @@ use crate::llm::client::LlmClient;
 
 /// Implemented by types that can be extracted from a single HTML [`Element`].
 ///
-/// Use `#[derive(ExtractDerive)]` from `kumo::prelude::*` (requires the
-/// `derive` feature) to generate this implementation automatically from
-/// `#[extract(...)]` field annotations.
+/// Use `#[derive(Extract)]` from `kumo::prelude::*` (requires the `derive`
+/// feature) to generate this implementation automatically from `#[extract(...)]`
+/// field annotations.
 ///
 /// The `llm` parameter allows CSS-selector extraction to fall back to an LLM
 /// when a field's selector returns no match. Pass `None` to disable fallback.

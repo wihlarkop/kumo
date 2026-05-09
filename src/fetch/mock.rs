@@ -7,7 +7,7 @@ use super::Fetcher;
 use crate::{
     error::KumoError,
     extract::{Response, response::ResponseBody},
-    middleware::Request,
+    middleware::FetchRequest,
 };
 
 /// A test-only fetcher that returns predefined responses by URL.
@@ -76,7 +76,7 @@ impl Default for MockFetcher {
 
 #[async_trait]
 impl Fetcher for MockFetcher {
-    async fn fetch(&self, request: &Request) -> Result<Response, KumoError> {
+    async fn fetch(&self, request: &FetchRequest) -> Result<Response, KumoError> {
         let (status, body) = self
             .responses
             .get(request.url())

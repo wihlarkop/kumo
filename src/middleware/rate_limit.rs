@@ -1,4 +1,4 @@
-use super::{Middleware, Request};
+use super::{FetchRequest, Middleware};
 use crate::error::KumoError;
 use governor::{
     Quota, RateLimiter as GovernorLimiter,
@@ -36,7 +36,7 @@ impl RateLimiter {
 #[async_trait::async_trait]
 impl Middleware for RateLimiter {
     /// Blocks until a rate-limit token is available, then proceeds.
-    async fn before_request(&self, request: &mut Request) -> Result<(), KumoError> {
+    async fn before_request(&self, request: &mut FetchRequest) -> Result<(), KumoError> {
         let start = std::time::Instant::now();
         self.inner.until_ready().await;
         let delay_ms = start.elapsed().as_millis();

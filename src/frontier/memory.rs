@@ -1,11 +1,12 @@
 use super::Frontier;
+use crate::request::{CrawlRequest, FrontierRequest};
 use bloomfilter::Bloom;
 use std::collections::VecDeque;
 use tokio::sync::Mutex;
 
-/// In-memory frontier: a FIFO queue + Bloom filter for O(1) URL deduplication.
+/// In-memory frontier: a priority queue + Bloom filter for O(1) URL deduplication.
 pub struct MemoryFrontier {
-    queue: Mutex<VecDeque<(String, usize, u32)>>,
+    queue: Mutex<VecDeque<FrontierRequest>>,
     seen: Mutex<Bloom<String>>,
 }
 
@@ -37,22 +38,62 @@ impl Default for MemoryFrontier {
 #[async_trait::async_trait]
 impl Frontier for MemoryFrontier {
     async fn push(&self, url: String, depth: usize) -> bool {
-        let mut seen = self.seen.lock().await;
-        if seen.check(&url) {
-            return false;
-        }
-        seen.set(&url);
-        drop(seen);
-        self.queue.lock().await.push_back((url, depth, 0));
-        true
+        self.push_request(CrawlRequest::get(url), depth).await
     }
 
     async fn push_force(&self, url: String, depth: usize, retry_count: u32) {
-        self.queue.lock().await.push_back((url, depth, retry_count));
+        self.push_request_force(FrontierRequest::new(
+            CrawlRequest::get(url),
+            depth,
+            retry_count,
+        ))
+        .await;
     }
 
     async fn pop(&self) -> Option<(String, usize, u32)> {
-        self.queue.lock().await.pop_front()
+        self.pop_request().await.map(|queued| {
+            (
+                queued.request.url().to_string(),
+                queued.depth,
+                queued.retry_count,
+            )
+        })
+    }
+
+    async fn push_request(&self, request: CrawlRequest, depth: usize) -> bool {
+        let mut seen = self.seen.lock().await;
+        let seen_key = request.url().to_string();
+        if !request.dont_filter_enabled() && seen.check(&seen_key) {
+            return false;
+        }
+        if !request.dont_filter_enabled() {
+            seen.set(&seen_key);
+        }
+        drop(seen);
+        self.queue
+            .lock()
+            .await
+            .push_back(FrontierRequest::new(request, depth, 0));
+        true
+    }
+
+    async fn push_request_force(&self, queued: FrontierRequest) {
+        self.queue.lock().await.push_back(queued);
+    }
+
+    async fn pop_request(&self) -> Option<FrontierRequest> {
+        let mut queue = self.queue.lock().await;
+        let best_idx = queue
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| {
+                a.request
+                    .priority_value()
+                    .cmp(&b.request.priority_value())
+                    .then_with(|| b.sequence.cmp(&a.sequence))
+            })
+            .map(|(idx, _)| idx)?;
+        queue.remove(best_idx)
     }
 
     async fn len(&self) -> usize {

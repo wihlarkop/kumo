@@ -3,7 +3,7 @@ use reqwest::header::{HeaderValue, USER_AGENT};
 
 use crate::error::KumoError;
 
-use super::{Middleware, Request, RotationStrategy};
+use super::{FetchRequest, Middleware, RotationStrategy};
 
 /// Common desktop browser User-Agent strings (Chrome, Firefox, Safari across Win/Mac/Linux).
 const COMMON_BROWSERS: &[&str] = &[
@@ -68,7 +68,7 @@ impl Default for UserAgentRotator {
 
 #[async_trait]
 impl Middleware for UserAgentRotator {
-    async fn before_request(&self, request: &mut Request) -> Result<(), KumoError> {
+    async fn before_request(&self, request: &mut FetchRequest) -> Result<(), KumoError> {
         if let Some(ua) = self.pick()
             && let Ok(value) = HeaderValue::from_str(ua)
         {

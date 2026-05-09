@@ -21,7 +21,7 @@ It gives you a trait-based, async-first API for writing spiders that scrape, fol
 | Async model | Tokio (true async) | Twisted (event loop) | goroutines |
 | Memory safety | Guaranteed | GC | GC |
 | CSS / XPath / Regex / JSONPath | ✅ | ✅ | CSS only |
-| `#[derive(ExtractDerive)]` macro | ✅ | ❌ | ❌ |
+| `#[derive(Extract)]` macro | ✅ | ❌ | ❌ |
 | LLM extraction (Claude / OpenAI / Gemini / Ollama) | ✅ | ❌ | ❌ |
 | Browser / JS rendering | ✅ (chromiumoxide) | ✅ (Playwright) | ❌ |
 | Stealth mode (TLS/HTTP2 fingerprint spoofing) | ✅ | ❌ | ❌ |

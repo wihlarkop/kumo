@@ -10,8 +10,9 @@ use crate::{
     engine::erased::ErasedSpider,
     error::KumoError,
     fetch::Fetcher,
-    middleware::{Middleware, Request},
+    middleware::{FetchRequest, Middleware},
     pipeline::Pipeline,
+    request::{CrawlRequest, FrontierRequest},
     store::ItemStore,
 };
 
@@ -26,16 +27,17 @@ pub(super) struct TaskContext {
     pub(super) stream_cancelled: Option<Arc<AtomicBool>>,
 }
 
-async fn process_url(
-    url: &str,
-    depth: usize,
+async fn process_request(
+    queued: &FrontierRequest,
     ctx: &TaskContext,
-) -> Result<(u64, u64, Vec<(String, usize)>), KumoError> {
+) -> Result<(u64, u64, Vec<(CrawlRequest, usize)>), KumoError> {
+    let url = queued.request.url();
+    let depth = queued.depth;
     if let Some(delay) = ctx.crawl_delay {
         tokio::time::sleep(delay).await;
     }
 
-    let mut request = Request::new(url, depth);
+    let mut request = FetchRequest::from_crawl_request(&queued.request, depth);
     for mw in ctx.middleware.iter() {
         mw.before_request(&mut request).await?;
     }
@@ -86,29 +88,28 @@ async fn process_url(
         "fetch.ok"
     );
 
-    let follows = output.follow.into_iter().map(|u| (u, depth + 1)).collect();
+    let follows = output.follow.into_iter().map(|r| (r, depth + 1)).collect();
 
     Ok((item_count, bytes_downloaded, follows))
 }
 
-pub(super) async fn process_url_with_retry(
-    url: String,
-    depth: usize,
+pub(super) async fn process_request_with_retry(
+    queued: FrontierRequest,
     ctx: TaskContext,
-) -> Result<(u64, u64, Vec<(String, usize)>), KumoError> {
+) -> Result<(u64, u64, Vec<(CrawlRequest, usize)>), KumoError> {
     let mut attempt = 0u32;
     loop {
-        match process_url(&url, depth, &ctx).await {
+        match process_request(&queued, &ctx).await {
             Ok(result) => return Ok(result),
             Err(e)
                 if attempt < ctx.retry_policy.max_attempts && ctx.retry_policy.is_retriable(&e) =>
             {
                 for mw in ctx.middleware.iter() {
-                    mw.on_error(&url, &e).await;
+                    mw.on_error(queued.request.url(), &e).await;
                 }
                 let delay = ctx.retry_policy.delay_for(attempt);
                 tracing::warn!(
-                    url = %url,
+                    url = %queued.request.url(),
                     attempt = attempt + 1,
                     max = ctx.retry_policy.max_attempts,
                     retry_in_ms = delay.as_millis(),
@@ -123,7 +124,11 @@ pub(super) async fn process_url_with_retry(
     }
 }
 
-pub(super) fn should_enqueue(url: &str, depth: usize, spider: &dyn ErasedSpider) -> bool {
+pub(super) fn should_enqueue(
+    request: &CrawlRequest,
+    depth: usize,
+    spider: &dyn ErasedSpider,
+) -> bool {
     if spider.max_depth().is_some_and(|max| depth > max) {
         return false;
     }
@@ -131,7 +136,7 @@ pub(super) fn should_enqueue(url: &str, depth: usize, spider: &dyn ErasedSpider)
     if allowed.is_empty() {
         return true;
     }
-    url::Url::parse(url)
+    url::Url::parse(request.url())
         .ok()
         .and_then(|u| u.host_str().map(String::from))
         .map(|host| allowed.iter().any(|d| host.ends_with(*d)))
