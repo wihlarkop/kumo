@@ -7,7 +7,7 @@ All optional capabilities in kumo are behind feature flags, so you only compile 
 | Flag | Pulls in | Purpose |
 |---|---|---|
 | _(default)_ | — | CSS + regex selectors, all file stores, all middleware, HTTP cache, link extractor |
-| `derive` | `kumo-derive` | `#[derive(Extract)]` for zero-boilerplate CSS extraction |
+| `derive` | `kumo-derive` | `#[derive(ExtractDerive)]` for zero-boilerplate CSS extraction |
 | `jsonpath` | `jsonpath-rust` | JSONPath selector on `Response` |
 | `xpath` | `sxd-xpath` | XPath selector on `Response` |
 | `browser` | `chromiumoxide` | Headless Chromium fetcher for JS-rendered pages |

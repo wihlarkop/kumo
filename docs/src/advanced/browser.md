@@ -8,7 +8,7 @@ The `browser` feature uses headless Chromium (via `chromiumoxide`) to fetch page
 kumo = { version = "0.1", features = ["browser"] }
 ```
 
-Chromium is downloaded automatically on first build via `chromiumoxide`.
+Chrome or Chromium must be available on the machine running the crawler. Use `BrowserConfig::executable(...)` when you need to point kumo at a specific binary.
 
 ## Basic Usage
 
@@ -51,7 +51,7 @@ Reduce concurrency for browser crawls:
 ```rust
 CrawlEngine::builder()
     .concurrency(3)   // don't open too many tabs at once
-    .browser(BrowserConfig::new())
+    .browser(BrowserConfig::headless())
     .run(MySpider)
     .await?;
 ```

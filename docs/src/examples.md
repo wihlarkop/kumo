@@ -24,9 +24,9 @@ Scrapes all 1000 books from [books.toscrape.com](https://books.toscrape.com) acr
 cargo run --example books
 ```
 
-### `books_derive.rs` — `#[derive(Extract)]`
+### `books_derive.rs` — `#[derive(ExtractDerive)]`
 
-Same as `books.rs` but uses `#[derive(Extract)]` with field annotations instead of manual CSS selectors.
+Same as `books.rs` but uses `#[derive(ExtractDerive)]` with field annotations instead of manual CSS selectors.
 
 ```bash
 cargo run --example books_derive --features derive

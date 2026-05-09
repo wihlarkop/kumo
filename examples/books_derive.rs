@@ -1,4 +1,4 @@
-//! Same as books.rs but uses #[derive(Extract)] to eliminate manual field extraction.
+//! Same as books.rs but uses #[derive(ExtractDerive)] to eliminate manual field extraction.
 //! Run with: cargo run --example books_derive --features derive
 
 use kumo::prelude::*;

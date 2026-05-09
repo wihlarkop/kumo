@@ -61,7 +61,7 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### 0.1.0 — 2026-04-21
 
-- `#[derive(Extract)]` proc-macro for structs with named fields
+- `#[derive(ExtractDerive)]` proc-macro for structs with named fields
 - `css`, `attr`, `re`, `text` field options
 - `llm_fallback` — CSS-first with LLM fallback
 - `String` fields default to `""`, `Option<String>` to `None`

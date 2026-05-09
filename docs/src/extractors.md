@@ -19,9 +19,9 @@ let text: String = el.css(".text").first()
 let href: Option<String> = el.css("a").first()
     .and_then(|e| e.attr("href"));
 
-// .html() — inner HTML as string
+// .inner_html() — inner HTML as string
 let inner = el.css(".body").first()
-    .map(|e| e.html());
+    .map(|e| e.inner_html());
 ```
 
 ## XPath Selectors
@@ -35,10 +35,10 @@ kumo = { version = "0.1", features = ["xpath"] }
 ```rust
 let titles = res.xpath("//h1/text()");          // text nodes
 let links  = res.xpath("//a/@href");            // attributes
-let el     = res.xpath("//div[@class='price']").first();
+let price  = res.xpath_first("//div[@class='price']/text()");
 ```
 
-XPath works on both HTML and XML responses. Text nodes and attribute values are returned as `ExtractedNode` items.
+XPath works on both HTML and XML responses and returns `Vec<String>` values.
 
 ## Regex Selectors
 
@@ -65,13 +65,13 @@ kumo = { version = "0.1", features = ["jsonpath"] }
 
 ```rust
 // Returns Vec<serde_json::Value>
-let titles = res.jsonpath("$.store.books[*].title");
-let first  = res.jsonpath("$.items[0].name");
+let titles = res.jsonpath("$.store.books[*].title")?;
+let first  = res.jsonpath("$.items[0].name")?;
 ```
 
 Use for JSON API responses where CSS/XPath would be meaningless.
 
-## `#[derive(Extract)]`
+## `#[derive(ExtractDerive)]`
 
 Requires `features = ["derive"]`. Generates CSS-based extraction boilerplate from field annotations.
 
@@ -82,7 +82,7 @@ kumo = { version = "0.1", features = ["derive"] }
 ```rust
 use kumo::prelude::*;
 
-#[derive(Debug, Serialize, Extract)]
+#[derive(Debug, Serialize, ExtractDerive)]
 struct Product {
     #[extract(css = "h1.title")]
     name: String,
@@ -95,7 +95,7 @@ struct Product {
 }
 
 // In parse():
-let product = Product::extract(&el)?;
+let product = Product::extract_from(el, None).await?;
 ```
 
 The derive macro calls `.text()` by default; use `attr = "..."` to extract an HTML attribute instead.
@@ -140,7 +140,7 @@ Available clients:
 Use `#[extract(llm_fallback = "hint")]` to try CSS first and fall back to LLM only when the selector produces nothing:
 
 ```rust
-#[derive(Debug, Serialize, Extract)]
+#[derive(Debug, Serialize, ExtractDerive)]
 struct Article {
     #[extract(css = "h1")]
     title: String,

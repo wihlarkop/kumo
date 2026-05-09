@@ -46,10 +46,10 @@ kumo = { version = "0.1", features = ["postgres"] }
 ```
 
 ```rust
-let store = PostgresStore::new(
-    "postgres://user:pass@localhost/mydb",
-    "items",  // table name
-).await?;
+let store = PostgresStore::builder("postgres://user:pass@localhost/mydb")
+    .table("items")
+    .connect()
+    .await?;
 
 .store(store)
 ```
@@ -65,7 +65,10 @@ kumo = { version = "0.1", features = ["sqlite"] }
 ```
 
 ```rust
-let store = SqliteStore::new("sqlite://crawl.db", "items").await?;
+let store = SqliteStore::builder("sqlite://crawl.db")
+    .table("items")
+    .connect()
+    .await?;
 .store(store)
 ```
 
@@ -78,10 +81,10 @@ kumo = { version = "0.1", features = ["mysql"] }
 ```
 
 ```rust
-let store = MySqlStore::new(
-    "mysql://user:pass@localhost/mydb",
-    "items",
-).await?;
+let store = MySqlStore::builder("mysql://user:pass@localhost/mydb")
+    .table("items")
+    .connect()
+    .await?;
 
 .store(store)
 ```

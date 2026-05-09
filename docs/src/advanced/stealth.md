@@ -48,7 +48,7 @@ kumo = { version = "0.1", features = ["stealth", "browser"] }
 ```rust
 CrawlEngine::builder()
     .browser(
-        BrowserConfig::new()
+        BrowserConfig::headless()
             .stealth()       // patch navigator, plugins, webGL, etc.
     )
     .run(MySpider)

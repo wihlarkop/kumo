@@ -21,12 +21,12 @@ It gives you a trait-based, async-first API for writing spiders that scrape, fol
 | Async model | Tokio (true async) | Twisted (event loop) | goroutines |
 | Memory safety | Guaranteed | GC | GC |
 | CSS / XPath / Regex / JSONPath | ✅ | ✅ | CSS only |
-| `#[derive(Extract)]` macro | ✅ | ❌ | ❌ |
+| `#[derive(ExtractDerive)]` macro | ✅ | ❌ | ❌ |
 | LLM extraction (Claude / OpenAI / Gemini / Ollama) | ✅ | ❌ | ❌ |
 | Browser / JS rendering | ✅ (chromiumoxide) | ✅ (Playwright) | ❌ |
 | Stealth mode (TLS/HTTP2 fingerprint spoofing) | ✅ | ❌ | ❌ |
 | Distributed frontier (Redis) | ✅ | ✅ (scrapy-redis) | ❌ |
-| Item stream (Kafka, WebSocket) | ✅ | ❌ | ❌ |
+| Item stream API | ✅ | ❌ | ❌ |
 | OpenTelemetry export | ✅ | ❌ | ❌ |
 | Pluggable stores (JSONL, CSV, Postgres, SQLite, MySQL) | ✅ | ✅ (pipelines) | ❌ |
 | Single binary deploy | ✅ | ❌ | ✅ |

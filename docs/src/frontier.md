@@ -25,12 +25,12 @@ kumo = { version = "0.1", features = ["persistence"] }
 use kumo::FileFrontier;
 
 CrawlEngine::builder()
-    .frontier(FileFrontier::new("frontier.bin")?)
+    .frontier(FileFrontier::open("frontier")?)
     .run(MySpider)
     .await?;
 ```
 
-If `frontier.bin` exists when the process starts, crawling resumes from where it left off. Delete the file to start fresh.
+If the frontier directory exists when the process starts, crawling resumes from where it left off. Delete the directory to start fresh.
 
 ## RedisFrontier
 
@@ -43,7 +43,11 @@ kumo = { version = "0.1", features = ["redis-frontier"] }
 ```rust
 use kumo::RedisFrontier;
 
-let frontier = RedisFrontier::new("redis://127.0.0.1:6379", "my-crawl").await?;
+let frontier = RedisFrontier::new(
+    "redis://127.0.0.1:6379",
+    "my-crawl:queue",
+    "my-crawl:seen",
+).await?;
 
 CrawlEngine::builder()
     .frontier(frontier)
@@ -51,7 +55,7 @@ CrawlEngine::builder()
     .await?;
 ```
 
-Multiple processes can use the same Redis key — they share the queue and deduplication set. Use this for distributed crawls where a single process can't saturate the target site's bandwidth.
+Multiple processes can use the same Redis queue and seen keys — they share the queue and deduplication set. Use this for distributed crawls where a single process can't saturate the target site's bandwidth.
 
 ## Tuning the Bloom Filter
 

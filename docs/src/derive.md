@@ -1,10 +1,10 @@
 ---
-description: Use #[derive(Extract)] from kumo-derive to generate CSS extraction code from struct field annotations — no boilerplate selectors.
+description: Use #[derive(ExtractDerive)] from kumo-derive to generate CSS extraction code from struct field annotations — no boilerplate selectors.
 ---
 
-# `#[derive(Extract)]`
+# `#[derive(ExtractDerive)]`
 
-`kumo-derive` is a companion proc-macro crate that generates an `Extract` implementation for your item structs. Instead of writing CSS selectors by hand in `parse()`, you annotate each field and the macro does the rest.
+`kumo-derive` is a companion proc-macro crate that generates an `Extract` implementation for your item structs. The main `kumo` prelude exports the derive macro as `ExtractDerive` to avoid colliding with the `Extract` trait it implements.
 
 ## Installation
 
@@ -21,7 +21,7 @@ The `derive` feature automatically pulls in `kumo-derive`.
 use kumo::prelude::*;
 use serde::Serialize;
 
-#[derive(Debug, Serialize, Extract)]
+#[derive(Debug, Serialize, ExtractDerive)]
 struct Book {
     #[extract(css = "h3 a", attr = "title")]
     title: String,
@@ -37,7 +37,7 @@ struct Book {
 async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
     let mut books = Vec::new();
     for el in res.css("article.product_pod").iter() {
-        books.push(Book::extract_from(&el, None).await?);
+        books.push(Book::extract_from(el, None).await?);
     }
     Ok(Output::new().items(books))
 }
@@ -147,7 +147,7 @@ let book = Book::extract_from(&el, Some(&client)).await?;
 Options can be combined on a single field:
 
 ```rust
-#[derive(Debug, Serialize, Extract)]
+#[derive(Debug, Serialize, ExtractDerive)]
 struct Product {
     // attribute + regex + transform
     #[extract(css = "span.price", attr = "data-raw", re = r"[\d.]+", transform = "trim")]
