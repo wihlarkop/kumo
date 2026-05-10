@@ -35,7 +35,8 @@ impl CrawlEngine {
         let frontier: Arc<dyn Frontier> = self
             .frontier
             .unwrap_or_else(|| Arc::new(MemoryFrontier::new(self.max_urls)));
-        let scheduler = CrawlScheduler::from_arc(frontier, self.politeness_policy);
+        let scheduler = CrawlScheduler::from_arc(frontier, self.politeness_policy)
+            .with_fingerprint_policy(self.fingerprint_policy);
         let store = self
             .store
             .unwrap_or_else(|| Arc::new(crate::store::stdout::StdoutStore));

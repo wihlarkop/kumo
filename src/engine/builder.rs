@@ -46,6 +46,7 @@ pub struct CrawlEngine {
     pub(super) respect_robots: bool,
     pub(super) retry_policy: crate::retry::RetryPolicy,
     pub(super) politeness_policy: crate::scheduler::PolitenessPolicy,
+    pub(super) fingerprint_policy: crate::scheduler::FingerprintPolicy,
     pub(super) frontier: FrontierOverride,
     /// Expected unique URL count for Bloom filter sizing (default: 1_000_000).
     pub(super) max_urls: usize,
@@ -77,6 +78,7 @@ impl Default for CrawlEngine {
             frontier: None,
             retry_policy: crate::retry::RetryPolicy::new(0),
             politeness_policy: crate::scheduler::PolitenessPolicy::default(),
+            fingerprint_policy: crate::scheduler::FingerprintPolicy::default(),
             max_urls: 1_000_000,
             robots_ttl: Duration::from_secs(24 * 60 * 60),
             metrics_interval: None,
@@ -140,6 +142,12 @@ impl CrawlEngine {
     /// Configure production crawl politeness such as per-domain concurrency and delay.
     pub fn politeness(mut self, policy: crate::scheduler::PolitenessPolicy) -> Self {
         self.politeness_policy = policy;
+        self
+    }
+
+    /// Configure request fingerprinting used for scheduler/frontier deduplication.
+    pub fn fingerprint_policy(mut self, policy: crate::scheduler::FingerprintPolicy) -> Self {
+        self.fingerprint_policy = policy;
         self
     }
 

@@ -33,16 +33,18 @@ impl CrawlEngine {
 
         let start = std::time::Instant::now();
         let n = self.spiders.len();
+        let politeness_policy = self.politeness_policy;
+        let fingerprint_policy = self.fingerprint_policy;
 
         let spider_entries: Vec<(Arc<dyn ErasedSpider>, Arc<CrawlScheduler>)> = self
             .spiders
             .into_iter()
             .map(|sp| {
                 let frontier: Arc<dyn Frontier> = Arc::new(MemoryFrontier::new(self.max_urls));
-                let scheduler = Arc::new(CrawlScheduler::from_arc(
-                    frontier,
-                    self.politeness_policy.clone(),
-                ));
+                let scheduler = Arc::new(
+                    CrawlScheduler::from_arc(frontier, politeness_policy.clone())
+                        .with_fingerprint_policy(fingerprint_policy.clone()),
+                );
                 (sp, scheduler)
             })
             .collect();

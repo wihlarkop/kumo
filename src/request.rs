@@ -27,6 +27,7 @@ pub struct CrawlRequest {
     priority: i32,
     meta: HashMap<String, Value>,
     dont_filter: bool,
+    dedup_key: Option<String>,
 }
 
 impl CrawlRequest {
@@ -40,6 +41,7 @@ impl CrawlRequest {
             priority: 0,
             meta: HashMap::new(),
             dont_filter: false,
+            dedup_key: None,
         }
     }
 
@@ -76,6 +78,10 @@ impl CrawlRequest {
         self.dont_filter
     }
 
+    pub(crate) fn dedup_key(&self) -> &str {
+        self.dedup_key.as_deref().unwrap_or(&self.url)
+    }
+
     pub fn method(mut self, method: Method) -> Self {
         self.method = method;
         self
@@ -106,6 +112,11 @@ impl CrawlRequest {
     /// Bypass URL deduplication for this request.
     pub fn dont_filter(mut self, value: bool) -> Self {
         self.dont_filter = value;
+        self
+    }
+
+    pub(crate) fn with_dedup_key(mut self, key: impl Into<String>) -> Self {
+        self.dedup_key = Some(key.into());
         self
     }
 }
@@ -183,6 +194,7 @@ pub(crate) struct StoredCrawlRequest {
     priority: i32,
     meta: HashMap<String, Value>,
     dont_filter: bool,
+    dedup_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -218,6 +230,7 @@ impl From<&CrawlRequest> for StoredCrawlRequest {
             priority: request.priority,
             meta: request.meta.clone(),
             dont_filter: request.dont_filter,
+            dedup_key: request.dedup_key.clone(),
         }
     }
 }
@@ -244,6 +257,7 @@ impl TryFrom<StoredCrawlRequest> for CrawlRequest {
             priority: stored.priority,
             meta: stored.meta,
             dont_filter: stored.dont_filter,
+            dedup_key: stored.dedup_key,
         })
     }
 }

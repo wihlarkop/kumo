@@ -11,7 +11,7 @@ use crate::{
     request::{CrawlRequest, FrontierRequest},
 };
 
-use super::{domain::domain_key, policy::PolitenessPolicy};
+use super::{domain::domain_key, fingerprint::FingerprintPolicy, policy::PolitenessPolicy};
 
 #[derive(Debug, Default)]
 struct DomainState {
@@ -22,6 +22,7 @@ struct DomainState {
 pub struct CrawlScheduler {
     frontier: Arc<dyn Frontier>,
     policy: PolitenessPolicy,
+    fingerprint_policy: FingerprintPolicy,
     domains: Mutex<HashMap<String, DomainState>>,
 }
 
@@ -40,12 +41,20 @@ impl CrawlScheduler {
         Self {
             frontier,
             policy,
+            fingerprint_policy: FingerprintPolicy::default(),
             domains: Mutex::new(HashMap::new()),
         }
     }
 
+    pub fn with_fingerprint_policy(mut self, policy: FingerprintPolicy) -> Self {
+        self.fingerprint_policy = policy;
+        self
+    }
+
     pub async fn push_request(&self, request: CrawlRequest, depth: usize) -> bool {
-        self.frontier.push_request(request, depth).await
+        self.frontier
+            .push_request(self.apply_fingerprint(request), depth)
+            .await
     }
 
     pub async fn push_request_force(&self, queued: FrontierRequest) {
@@ -122,5 +131,17 @@ impl CrawlScheduler {
         }
 
         SchedulerPoll::Ready(Box::new(queued))
+    }
+
+    fn apply_fingerprint(&self, request: CrawlRequest) -> CrawlRequest {
+        if request.dont_filter_enabled() {
+            return request;
+        }
+
+        let key = self
+            .fingerprint_policy
+            .fingerprint(request.url())
+            .unwrap_or_else(|_| request.url().to_string());
+        request.with_dedup_key(key)
     }
 }
