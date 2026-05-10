@@ -92,6 +92,30 @@ async fn main() -> Result<(), KumoError> {
 
 This crawls all pages, writes each `Quote` as a JSON line to `quotes.jsonl`, and exits when the frontier is empty.
 
+## Polite Crawling
+
+For production crawls, configure per-domain limits so Kumo does not treat every
+URL as one global queue:
+
+```rust
+use std::time::Duration;
+use kumo::prelude::*;
+
+CrawlEngine::builder()
+    .concurrency(16)
+    .politeness(
+        PolitenessPolicy::new()
+            .per_domain_concurrency(2)
+            .per_domain_delay(Duration::from_millis(500)),
+    )
+    .fingerprint_policy(FingerprintPolicy::default().strip_tracking_params(true))
+    .run(QuotesSpider)
+    .await?;
+```
+
+The scheduler handles request priority, per-domain delay, delayed retries,
+fingerprint-based deduplication, and crawl stats.
+
 ## What's Next?
 
 - [Spiders](spiders.md) — full Spider trait API, lifecycle hooks, error handling

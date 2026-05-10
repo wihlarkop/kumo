@@ -12,7 +12,15 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
-### Unreleased
+### 0.2.0 — Unreleased
+
+- Added production crawl scheduler controls with `PolitenessPolicy`.
+- Added scheduler-level delayed retry timing so retry waits do not occupy
+  worker tasks.
+- Added `FingerprintPolicy` for canonical request deduplication.
+- Added `CrawlStats`, `CrawlReport`, and per-domain scheduler counters.
+- Added frontier flushing on engine shutdown so persistent frontiers can resume
+  queued request state more reliably.
 
 ### 0.1.1 — 2026-05-10
 
