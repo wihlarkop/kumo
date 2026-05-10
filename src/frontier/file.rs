@@ -209,4 +209,8 @@ impl Frontier for FileFrontier {
     async fn len(&self) -> usize {
         self.queue.lock().await.len()
     }
+
+    async fn flush(&self) -> Result<(), KumoError> {
+        self.flush_to_disk().await
+    }
 }

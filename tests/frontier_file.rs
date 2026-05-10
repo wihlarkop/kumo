@@ -3,8 +3,10 @@
 use kumo::{
     CrawlRequest,
     frontier::{FileFrontier, Frontier},
+    request::FrontierRequest,
 };
 use reqwest::header::{HeaderName, HeaderValue};
+use std::time::Duration;
 use tempfile::tempdir;
 
 #[tokio::test]
@@ -96,6 +98,27 @@ async fn request_metadata_survives_flush_and_resume() {
         queued.request().meta_value("kind"),
         Some(&serde_json::json!("listing"))
     );
+}
+
+#[tokio::test]
+async fn scheduled_retry_survives_flush_and_resume() {
+    let dir = tempdir().unwrap();
+    {
+        let f = FileFrontier::open(dir.path()).unwrap();
+        f.push_request_force(
+            FrontierRequest::new(CrawlRequest::get("https://example.com/retry"), 3, 2)
+                .scheduled_after(Duration::from_secs(30)),
+        )
+        .await;
+        f.flush().await.unwrap();
+    }
+
+    let f = FileFrontier::open(dir.path()).unwrap();
+    let queued = f.pop_request().await.unwrap();
+    assert_eq!(queued.depth(), 3);
+    assert_eq!(queued.retry_count(), 2);
+    assert_eq!(queued.request().url(), "https://example.com/retry");
+    assert!(queued.scheduled_at().is_some());
 }
 
 #[tokio::test]

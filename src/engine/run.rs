@@ -302,6 +302,7 @@ impl CrawlEngine {
             }
         }
 
+        scheduler.flush().await?;
         store.flush().await?;
         stats.duration = start.elapsed();
 

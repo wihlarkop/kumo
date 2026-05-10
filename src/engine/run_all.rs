@@ -277,6 +277,9 @@ impl CrawlEngine {
             }
         }
 
+        for (_, scheduler) in &spider_entries {
+            scheduler.flush().await?;
+        }
         store.flush().await?;
         let elapsed = start.elapsed();
 

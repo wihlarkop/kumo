@@ -65,6 +65,10 @@ impl CrawlScheduler {
         self.frontier.is_empty().await
     }
 
+    pub async fn flush(&self) -> Result<(), crate::error::KumoError> {
+        self.frontier.flush().await
+    }
+
     pub async fn try_next_ready(&self) -> Option<FrontierRequest> {
         match self.poll_next().await {
             SchedulerPoll::Ready(queued) => Some(*queued),
