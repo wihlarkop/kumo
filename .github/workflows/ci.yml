@@ -245,6 +245,28 @@ jobs:
       - name: Dry-run kumo package
         run: cargo publish -p kumo --dry-run
 
+  benchmarks:
+    name: Benchmark compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-bench-
+
+      - name: Compile benchmarks
+        run: cargo bench --no-run
+
   docs:
     name: Docs build
     runs-on: ubuntu-latest

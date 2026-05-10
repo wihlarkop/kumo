@@ -163,6 +163,7 @@ object_store = { version = "0.11", optional = true }
 # ── Dev dependencies ──────────────────────────────────────────────────────────
 
 [dev-dependencies]
+criterion = { version = "0.7", features = ["async_tokio"] }
 mockito  = "1.7.2"
 tempfile = "3.27.0"
 trybuild = { version = "1.0.116", features = ["diff"] }
@@ -214,3 +215,11 @@ required-features = ["stealth"]
 [[example]]
 name = "cloud"
 required-features = ["cloud"]
+
+[[bench]]
+name = "fingerprint"
+harness = false
+
+[[bench]]
+name = "frontier"
+harness = false
