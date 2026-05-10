@@ -10,10 +10,11 @@ use crate::{
     pipeline::Pipeline,
     request::{CrawlRequest, FrontierRequest},
     scheduler::CrawlScheduler,
+    stats::{CrawlStats, domain_key},
 };
 
 use super::{
-    builder::{CrawlEngine, CrawlStats},
+    builder::CrawlEngine,
     erased::ErasedSpider,
     setup::{
         FetcherArgs, build_http_client, build_raw_fetcher, build_robots_cache, wrap_with_cache,
@@ -76,10 +77,18 @@ impl CrawlEngine {
             spider.open().await?;
         }
 
-        for (spider, scheduler) in &spider_entries {
+        let mut stats_vec: Vec<CrawlStats> = (0..n).map(|_| CrawlStats::default()).collect();
+
+        for (idx, (spider, scheduler)) in spider_entries.iter().enumerate() {
             info!(spider = spider.name(), "registering spider for multi-crawl");
             for url in spider.start_urls() {
-                scheduler.push_request(CrawlRequest::get(url), 0).await;
+                let domain = domain_key(&url);
+                let stats = &mut stats_vec[idx];
+                if scheduler.push_request(CrawlRequest::get(url), 0).await {
+                    stats.record_scheduled(&domain);
+                } else {
+                    stats.record_deduped(&domain);
+                }
             }
         }
 
@@ -89,7 +98,6 @@ impl CrawlEngine {
             Result<(u64, u64, Vec<(CrawlRequest, usize)>), KumoError>,
         );
         let mut join_set: JoinSet<MultiTaskResult> = JoinSet::new();
-        let mut stats_vec: Vec<CrawlStats> = (0..n).map(|_| CrawlStats::default()).collect();
 
         let shutdown = async {
             #[cfg(not(target_arch = "wasm32"))]
@@ -116,6 +124,8 @@ impl CrawlEngine {
                                 && !cache.is_allowed(&client, queued.request.url()).await
                             {
                                 tracing::debug!(url = %queued.request.url(), "blocked by robots.txt, skipping");
+                                stats_vec[idx]
+                                    .record_robots_blocked(&domain_key(queued.request.url()));
                                 scheduler.finish(&queued).await;
                                 continue;
                             }
@@ -168,6 +178,7 @@ impl CrawlEngine {
                             let (_, scheduler) = &spider_entries[spider_idx];
                             scheduler.finish(&queued).await;
                             let stats = &mut stats_vec[spider_idx];
+                            stats.record_completed(&domain_key(queued.request.url()));
                             stats.pages_crawled += 1;
                             stats.items_scraped += item_count;
                             stats.bytes_downloaded += bytes;
@@ -175,7 +186,12 @@ impl CrawlEngine {
                                 let (spider, scheduler) = &spider_entries[spider_idx];
                                 for (follow_request, follow_depth) in follows {
                                     if should_enqueue(&follow_request, follow_depth, spider.as_ref()) {
-                                        scheduler.push_request(follow_request, follow_depth).await;
+                                        let domain = domain_key(follow_request.url());
+                                        if scheduler.push_request(follow_request, follow_depth).await {
+                                            stats.record_scheduled(&domain);
+                                        } else {
+                                            stats.record_deduped(&domain);
+                                        }
                                     }
                                 }
                             }
@@ -193,6 +209,7 @@ impl CrawlEngine {
                                 && retry_policy.is_retriable(&e)
                             {
                                 let delay = retry_policy.delay_for(queued.retry_count);
+                                stats_vec[spider_idx].record_retry(&domain_key(&url));
                                 tracing::warn!(
                                     spider = spider.name(),
                                     url = %url,
@@ -216,6 +233,7 @@ impl CrawlEngine {
                             }
 
                             stats_vec[spider_idx].errors += 1;
+                            stats_vec[spider_idx].record_failed(&domain_key(&url));
                             match spider.on_error(&url, &e) {
                                 ErrorPolicy::Abort => {
                                     error!(url = %url, error = %e, "aborting crawl");
@@ -231,6 +249,7 @@ impl CrawlEngine {
                                         "re-queuing failed URL"
                                     );
                                     if !shutting_down {
+                                        stats_vec[spider_idx].record_retry(&domain_key(&url));
                                         scheduler.push_request_force(FrontierRequest::new(
                                             queued.request,
                                             queued.depth,

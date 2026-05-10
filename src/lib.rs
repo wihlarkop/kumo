@@ -19,6 +19,8 @@ pub mod robots;
 pub mod scheduler;
 pub mod sitemap;
 pub mod spider;
+pub mod stats;
+pub use stats::{CrawlReport, CrawlStats};
 pub mod store;
 
 /// Convenience re-exports for writing spiders with minimal `use` statements.

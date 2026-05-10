@@ -11,10 +11,11 @@ use crate::{
     request::{CrawlRequest, FrontierRequest},
     scheduler::CrawlScheduler,
     spider::Spider,
+    stats::{CrawlStats, domain_key},
 };
 
 use super::{
-    builder::{CrawlEngine, CrawlStats},
+    builder::CrawlEngine,
     erased::{ErasedSpider, SpiderErased},
     setup::{
         FetcherArgs, build_http_client, build_raw_fetcher, build_robots_cache, wrap_with_cache,
@@ -76,6 +77,8 @@ impl CrawlEngine {
         .await?;
         let fetcher = wrap_with_cache(fetcher, self.cache_dir, self.cache_ttl)?;
 
+        let mut stats = CrawlStats::default();
+
         spider.open().await?;
 
         let start_urls = spider.start_urls();
@@ -85,7 +88,12 @@ impl CrawlEngine {
             "spider.open"
         );
         for url in start_urls {
-            scheduler.push_request(CrawlRequest::get(url), 0).await;
+            let domain = domain_key(&url);
+            if scheduler.push_request(CrawlRequest::get(url), 0).await {
+                stats.record_scheduled(&domain);
+            } else {
+                stats.record_deduped(&domain);
+            }
         }
 
         type TaskResult = (
@@ -93,7 +101,6 @@ impl CrawlEngine {
             Result<(u64, u64, Vec<(CrawlRequest, usize)>), KumoError>,
         );
         let mut join_set: JoinSet<TaskResult> = JoinSet::new();
-        let mut stats = CrawlStats::default();
 
         // Spawn periodic metrics logger if configured.
         let live_stats = Arc::new(tokio::sync::Mutex::new(CrawlStats::default()));
@@ -143,6 +150,7 @@ impl CrawlEngine {
                                 && !cache.is_allowed(&client, queued.request.url()).await
                             {
                                 tracing::debug!(url = %queued.request.url(), "blocked by robots.txt, skipping");
+                                stats.record_robots_blocked(&domain_key(queued.request.url()));
                                 scheduler.finish(&queued).await;
                                 continue;
                             }
@@ -184,6 +192,7 @@ impl CrawlEngine {
                     match result {
                         Some(Ok((queued, Ok((item_count, bytes, follows))))) => {
                             scheduler.finish(&queued).await;
+                            stats.record_completed(&domain_key(queued.request.url()));
                             stats.pages_crawled += 1;
                             stats.items_scraped += item_count;
                             stats.bytes_downloaded += bytes;
@@ -194,17 +203,19 @@ impl CrawlEngine {
                             // Keep live snapshot up to date for the metrics task.
                             if metrics_interval.is_some() {
                                 let mut snap = live_stats.lock().await;
-                                snap.pages_crawled = stats.pages_crawled;
-                                snap.items_scraped = stats.items_scraped;
-                                snap.errors = stats.errors;
-                                snap.bytes_downloaded = stats.bytes_downloaded;
+                                *snap = stats.clone();
                                 snap.duration = start.elapsed();
                             }
 
                             if !shutting_down {
                                 for (follow_request, follow_depth) in follows {
                                     if should_enqueue(&follow_request, follow_depth, spider.as_ref()) {
-                                        scheduler.push_request(follow_request, follow_depth).await;
+                                        let domain = domain_key(follow_request.url());
+                                        if scheduler.push_request(follow_request, follow_depth).await {
+                                            stats.record_scheduled(&domain);
+                                        } else {
+                                            stats.record_deduped(&domain);
+                                        }
                                     }
                                 }
                             }
@@ -221,6 +232,7 @@ impl CrawlEngine {
                                 && retry_policy.is_retriable(&e)
                             {
                                 let delay = retry_policy.delay_for(queued.retry_count);
+                                stats.record_retry(&domain_key(&url));
                                 tracing::warn!(
                                     spider = spider.name(),
                                     url = %url,
@@ -244,6 +256,7 @@ impl CrawlEngine {
                             }
 
                             stats.errors += 1;
+                            stats.record_failed(&domain_key(&url));
                             match spider.on_error(&url, &e) {
                                 ErrorPolicy::Abort => {
                                     error!(url = %url, error = %e, "aborting crawl");
@@ -259,6 +272,7 @@ impl CrawlEngine {
                                         "re-queuing failed URL"
                                     );
                                     if !shutting_down {
+                                        stats.record_retry(&domain_key(&url));
                                         scheduler.push_request_force(FrontierRequest::new(
                                             queued.request,
                                             queued.depth,

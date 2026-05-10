@@ -15,18 +15,6 @@ use crate::fetch::BrowserConfig;
 
 type FrontierOverride = Option<Arc<dyn Frontier>>;
 
-/// Statistics returned by `CrawlEngine::run` after the crawl finishes.
-#[derive(Debug, Default, Clone)]
-pub struct CrawlStats {
-    pub pages_crawled: u64,
-    pub items_scraped: u64,
-    pub errors: u64,
-    pub duration: Duration,
-    pub bytes_downloaded: u64,
-    /// `true` when the crawl was stopped early by Ctrl+C.
-    pub interrupted: bool,
-}
-
 /// Fluent builder for configuring and launching a crawl.
 ///
 /// # Example
