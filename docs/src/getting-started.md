@@ -16,7 +16,7 @@ Add kumo to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-kumo = "0.1"
+kumo = "0.2"
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
@@ -82,7 +82,7 @@ Use `CrawlEngine::builder()` to configure and launch:
 async fn main() -> Result<(), KumoError> {
     CrawlEngine::builder()
         .concurrency(5)                                            // parallel requests
-        .middleware(DefaultHeaders::new().user_agent("kumo/0.1")) // set User-Agent
+        .middleware(DefaultHeaders::new().user_agent("kumo/0.2")) // set User-Agent
         .store(JsonlStore::new("quotes.jsonl")?)                  // write to JSONL
         .run(QuotesSpider)
         .await?;
@@ -122,3 +122,4 @@ fingerprint-based deduplication, and crawl stats.
 - [Extractors](extractors.md) — CSS, XPath, Regex, JSONPath, `#[derive(Extract)]`, LLM
 - [Stores](stores.md) — JSONL, JSON, CSV, PostgreSQL, SQLite, MySQL
 - [Middleware](middleware.md) — rate limiting, auto-throttle, retry, proxy rotation
+

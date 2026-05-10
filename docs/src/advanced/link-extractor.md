@@ -58,3 +58,4 @@ async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
     Ok(Output::new().items(items).follow_many(links))
 }
 ```
+

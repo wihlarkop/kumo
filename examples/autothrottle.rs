@@ -78,7 +78,7 @@ async fn main() -> Result<(), KumoError> {
                 .max_delay(std::time::Duration::from_secs(30)),
         )
         .middleware(
-            DefaultHeaders::new().user_agent("kumo/0.1 (+https://github.com/wihlarkop/kumo)"),
+            DefaultHeaders::new().user_agent("kumo/0.2 (+https://github.com/wihlarkop/kumo)"),
         )
         .store(StdoutStore)
         .run(QuotesSpider)

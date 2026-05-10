@@ -32,7 +32,7 @@ flushed by the engine before shutdown. It preserves request method, headers,
 body, priority, metadata, retry count, delayed retry timing, and dedup state.
 
 ```toml
-kumo = { version = "0.1", features = ["persistence"] }
+kumo = { version = "0.2", features = ["persistence"] }
 ```
 
 ```rust
@@ -53,7 +53,7 @@ Requires `features = ["redis-frontier"]`. Distributes the request queue across
 multiple processes via Redis.
 
 ```toml
-kumo = { version = "0.1", features = ["redis-frontier"] }
+kumo = { version = "0.2", features = ["redis-frontier"] }
 ```
 
 ```rust
@@ -133,3 +133,4 @@ CrawlEngine::builder()
 Setting `max_urls` too low increases the false-positive rate, meaning some new
 request fingerprints may be skipped as duplicates. Setting it too high wastes
 memory. Rule of thumb: set it to twice your expected unique request count.
+

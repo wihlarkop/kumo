@@ -124,3 +124,4 @@ impl Middleware for AddApiKey {
 // Register:
 .middleware(AddApiKey("secret-key".into()))
 ```
+

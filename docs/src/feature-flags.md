@@ -35,42 +35,42 @@ All optional capabilities in kumo are behind feature flags, so you only compile 
 ### Data science / scripting
 
 ```toml
-kumo = { version = "0.1", features = ["sqlite", "derive"] }
+kumo = { version = "0.2", features = ["sqlite", "derive"] }
 ```
 
 ### Production crawl
 
 ```toml
-kumo = { version = "0.1", features = ["postgres", "redis-frontier", "otel"] }
+kumo = { version = "0.2", features = ["postgres", "redis-frontier", "otel"] }
 ```
 
 ### Cloud storage
 
 ```toml
 # Write to S3
-kumo = { version = "0.1", features = ["cloud-s3"] }
+kumo = { version = "0.2", features = ["cloud-s3"] }
 
 # Write to GCS
-kumo = { version = "0.1", features = ["cloud-gcs"] }
+kumo = { version = "0.2", features = ["cloud-gcs"] }
 
 # Write to Azure Blob
-kumo = { version = "0.1", features = ["cloud-azure"] }
+kumo = { version = "0.2", features = ["cloud-azure"] }
 ```
 
 ### LLM extraction
 
 ```toml
 # Cloud provider
-kumo = { version = "0.1", features = ["claude"] }
+kumo = { version = "0.2", features = ["claude"] }
 
 # Local model
-kumo = { version = "0.1", features = ["ollama"] }
+kumo = { version = "0.2", features = ["ollama"] }
 ```
 
 ### Full-stack
 
 ```toml
-kumo = { version = "0.1", features = [
+kumo = { version = "0.2", features = [
     "derive", "xpath", "jsonpath",
     "browser", "stealth",
     "claude",
@@ -79,3 +79,4 @@ kumo = { version = "0.1", features = [
     "otel",
 ] }
 ```
+

@@ -7,7 +7,7 @@ No changes to spider code are required. Every request, retry, item scrape, and p
 ## Installation
 
 ```toml
-kumo = { version = "0.1", features = ["otel"] }
+kumo = { version = "0.2", features = ["otel"] }
 ```
 
 ## Usage
@@ -67,3 +67,4 @@ RUST_LOG=kumo=debug,info cargo run --features otel
 | Pipeline drop | `spider`, `stage`, `reason` |
 | Frontier enqueue | `url`, `depth` |
 | Robots.txt fetch | `domain`, `cached` |
+

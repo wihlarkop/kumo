@@ -12,7 +12,7 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
-### 0.2.0 — Unreleased
+### 0.2.0 — 2026-05-10
 
 - Added production crawl scheduler controls with `PolitenessPolicy`.
 - Added scheduler-level delayed retry timing so retry waits do not occupy
@@ -85,3 +85,4 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - `css`, `attr`, `re`, `text` field options
 - `llm_fallback` — CSS-first with LLM fallback
 - `String` fields default to `""`, `Option<String>` to `None`
+

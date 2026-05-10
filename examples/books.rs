@@ -96,7 +96,7 @@ async fn main() -> Result<(), KumoError> {
     let stats = CrawlEngine::builder()
         .concurrency(3)
         .middleware(RateLimiter::per_second(2.0))
-        .middleware(DefaultHeaders::new().user_agent("kumo/0.1"))
+        .middleware(DefaultHeaders::new().user_agent("kumo/0.2"))
         .store(JsonStore::new("books.json")?)
         .crawl_delay(std::time::Duration::from_millis(300))
         .retry(2, std::time::Duration::from_millis(500))
