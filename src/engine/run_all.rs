@@ -9,6 +9,7 @@ use crate::{
     middleware::Middleware,
     pipeline::Pipeline,
     request::{CrawlRequest, FrontierRequest},
+    scheduler::CrawlScheduler,
 };
 
 use super::{
@@ -33,12 +34,16 @@ impl CrawlEngine {
         let start = std::time::Instant::now();
         let n = self.spiders.len();
 
-        let spider_entries: Vec<(Arc<dyn ErasedSpider>, Arc<dyn Frontier>)> = self
+        let spider_entries: Vec<(Arc<dyn ErasedSpider>, Arc<CrawlScheduler>)> = self
             .spiders
             .into_iter()
             .map(|sp| {
                 let frontier: Arc<dyn Frontier> = Arc::new(MemoryFrontier::new(self.max_urls));
-                (sp, frontier)
+                let scheduler = Arc::new(CrawlScheduler::from_arc(
+                    frontier,
+                    self.politeness_policy.clone(),
+                ));
+                (sp, scheduler)
             })
             .collect();
 
@@ -47,7 +52,6 @@ impl CrawlEngine {
             .unwrap_or_else(|| Arc::new(crate::store::stdout::StdoutStore));
         let middleware: Arc<Vec<Arc<dyn Middleware>>> = Arc::new(self.middleware);
         let pipelines: Arc<Vec<Arc<dyn Pipeline>>> = Arc::new(self.pipelines);
-        let crawl_delay = self.crawl_delay;
         let concurrency = self.concurrency;
         let retry_policy = self.retry_policy;
 
@@ -70,10 +74,10 @@ impl CrawlEngine {
             spider.open().await?;
         }
 
-        for (spider, frontier) in &spider_entries {
+        for (spider, scheduler) in &spider_entries {
             info!(spider = spider.name(), "registering spider for multi-crawl");
             for url in spider.start_urls() {
-                frontier.push_request(CrawlRequest::get(url), 0).await;
+                scheduler.push_request(CrawlRequest::get(url), 0).await;
             }
         }
 
@@ -104,12 +108,13 @@ impl CrawlEngine {
                     let mut any_popped = false;
                     for attempt in 0..n {
                         let idx = (fill_cursor + attempt) % n;
-                        let (spider, frontier) = &spider_entries[idx];
-                        if let Some(queued) = frontier.pop_request().await {
+                        let (spider, scheduler) = &spider_entries[idx];
+                        if let Some(queued) = scheduler.try_next_ready().await {
                             if let Some(ref cache) = robots_cache
                                 && !cache.is_allowed(&client, queued.request.url()).await
                             {
                                 tracing::debug!(url = %queued.request.url(), "blocked by robots.txt, skipping");
+                                scheduler.finish(&queued).await;
                                 continue;
                             }
                             let ctx = TaskContext {
@@ -118,7 +123,6 @@ impl CrawlEngine {
                                 middleware: middleware.clone(),
                                 pipelines: pipelines.clone(),
                                 fetcher: fetcher.clone(),
-                                crawl_delay,
                                 retry_policy: retry_policy.clone(),
                                 stream_cancelled: None,
                             };
@@ -148,27 +152,31 @@ impl CrawlEngine {
                 }
                 result = join_set.join_next() => {
                     match result {
-                        Some(Ok((spider_idx, _queued, Ok((item_count, bytes, follows))))) => {
+                        Some(Ok((spider_idx, queued, Ok((item_count, bytes, follows))))) => {
+                            let (_, scheduler) = &spider_entries[spider_idx];
+                            scheduler.finish(&queued).await;
                             let stats = &mut stats_vec[spider_idx];
                             stats.pages_crawled += 1;
                             stats.items_scraped += item_count;
                             stats.bytes_downloaded += bytes;
                             if !shutting_down {
-                                let (spider, frontier) = &spider_entries[spider_idx];
+                                let (spider, scheduler) = &spider_entries[spider_idx];
                                 for (follow_request, follow_depth) in follows {
                                     if should_enqueue(&follow_request, follow_depth, spider.as_ref()) {
-                                        frontier.push_request(follow_request, follow_depth).await;
+                                        scheduler.push_request(follow_request, follow_depth).await;
                                     }
                                 }
                             }
                         }
                         Some(Ok((spider_idx, queued, Err(e)))) => {
+                            let (_, scheduler) = &spider_entries[spider_idx];
+                            scheduler.finish(&queued).await;
                             stats_vec[spider_idx].errors += 1;
                             let url = queued.request.url().to_string();
                             for mw in middleware.iter() {
                                 mw.on_error(&url, &e).await;
                             }
-                            let (spider, frontier) = &spider_entries[spider_idx];
+                            let (spider, scheduler) = &spider_entries[spider_idx];
                             match spider.on_error(&url, &e) {
                                 ErrorPolicy::Abort => {
                                     error!(url = %url, error = %e, "aborting crawl");
@@ -184,7 +192,7 @@ impl CrawlEngine {
                                         "re-queuing failed URL"
                                     );
                                     if !shutting_down {
-                                        frontier.push_request_force(FrontierRequest::new(
+                                        scheduler.push_request_force(FrontierRequest::new(
                                             queued.request,
                                             queued.depth,
                                             queued.retry_count + 1,

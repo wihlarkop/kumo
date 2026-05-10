@@ -1,9 +1,6 @@
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 use crate::{
@@ -22,7 +19,6 @@ pub(super) struct TaskContext {
     pub(super) middleware: Arc<Vec<Arc<dyn Middleware>>>,
     pub(super) pipelines: Arc<Vec<Arc<dyn Pipeline>>>,
     pub(super) fetcher: Arc<dyn Fetcher>,
-    pub(super) crawl_delay: Option<Duration>,
     pub(super) retry_policy: crate::retry::RetryPolicy,
     pub(super) stream_cancelled: Option<Arc<AtomicBool>>,
 }
@@ -33,9 +29,6 @@ async fn process_request(
 ) -> Result<(u64, u64, Vec<(CrawlRequest, usize)>), KumoError> {
     let url = queued.request.url();
     let depth = queued.depth;
-    if let Some(delay) = ctx.crawl_delay {
-        tokio::time::sleep(delay).await;
-    }
 
     let mut request = FetchRequest::from_crawl_request(&queued.request, depth);
     for mw in ctx.middleware.iter() {

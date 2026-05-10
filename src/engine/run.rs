@@ -9,6 +9,7 @@ use crate::{
     middleware::Middleware,
     pipeline::Pipeline,
     request::{CrawlRequest, FrontierRequest},
+    scheduler::CrawlScheduler,
     spider::Spider,
 };
 
@@ -34,6 +35,7 @@ impl CrawlEngine {
         let frontier: Arc<dyn Frontier> = self
             .frontier
             .unwrap_or_else(|| Arc::new(MemoryFrontier::new(self.max_urls)));
+        let scheduler = CrawlScheduler::from_arc(frontier, self.politeness_policy);
         let store = self
             .store
             .unwrap_or_else(|| Arc::new(crate::store::stdout::StdoutStore));
@@ -56,7 +58,6 @@ impl CrawlEngine {
                 );
             }
         }
-        let crawl_delay = self.crawl_delay;
         let concurrency = self.concurrency;
         let retry_policy = self.retry_policy;
         let robots_cache = build_robots_cache(self.respect_robots, self.robots_ttl);
@@ -83,7 +84,7 @@ impl CrawlEngine {
             "spider.open"
         );
         for url in start_urls {
-            frontier.push_request(CrawlRequest::get(url), 0).await;
+            scheduler.push_request(CrawlRequest::get(url), 0).await;
         }
 
         type TaskResult = (
@@ -134,13 +135,14 @@ impl CrawlEngine {
             if !shutting_down {
                 // Fill up to the concurrency limit.
                 while join_set.len() < concurrency {
-                    match frontier.pop_request().await {
+                    match scheduler.try_next_ready().await {
                         Some(queued) => {
                             // Check robots.txt before dispatching.
                             if let Some(ref cache) = robots_cache
                                 && !cache.is_allowed(&client, queued.request.url()).await
                             {
                                 tracing::debug!(url = %queued.request.url(), "blocked by robots.txt, skipping");
+                                scheduler.finish(&queued).await;
                                 continue;
                             }
 
@@ -150,7 +152,6 @@ impl CrawlEngine {
                                 middleware: middleware.clone(),
                                 pipelines: pipelines.clone(),
                                 fetcher: fetcher.clone(),
-                                crawl_delay,
                                 retry_policy: retry_policy.clone(),
                                 stream_cancelled: stream_cancelled.clone(),
                             };
@@ -178,7 +179,8 @@ impl CrawlEngine {
                 }
                 result = join_set.join_next() => {
                     match result {
-                        Some(Ok((_queued, Ok((item_count, bytes, follows))))) => {
+                        Some(Ok((queued, Ok((item_count, bytes, follows))))) => {
+                            scheduler.finish(&queued).await;
                             stats.pages_crawled += 1;
                             stats.items_scraped += item_count;
                             stats.bytes_downloaded += bytes;
@@ -199,12 +201,13 @@ impl CrawlEngine {
                             if !shutting_down {
                                 for (follow_request, follow_depth) in follows {
                                     if should_enqueue(&follow_request, follow_depth, spider.as_ref()) {
-                                        frontier.push_request(follow_request, follow_depth).await;
+                                        scheduler.push_request(follow_request, follow_depth).await;
                                     }
                                 }
                             }
                         }
                         Some(Ok((queued, Err(e)))) => {
+                            scheduler.finish(&queued).await;
                             stats.errors += 1;
                             let url = queued.request.url().to_string();
                             // Notify all middleware of the permanent failure.
@@ -226,7 +229,7 @@ impl CrawlEngine {
                                         "re-queuing failed URL"
                                     );
                                     if !shutting_down {
-                                        frontier.push_request_force(FrontierRequest::new(
+                                        scheduler.push_request_force(FrontierRequest::new(
                                             queued.request,
                                             queued.depth,
                                             queued.retry_count + 1,

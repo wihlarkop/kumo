@@ -60,7 +60,7 @@ pub mod prelude {
     pub use crate::pipeline::{DropDuplicates, FilterPipeline, Pipeline, RequireFields};
     pub use crate::request::CrawlRequest;
     pub use crate::retry::RetryPolicy;
-    pub use crate::scheduler::{DomainPolicy, PolitenessPolicy};
+    pub use crate::scheduler::{CrawlScheduler, DomainPolicy, PolitenessPolicy};
     pub use crate::sitemap::{SitemapEntry, SitemapSpider};
     pub use crate::spider::{Output, Spider};
     #[cfg(feature = "mysql")]
