@@ -14,6 +14,7 @@ pub use file::FileFrontier;
 #[cfg(feature = "redis-frontier")]
 pub use redis_frontier::RedisFrontier;
 
+use crate::error::KumoError;
 use crate::request::{CrawlRequest, FrontierRequest};
 
 /// URL queue with deduplication. The frontier drives the crawl loop.
@@ -59,5 +60,10 @@ pub trait Frontier: Send + Sync {
     /// Returns `true` if the queue is empty.
     async fn is_empty(&self) -> bool {
         self.len().await == 0
+    }
+
+    /// Flush any pending frontier state to durable storage.
+    async fn flush(&self) -> Result<(), KumoError> {
+        Ok(())
     }
 }

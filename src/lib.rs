@@ -16,8 +16,11 @@ pub mod request;
 pub use request::CrawlRequest;
 pub mod retry;
 pub mod robots;
+pub mod scheduler;
 pub mod sitemap;
 pub mod spider;
+pub mod stats;
+pub use stats::{CrawlReport, CrawlStats};
 pub mod store;
 
 /// Convenience re-exports for writing spiders with minimal `use` statements.
@@ -59,6 +62,7 @@ pub mod prelude {
     pub use crate::pipeline::{DropDuplicates, FilterPipeline, Pipeline, RequireFields};
     pub use crate::request::CrawlRequest;
     pub use crate::retry::RetryPolicy;
+    pub use crate::scheduler::{CrawlScheduler, DomainPolicy, FingerprintPolicy, PolitenessPolicy};
     pub use crate::sitemap::{SitemapEntry, SitemapSpider};
     pub use crate::spider::{Output, Spider};
     #[cfg(feature = "mysql")]

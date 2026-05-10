@@ -35,3 +35,4 @@ Expired entries are refetched and the cache is updated.
 
 !!! warning
     Do not use the HTTP cache in production crawls that need fresh data — cached responses bypass your crawl delay and auto-throttle.
+

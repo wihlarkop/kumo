@@ -1,9 +1,6 @@
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 use crate::{
@@ -22,8 +19,6 @@ pub(super) struct TaskContext {
     pub(super) middleware: Arc<Vec<Arc<dyn Middleware>>>,
     pub(super) pipelines: Arc<Vec<Arc<dyn Pipeline>>>,
     pub(super) fetcher: Arc<dyn Fetcher>,
-    pub(super) crawl_delay: Option<Duration>,
-    pub(super) retry_policy: crate::retry::RetryPolicy,
     pub(super) stream_cancelled: Option<Arc<AtomicBool>>,
 }
 
@@ -33,9 +28,6 @@ async fn process_request(
 ) -> Result<(u64, u64, Vec<(CrawlRequest, usize)>), KumoError> {
     let url = queued.request.url();
     let depth = queued.depth;
-    if let Some(delay) = ctx.crawl_delay {
-        tokio::time::sleep(delay).await;
-    }
 
     let mut request = FetchRequest::from_crawl_request(&queued.request, depth);
     for mw in ctx.middleware.iter() {
@@ -93,35 +85,11 @@ async fn process_request(
     Ok((item_count, bytes_downloaded, follows))
 }
 
-pub(super) async fn process_request_with_retry(
+pub(super) async fn process_request_once(
     queued: FrontierRequest,
     ctx: TaskContext,
 ) -> Result<(u64, u64, Vec<(CrawlRequest, usize)>), KumoError> {
-    let mut attempt = 0u32;
-    loop {
-        match process_request(&queued, &ctx).await {
-            Ok(result) => return Ok(result),
-            Err(e)
-                if attempt < ctx.retry_policy.max_attempts && ctx.retry_policy.is_retriable(&e) =>
-            {
-                for mw in ctx.middleware.iter() {
-                    mw.on_error(queued.request.url(), &e).await;
-                }
-                let delay = ctx.retry_policy.delay_for(attempt);
-                tracing::warn!(
-                    url = %queued.request.url(),
-                    attempt = attempt + 1,
-                    max = ctx.retry_policy.max_attempts,
-                    retry_in_ms = delay.as_millis(),
-                    error = %e,
-                    "retrying URL"
-                );
-                tokio::time::sleep(delay).await;
-                attempt += 1;
-            }
-            Err(e) => return Err(e),
-        }
-    }
+    process_request(&queued, &ctx).await
 }
 
 pub(super) fn should_enqueue(

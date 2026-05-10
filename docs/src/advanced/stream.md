@@ -63,7 +63,7 @@ while let Some(item) = stream.next().await {
 CrawlEngine::builder()
     .concurrency(8)
     .retry(3, Duration::from_millis(200))
-    .middleware(DefaultHeaders::new().user_agent("kumo/0.1"))
+    .middleware(DefaultHeaders::new().user_agent("kumo/0.2"))
     .pipeline(RequireFields::new(&["title", "url"]))
     .stream_buffer(50)
     .stream(MySpider)
@@ -82,3 +82,4 @@ CrawlEngine::builder()
 | Kafka / WebSocket push | ❌ | ✅ |
 | Stop after N items | ❌ complex | ✅ drop the stream |
 | Parallel consumers | ❌ | ✅ use `tokio::spawn` |
+

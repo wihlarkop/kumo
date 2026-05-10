@@ -10,7 +10,7 @@ description: Use #[derive(Extract)] from kumo-derive to generate CSS extraction 
 
 ```toml
 [dependencies]
-kumo = { version = "0.1", features = ["derive"] }
+kumo = { version = "0.2", features = ["derive"] }
 ```
 
 The `derive` feature automatically pulls in `kumo-derive`.
@@ -168,3 +168,4 @@ struct Product {
 - Only **structs with named fields** are supported — tuple structs and enums will produce a compile error.
 - Every field must have an `#[extract(css = "...")]` annotation — fields without it won't compile.
 - The struct must also derive `serde::Serialize` to work as a kumo item.
+

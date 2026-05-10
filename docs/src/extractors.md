@@ -29,7 +29,7 @@ let inner = el.css(".body").first()
 Requires `features = ["xpath"]`.
 
 ```toml
-kumo = { version = "0.1", features = ["xpath"] }
+kumo = { version = "0.2", features = ["xpath"] }
 ```
 
 ```rust
@@ -60,7 +60,7 @@ let digits: Vec<String> = el.re(r"\d+");
 Requires `features = ["jsonpath"]`.
 
 ```toml
-kumo = { version = "0.1", features = ["jsonpath"] }
+kumo = { version = "0.2", features = ["jsonpath"] }
 ```
 
 ```rust
@@ -76,7 +76,7 @@ Use for JSON API responses where CSS/XPath would be meaningless.
 Requires `features = ["derive"]`. Generates CSS-based extraction boilerplate from field annotations.
 
 ```toml
-kumo = { version = "0.1", features = ["derive"] }
+kumo = { version = "0.2", features = ["derive"] }
 ```
 
 ```rust
@@ -107,7 +107,7 @@ Requires one of: `features = ["claude"]`, `features = ["openai"]`, `features = [
 LLM extraction uses a language model to parse unstructured HTML into a typed struct — no selectors needed.
 
 ```toml
-kumo = { version = "0.1", features = ["claude"] }
+kumo = { version = "0.2", features = ["claude"] }
 ```
 
 ```rust
@@ -150,3 +150,4 @@ struct Article {
     author: String,
 }
 ```
+

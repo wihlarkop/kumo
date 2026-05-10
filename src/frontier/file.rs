@@ -164,7 +164,7 @@ impl Frontier for FileFrontier {
     }
 
     async fn push_request(&self, request: CrawlRequest, depth: usize) -> bool {
-        let url = request.url().to_string();
+        let url = request.dedup_key().to_string();
         if !request.dont_filter_enabled() {
             let maybe_seen = {
                 let mut bloom = self.seen_bloom.lock().await;
@@ -208,5 +208,9 @@ impl Frontier for FileFrontier {
 
     async fn len(&self) -> usize {
         self.queue.lock().await.len()
+    }
+
+    async fn flush(&self) -> Result<(), KumoError> {
+        self.flush_to_disk().await
     }
 }

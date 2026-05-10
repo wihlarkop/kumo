@@ -74,7 +74,7 @@ On raw parsing throughput (local server, no network): **3.0× faster than Colly,
 
 ```toml
 [dependencies]
-kumo = "0.1"
+kumo = "0.2"
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
@@ -83,7 +83,7 @@ tokio = { version = "1", features = ["full"] }
 For `#[derive(Extract)]`:
 
 ```toml
-kumo = { version = "0.1", features = ["derive"] }
+kumo = { version = "0.2", features = ["derive"] }
 ```
 
 ## Quick Start
@@ -130,7 +130,7 @@ impl Spider for QuotesSpider {
 async fn main() -> Result<(), KumoError> {
     CrawlEngine::builder()
         .concurrency(5)
-        .middleware(DefaultHeaders::new().user_agent("kumo/0.1"))
+        .middleware(DefaultHeaders::new().user_agent("kumo/0.2"))
         .store(JsonlStore::new("quotes.jsonl")?)
         .run(QuotesSpider)
         .await?;
@@ -177,3 +177,4 @@ After `lefthook install`, every `git commit` will automatically run `cargo fmt` 
 ## License
 
 MIT
+

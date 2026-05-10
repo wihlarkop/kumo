@@ -139,6 +139,27 @@ let stream = CrawlEngine::builder()
     .await?;
 ```
 
+## Scheduler Politeness
+
+`PolitenessPolicy` enforces per-domain concurrency and delay before requests are
+dispatched. Use it instead of sleeping inside spiders or middleware:
+
+```rust
+CrawlEngine::builder()
+    .concurrency(64)
+    .politeness(
+        PolitenessPolicy::new()
+            .per_domain_concurrency(4)
+            .per_domain_delay(std::time::Duration::from_millis(250)),
+    )
+    .run(MySpider)
+    .await?;
+```
+
+High global concurrency is useful only when the crawl spans enough domains or
+the target allows that load. For single-domain public crawls, the per-domain
+limits are usually the real throughput cap.
+
 ## HTTP Cache for Development
 
 Use `.http_cache()` during spider development to avoid re-fetching pages on every run. Cached responses are served from disk instantly, making iteration fast. Remove it before deploying to production:
@@ -167,3 +188,4 @@ impl Spider for MySpider {
     // ...
 }
 ```
+

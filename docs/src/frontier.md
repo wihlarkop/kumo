@@ -1,26 +1,38 @@
-# URL Frontiers
+# Frontiers and Scheduling
 
-The frontier is the queue of crawl requests. kumo deduplicates URLs with a Bloom filter (O(1), 1M URLs at 0.1% false-positive rate by default).
+The frontier stores pending crawl requests and deduplication state. The
+scheduler decides when those requests are eligible to run.
+
+This split matters in production crawls:
+
+- `Frontier` stores pending requests.
+- `CrawlScheduler` applies priority, fingerprint-based deduplication, retry
+  timing, and politeness rules.
+- `CrawlEngine` drives workers and flushes the frontier before shutdown.
+
+The default setup works without configuration.
 
 ## MemoryFrontier (default)
 
-The default — no configuration needed. Held in RAM; lost when the process exits.
+The default frontier is held in RAM and is lost when the process exits.
 It supports `CrawlRequest` priority scheduling: higher priority requests are
 fetched first, and requests with equal priority keep FIFO order.
 
 ```rust
 CrawlEngine::builder()
-    // no .frontier() call — uses MemoryFrontier automatically
+    // no .frontier() call: uses MemoryFrontier automatically
     .run(MySpider)
     .await?;
 ```
 
 ## FileFrontier
 
-Requires `features = ["persistence"]`. Persists the URL queue to disk — survives restarts.
+Requires `features = ["persistence"]`. Persists the request queue to disk and is
+flushed by the engine before shutdown. It preserves request method, headers,
+body, priority, metadata, retry count, delayed retry timing, and dedup state.
 
 ```toml
-kumo = { version = "0.1", features = ["persistence"] }
+kumo = { version = "0.2", features = ["persistence"] }
 ```
 
 ```rust
@@ -32,14 +44,16 @@ CrawlEngine::builder()
     .await?;
 ```
 
-If the frontier directory exists when the process starts, crawling resumes from where it left off. Delete the directory to start fresh.
+If the frontier directory exists when the process starts, crawling resumes from
+where it left off. Delete the directory to start fresh.
 
 ## RedisFrontier
 
-Requires `features = ["redis-frontier"]`. Distributes the URL queue across multiple processes via Redis.
+Requires `features = ["redis-frontier"]`. Distributes the request queue across
+multiple processes via Redis.
 
 ```toml
-kumo = { version = "0.1", features = ["redis-frontier"] }
+kumo = { version = "0.2", features = ["redis-frontier"] }
 ```
 
 ```rust
@@ -57,15 +71,57 @@ CrawlEngine::builder()
     .await?;
 ```
 
-Multiple processes can use the same Redis queue and seen keys — they share the queue and deduplication set. Use this for distributed crawls where a single process can't saturate the target site's bandwidth.
+Multiple processes can use the same Redis queue and seen keys. They share the
+queue and deduplication set.
 
-`CrawlRequest::dont_filter(true)` bypasses URL deduplication for an individual
-request. This is useful for deliberate revisits such as retrying a page after a
-state change or fetching the same endpoint with a different request body.
+## PolitenessPolicy
+
+Use `PolitenessPolicy` to limit pressure on each domain:
+
+```rust
+use std::time::Duration;
+use kumo::prelude::*;
+
+CrawlEngine::builder()
+    .concurrency(32)
+    .politeness(
+        PolitenessPolicy::new()
+            .per_domain_concurrency(2)
+            .per_domain_delay(Duration::from_millis(500)),
+    )
+    .run(MySpider)
+    .await?;
+```
+
+`.crawl_delay(duration)` is still available as shorthand for setting the default
+per-domain scheduler delay.
+
+## FingerprintPolicy
+
+The scheduler deduplicates requests by fingerprint. The default fingerprint
+normalizes host casing, removes URL fragments, and sorts query parameters.
+
+```rust
+CrawlEngine::builder()
+    .fingerprint_policy(
+        FingerprintPolicy::default().strip_tracking_params(true),
+    )
+    .run(MySpider)
+    .await?;
+```
+
+Tracking-parameter stripping removes `utm_*`, `fbclid`, and `gclid`.
+
+`CrawlRequest::dont_filter(true)` bypasses request deduplication for an
+individual request. This is useful for deliberate revisits such as retrying a
+page after a state change or fetching the same endpoint with a different
+request body.
 
 ## Tuning the Bloom Filter
 
-For crawls smaller than the default 1M URL estimate, shrink the Bloom filter to save RAM:
+`MemoryFrontier` uses a Bloom filter for deduplication. The default is sized for
+1 million unique request fingerprints. For small crawls, reduce it to save
+memory; for very large crawls, increase it to reduce false-positive skips:
 
 ```rust
 CrawlEngine::builder()
@@ -74,4 +130,7 @@ CrawlEngine::builder()
     .await?;
 ```
 
-Setting `max_urls` too low increases the false-positive rate (some new URLs skipped as duplicates). Setting it too high wastes memory. Rule of thumb: set it to 2× your expected unique URL count.
+Setting `max_urls` too low increases the false-positive rate, meaning some new
+request fingerprints may be skipped as duplicates. Setting it too high wastes
+memory. Rule of thumb: set it to twice your expected unique request count.
+

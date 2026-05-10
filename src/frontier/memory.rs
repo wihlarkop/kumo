@@ -62,7 +62,7 @@ impl Frontier for MemoryFrontier {
 
     async fn push_request(&self, request: CrawlRequest, depth: usize) -> bool {
         let mut seen = self.seen.lock().await;
-        let seen_key = request.url().to_string();
+        let seen_key = request.dedup_key().to_string();
         if !request.dont_filter_enabled() && seen.check(&seen_key) {
             return false;
         }

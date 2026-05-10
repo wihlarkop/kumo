@@ -5,7 +5,7 @@ The `browser` feature uses headless Chromium (via `chromiumoxide`) to fetch page
 ## Installation
 
 ```toml
-kumo = { version = "0.1", features = ["browser"] }
+kumo = { version = "0.2", features = ["browser"] }
 ```
 
 Chrome or Chromium must be available on the machine running the crawler. Use `BrowserConfig::executable(...)` when you need to point kumo at a specific binary.
@@ -65,3 +65,4 @@ Use the browser fetcher when:
 - You need to interact with the page (click, scroll, fill forms)
 
 Use plain HTTP (default) for everything else — it is 10–100× faster.
+

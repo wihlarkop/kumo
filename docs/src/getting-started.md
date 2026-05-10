@@ -16,7 +16,7 @@ Add kumo to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-kumo = "0.1"
+kumo = "0.2"
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
@@ -82,7 +82,7 @@ Use `CrawlEngine::builder()` to configure and launch:
 async fn main() -> Result<(), KumoError> {
     CrawlEngine::builder()
         .concurrency(5)                                            // parallel requests
-        .middleware(DefaultHeaders::new().user_agent("kumo/0.1")) // set User-Agent
+        .middleware(DefaultHeaders::new().user_agent("kumo/0.2")) // set User-Agent
         .store(JsonlStore::new("quotes.jsonl")?)                  // write to JSONL
         .run(QuotesSpider)
         .await?;
@@ -92,9 +92,34 @@ async fn main() -> Result<(), KumoError> {
 
 This crawls all pages, writes each `Quote` as a JSON line to `quotes.jsonl`, and exits when the frontier is empty.
 
+## Polite Crawling
+
+For production crawls, configure per-domain limits so Kumo does not treat every
+URL as one global queue:
+
+```rust
+use std::time::Duration;
+use kumo::prelude::*;
+
+CrawlEngine::builder()
+    .concurrency(16)
+    .politeness(
+        PolitenessPolicy::new()
+            .per_domain_concurrency(2)
+            .per_domain_delay(Duration::from_millis(500)),
+    )
+    .fingerprint_policy(FingerprintPolicy::default().strip_tracking_params(true))
+    .run(QuotesSpider)
+    .await?;
+```
+
+The scheduler handles request priority, per-domain delay, delayed retries,
+fingerprint-based deduplication, and crawl stats.
+
 ## What's Next?
 
 - [Spiders](spiders.md) — full Spider trait API, lifecycle hooks, error handling
 - [Extractors](extractors.md) — CSS, XPath, Regex, JSONPath, `#[derive(Extract)]`, LLM
 - [Stores](stores.md) — JSONL, JSON, CSV, PostgreSQL, SQLite, MySQL
 - [Middleware](middleware.md) — rate limiting, auto-throttle, retry, proxy rotation
+

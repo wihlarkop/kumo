@@ -9,16 +9,18 @@ use crate::{
     middleware::Middleware,
     pipeline::Pipeline,
     request::{CrawlRequest, FrontierRequest},
+    scheduler::CrawlScheduler,
     spider::Spider,
+    stats::{CrawlStats, domain_key},
 };
 
 use super::{
-    builder::{CrawlEngine, CrawlStats},
+    builder::CrawlEngine,
     erased::{ErasedSpider, SpiderErased},
     setup::{
         FetcherArgs, build_http_client, build_raw_fetcher, build_robots_cache, wrap_with_cache,
     },
-    task::{TaskContext, is_cancelled, process_request_with_retry, should_enqueue},
+    task::{TaskContext, is_cancelled, process_request_once, should_enqueue},
 };
 
 impl CrawlEngine {
@@ -34,6 +36,8 @@ impl CrawlEngine {
         let frontier: Arc<dyn Frontier> = self
             .frontier
             .unwrap_or_else(|| Arc::new(MemoryFrontier::new(self.max_urls)));
+        let scheduler = CrawlScheduler::from_arc(frontier, self.politeness_policy)
+            .with_fingerprint_policy(self.fingerprint_policy);
         let store = self
             .store
             .unwrap_or_else(|| Arc::new(crate::store::stdout::StdoutStore));
@@ -56,7 +60,6 @@ impl CrawlEngine {
                 );
             }
         }
-        let crawl_delay = self.crawl_delay;
         let concurrency = self.concurrency;
         let retry_policy = self.retry_policy;
         let robots_cache = build_robots_cache(self.respect_robots, self.robots_ttl);
@@ -74,6 +77,8 @@ impl CrawlEngine {
         .await?;
         let fetcher = wrap_with_cache(fetcher, self.cache_dir, self.cache_ttl)?;
 
+        let mut stats = CrawlStats::default();
+
         spider.open().await?;
 
         let start_urls = spider.start_urls();
@@ -83,7 +88,12 @@ impl CrawlEngine {
             "spider.open"
         );
         for url in start_urls {
-            frontier.push_request(CrawlRequest::get(url), 0).await;
+            let domain = domain_key(&url);
+            if scheduler.push_request(CrawlRequest::get(url), 0).await {
+                stats.record_scheduled(&domain);
+            } else {
+                stats.record_deduped(&domain);
+            }
         }
 
         type TaskResult = (
@@ -91,7 +101,6 @@ impl CrawlEngine {
             Result<(u64, u64, Vec<(CrawlRequest, usize)>), KumoError>,
         );
         let mut join_set: JoinSet<TaskResult> = JoinSet::new();
-        let mut stats = CrawlStats::default();
 
         // Spawn periodic metrics logger if configured.
         let live_stats = Arc::new(tokio::sync::Mutex::new(CrawlStats::default()));
@@ -134,13 +143,15 @@ impl CrawlEngine {
             if !shutting_down {
                 // Fill up to the concurrency limit.
                 while join_set.len() < concurrency {
-                    match frontier.pop_request().await {
+                    match scheduler.try_next_ready().await {
                         Some(queued) => {
                             // Check robots.txt before dispatching.
                             if let Some(ref cache) = robots_cache
                                 && !cache.is_allowed(&client, queued.request.url()).await
                             {
                                 tracing::debug!(url = %queued.request.url(), "blocked by robots.txt, skipping");
+                                stats.record_robots_blocked(&domain_key(queued.request.url()));
+                                scheduler.finish(&queued).await;
                                 continue;
                             }
 
@@ -150,13 +161,11 @@ impl CrawlEngine {
                                 middleware: middleware.clone(),
                                 pipelines: pipelines.clone(),
                                 fetcher: fetcher.clone(),
-                                crawl_delay,
-                                retry_policy: retry_policy.clone(),
                                 stream_cancelled: stream_cancelled.clone(),
                             };
 
                             join_set.spawn(async move {
-                                let result = process_request_with_retry(queued.clone(), ctx).await;
+                                let result = process_request_once(queued.clone(), ctx).await;
                                 (queued, result)
                             });
                         }
@@ -166,9 +175,12 @@ impl CrawlEngine {
                 }
             }
 
-            // Both the queue is empty and no tasks are running â†’ crawl complete.
             if join_set.is_empty() {
-                break;
+                if scheduler.is_empty().await {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                continue;
             }
 
             tokio::select! {
@@ -178,7 +190,9 @@ impl CrawlEngine {
                 }
                 result = join_set.join_next() => {
                     match result {
-                        Some(Ok((_queued, Ok((item_count, bytes, follows))))) => {
+                        Some(Ok((queued, Ok((item_count, bytes, follows))))) => {
+                            scheduler.finish(&queued).await;
+                            stats.record_completed(&domain_key(queued.request.url()));
                             stats.pages_crawled += 1;
                             stats.items_scraped += item_count;
                             stats.bytes_downloaded += bytes;
@@ -189,28 +203,60 @@ impl CrawlEngine {
                             // Keep live snapshot up to date for the metrics task.
                             if metrics_interval.is_some() {
                                 let mut snap = live_stats.lock().await;
-                                snap.pages_crawled = stats.pages_crawled;
-                                snap.items_scraped = stats.items_scraped;
-                                snap.errors = stats.errors;
-                                snap.bytes_downloaded = stats.bytes_downloaded;
+                                *snap = stats.clone();
                                 snap.duration = start.elapsed();
                             }
 
                             if !shutting_down {
                                 for (follow_request, follow_depth) in follows {
                                     if should_enqueue(&follow_request, follow_depth, spider.as_ref()) {
-                                        frontier.push_request(follow_request, follow_depth).await;
+                                        let domain = domain_key(follow_request.url());
+                                        if scheduler.push_request(follow_request, follow_depth).await {
+                                            stats.record_scheduled(&domain);
+                                        } else {
+                                            stats.record_deduped(&domain);
+                                        }
                                     }
                                 }
                             }
                         }
                         Some(Ok((queued, Err(e)))) => {
-                            stats.errors += 1;
+                            scheduler.finish(&queued).await;
                             let url = queued.request.url().to_string();
                             // Notify all middleware of the permanent failure.
                             for mw in middleware.iter() {
                                 mw.on_error(&url, &e).await;
                             }
+                            if !shutting_down
+                                && queued.retry_count < retry_policy.max_attempts
+                                && retry_policy.is_retriable(&e)
+                            {
+                                let delay = retry_policy.delay_for(queued.retry_count);
+                                stats.record_retry(&domain_key(&url));
+                                tracing::warn!(
+                                    spider = spider.name(),
+                                    url = %url,
+                                    attempt = queued.retry_count + 1,
+                                    max = retry_policy.max_attempts,
+                                    retry_in_ms = delay.as_millis(),
+                                    error = %e,
+                                    "scheduling retry"
+                                );
+                                scheduler
+                                    .push_request_force(
+                                        FrontierRequest::new(
+                                            queued.request,
+                                            queued.depth,
+                                            queued.retry_count + 1,
+                                        )
+                                        .scheduled_after(delay),
+                                    )
+                                    .await;
+                                continue;
+                            }
+
+                            stats.errors += 1;
+                            stats.record_failed(&domain_key(&url));
                             match spider.on_error(&url, &e) {
                                 ErrorPolicy::Abort => {
                                     error!(url = %url, error = %e, "aborting crawl");
@@ -226,7 +272,8 @@ impl CrawlEngine {
                                         "re-queuing failed URL"
                                     );
                                     if !shutting_down {
-                                        frontier.push_request_force(FrontierRequest::new(
+                                        stats.record_retry(&domain_key(&url));
+                                        scheduler.push_request_force(FrontierRequest::new(
                                             queued.request,
                                             queued.depth,
                                             queued.retry_count + 1,
@@ -255,6 +302,7 @@ impl CrawlEngine {
             }
         }
 
+        scheduler.flush().await?;
         store.flush().await?;
         stats.duration = start.elapsed();
 

@@ -42,7 +42,7 @@ Prints each item as JSON to stdout — useful for debugging:
 Requires `features = ["postgres"]`.
 
 ```toml
-kumo = { version = "0.1", features = ["postgres"] }
+kumo = { version = "0.2", features = ["postgres"] }
 ```
 
 ```rust
@@ -61,7 +61,7 @@ The store creates the table if it does not exist. Each item is inserted as a JSO
 Requires `features = ["sqlite"]`.
 
 ```toml
-kumo = { version = "0.1", features = ["sqlite"] }
+kumo = { version = "0.2", features = ["sqlite"] }
 ```
 
 ```rust
@@ -77,7 +77,7 @@ let store = SqliteStore::builder("sqlite://crawl.db")
 Requires `features = ["mysql"]`.
 
 ```toml
-kumo = { version = "0.1", features = ["mysql"] }
+kumo = { version = "0.2", features = ["mysql"] }
 ```
 
 ```rust
@@ -109,16 +109,16 @@ Items are buffered in memory during the crawl and written as a single object on 
 
 ```toml
 # base — enables LocalFileSystem + InMemory backends
-kumo = { version = "0.1", features = ["cloud"] }
+kumo = { version = "0.2", features = ["cloud"] }
 
 # S3
-kumo = { version = "0.1", features = ["cloud-s3"] }
+kumo = { version = "0.2", features = ["cloud-s3"] }
 
 # GCS
-kumo = { version = "0.1", features = ["cloud-gcs"] }
+kumo = { version = "0.2", features = ["cloud-gcs"] }
 
 # Azure Blob
-kumo = { version = "0.1", features = ["cloud-azure"] }
+kumo = { version = "0.2", features = ["cloud-azure"] }
 ```
 
 ### Local filesystem (dev / CI)
@@ -230,3 +230,4 @@ impl ItemStore for KafkaStore {
     }
 }
 ```
+

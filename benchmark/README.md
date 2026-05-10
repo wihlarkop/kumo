@@ -88,6 +88,24 @@ cd benchmark
 
 Results are saved to `results/latest.json` (real) and `results/latest_local.json` (local).
 
+## Microbenchmarks
+
+Use Criterion for local microbenchmarks of hot internal paths:
+
+```bash
+cargo bench
+```
+
+Current microbenchmarks cover:
+
+- request fingerprint canonicalization
+- `MemoryFrontier` push/pop overhead
+
+For release candidates, run `cargo bench` before tagging and compare the output
+against the previous release. CI compiles benchmark targets with
+`cargo bench --no-run`, but it does not execute performance measurements because
+shared CI runners are too noisy for stable timing.
+
 ## Implementations
 
 | Directory | Language | Version |

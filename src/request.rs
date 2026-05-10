@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     sync::atomic::{AtomicU64, Ordering},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use reqwest::{
@@ -26,6 +27,7 @@ pub struct CrawlRequest {
     priority: i32,
     meta: HashMap<String, Value>,
     dont_filter: bool,
+    dedup_key: Option<String>,
 }
 
 impl CrawlRequest {
@@ -39,6 +41,7 @@ impl CrawlRequest {
             priority: 0,
             meta: HashMap::new(),
             dont_filter: false,
+            dedup_key: None,
         }
     }
 
@@ -75,6 +78,10 @@ impl CrawlRequest {
         self.dont_filter
     }
 
+    pub(crate) fn dedup_key(&self) -> &str {
+        self.dedup_key.as_deref().unwrap_or(&self.url)
+    }
+
     pub fn method(mut self, method: Method) -> Self {
         self.method = method;
         self
@@ -107,6 +114,11 @@ impl CrawlRequest {
         self.dont_filter = value;
         self
     }
+
+    pub(crate) fn with_dedup_key(mut self, key: impl Into<String>) -> Self {
+        self.dedup_key = Some(key.into());
+        self
+    }
 }
 
 impl From<String> for CrawlRequest {
@@ -131,6 +143,7 @@ pub struct FrontierRequest {
     pub(crate) depth: usize,
     pub(crate) retry_count: u32,
     pub(crate) sequence: u64,
+    pub(crate) scheduled_at: Option<SystemTime>,
 }
 
 impl FrontierRequest {
@@ -141,6 +154,7 @@ impl FrontierRequest {
             depth,
             retry_count,
             sequence: REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed),
+            scheduled_at: None,
         }
     }
 
@@ -158,6 +172,17 @@ impl FrontierRequest {
     pub fn retry_count(&self) -> u32 {
         self.retry_count
     }
+
+    /// Schedule this request to become eligible after `delay`.
+    pub fn scheduled_after(mut self, delay: Duration) -> Self {
+        self.scheduled_at = Some(SystemTime::now() + delay);
+        self
+    }
+
+    /// The earliest time this request should be dispatched.
+    pub fn scheduled_at(&self) -> Option<SystemTime> {
+        self.scheduled_at
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,6 +194,7 @@ pub(crate) struct StoredCrawlRequest {
     priority: i32,
     meta: HashMap<String, Value>,
     dont_filter: bool,
+    dedup_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,6 +208,7 @@ pub(crate) struct StoredFrontierRequest {
     request: StoredCrawlRequest,
     depth: usize,
     retry_count: u32,
+    scheduled_at_ms: Option<u64>,
 }
 
 impl From<&CrawlRequest> for StoredCrawlRequest {
@@ -203,6 +230,7 @@ impl From<&CrawlRequest> for StoredCrawlRequest {
             priority: request.priority,
             meta: request.meta.clone(),
             dont_filter: request.dont_filter,
+            dedup_key: request.dedup_key.clone(),
         }
     }
 }
@@ -229,6 +257,7 @@ impl TryFrom<StoredCrawlRequest> for CrawlRequest {
             priority: stored.priority,
             meta: stored.meta,
             dont_filter: stored.dont_filter,
+            dedup_key: stored.dedup_key,
         })
     }
 }
@@ -239,6 +268,7 @@ impl From<&FrontierRequest> for StoredFrontierRequest {
             request: StoredCrawlRequest::from(&queued.request),
             depth: queued.depth,
             retry_count: queued.retry_count,
+            scheduled_at_ms: queued.scheduled_at.and_then(system_time_to_ms),
         }
     }
 }
@@ -247,10 +277,19 @@ impl TryFrom<StoredFrontierRequest> for FrontierRequest {
     type Error = &'static str;
 
     fn try_from(stored: StoredFrontierRequest) -> Result<Self, Self::Error> {
-        Ok(Self::new(
+        let mut request = Self::new(
             CrawlRequest::try_from(stored.request)?,
             stored.depth,
             stored.retry_count,
-        ))
+        );
+        request.scheduled_at = stored
+            .scheduled_at_ms
+            .map(|ms| UNIX_EPOCH + Duration::from_millis(ms));
+        Ok(request)
     }
+}
+
+fn system_time_to_ms(time: SystemTime) -> Option<u64> {
+    let duration = time.duration_since(UNIX_EPOCH).ok()?;
+    u64::try_from(duration.as_millis()).ok()
 }

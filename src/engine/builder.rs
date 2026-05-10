@@ -15,18 +15,6 @@ use crate::fetch::BrowserConfig;
 
 type FrontierOverride = Option<Arc<dyn Frontier>>;
 
-/// Statistics returned by `CrawlEngine::run` after the crawl finishes.
-#[derive(Debug, Default, Clone)]
-pub struct CrawlStats {
-    pub pages_crawled: u64,
-    pub items_scraped: u64,
-    pub errors: u64,
-    pub duration: Duration,
-    pub bytes_downloaded: u64,
-    /// `true` when the crawl was stopped early by Ctrl+C.
-    pub interrupted: bool,
-}
-
 /// Fluent builder for configuring and launching a crawl.
 ///
 /// # Example
@@ -43,9 +31,10 @@ pub struct CrawlEngine {
     pub(super) middleware: Vec<Arc<dyn Middleware>>,
     pub(super) pipelines: Vec<Arc<dyn Pipeline>>,
     pub(super) store: Option<Arc<dyn ItemStore>>,
-    pub(super) crawl_delay: Option<Duration>,
     pub(super) respect_robots: bool,
     pub(super) retry_policy: crate::retry::RetryPolicy,
+    pub(super) politeness_policy: crate::scheduler::PolitenessPolicy,
+    pub(super) fingerprint_policy: crate::scheduler::FingerprintPolicy,
     pub(super) frontier: FrontierOverride,
     /// Expected unique URL count for Bloom filter sizing (default: 1_000_000).
     pub(super) max_urls: usize,
@@ -72,11 +61,12 @@ impl Default for CrawlEngine {
             concurrency: 8,
             middleware: Vec::new(),
             store: None,
-            crawl_delay: None,
             respect_robots: true,
             pipelines: Vec::new(),
             frontier: None,
             retry_policy: crate::retry::RetryPolicy::new(0),
+            politeness_policy: crate::scheduler::PolitenessPolicy::default(),
+            fingerprint_policy: crate::scheduler::FingerprintPolicy::default(),
             max_urls: 1_000_000,
             robots_ttl: Duration::from_secs(24 * 60 * 60),
             metrics_interval: None,
@@ -133,7 +123,19 @@ impl CrawlEngine {
 
     /// Insert a fixed delay between requests (applied per task, not globally).
     pub fn crawl_delay(mut self, delay: Duration) -> Self {
-        self.crawl_delay = Some(delay);
+        self.politeness_policy = self.politeness_policy.per_domain_delay(delay);
+        self
+    }
+
+    /// Configure production crawl politeness such as per-domain concurrency and delay.
+    pub fn politeness(mut self, policy: crate::scheduler::PolitenessPolicy) -> Self {
+        self.politeness_policy = policy;
+        self
+    }
+
+    /// Configure request fingerprinting used for scheduler/frontier deduplication.
+    pub fn fingerprint_policy(mut self, policy: crate::scheduler::FingerprintPolicy) -> Self {
+        self.fingerprint_policy = policy;
         self
     }
 

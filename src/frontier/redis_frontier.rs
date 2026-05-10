@@ -113,7 +113,9 @@ impl Frontier for RedisFrontier {
         let added: i64 = if request.dont_filter_enabled() {
             1
         } else {
-            conn.sadd(&self.seen_key, request.url()).await.unwrap_or(0)
+            conn.sadd(&self.seen_key, request.dedup_key())
+                .await
+                .unwrap_or(0)
         };
         if !request.dont_filter_enabled() && added == 0 {
             return false;

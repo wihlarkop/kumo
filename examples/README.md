@@ -24,6 +24,15 @@ Shows `AutoThrottle` middleware which automatically adjusts request delay based 
 cargo run --example autothrottle
 ```
 
+## polite_crawling.rs — production crawl controls
+
+Shows `PolitenessPolicy`, per-domain concurrency, per-domain delay, request
+priority, metadata, fingerprint-based deduplication, and crawl stats.
+
+```bash
+cargo run --example polite_crawling
+```
+
 ## selectors.rs — CSS, regex, and JSONPath
 
 Demonstrates all three selector types against local HTML and JSON — no network required.

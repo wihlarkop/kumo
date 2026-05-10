@@ -76,3 +76,4 @@ CrawlEngine::builder()
 ```
 
 Pipelines run in registration order — items pass through `RequireFields` → `DropDuplicates` → `NormalizePrice` → store.
+

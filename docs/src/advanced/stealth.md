@@ -12,7 +12,7 @@ The `stealth` feature replaces the default `reqwest` HTTP client with `rquest`, 
 ## Installation
 
 ```toml
-kumo = { version = "0.1", features = ["stealth"] }
+kumo = { version = "0.2", features = ["stealth"] }
 ```
 
 ## HTTP-Level Stealth
@@ -42,7 +42,7 @@ Available profiles:
 When combined with the `browser` feature, `BrowserConfig::stealth()` also patches JavaScript APIs:
 
 ```toml
-kumo = { version = "0.1", features = ["stealth", "browser"] }
+kumo = { version = "0.2", features = ["stealth", "browser"] }
 ```
 
 ```rust
@@ -63,3 +63,4 @@ Use stealth when the target site:
 - Checks `navigator.webdriver` or `navigator.plugins` in JavaScript
 
 For most sites, standard HTTP with a realistic User-Agent header is sufficient. Stealth adds significant build time and is only needed for bot-detection-hardened sites.
+
