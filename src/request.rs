@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     sync::atomic::{AtomicU64, Ordering},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use reqwest::{
@@ -131,6 +132,7 @@ pub struct FrontierRequest {
     pub(crate) depth: usize,
     pub(crate) retry_count: u32,
     pub(crate) sequence: u64,
+    pub(crate) scheduled_at: Option<SystemTime>,
 }
 
 impl FrontierRequest {
@@ -141,6 +143,7 @@ impl FrontierRequest {
             depth,
             retry_count,
             sequence: REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed),
+            scheduled_at: None,
         }
     }
 
@@ -157,6 +160,17 @@ impl FrontierRequest {
     /// Number of times this request has already been retried by the engine.
     pub fn retry_count(&self) -> u32 {
         self.retry_count
+    }
+
+    /// Schedule this request to become eligible after `delay`.
+    pub fn scheduled_after(mut self, delay: Duration) -> Self {
+        self.scheduled_at = Some(SystemTime::now() + delay);
+        self
+    }
+
+    /// The earliest time this request should be dispatched.
+    pub fn scheduled_at(&self) -> Option<SystemTime> {
+        self.scheduled_at
     }
 }
 
@@ -182,6 +196,7 @@ pub(crate) struct StoredFrontierRequest {
     request: StoredCrawlRequest,
     depth: usize,
     retry_count: u32,
+    scheduled_at_ms: Option<u64>,
 }
 
 impl From<&CrawlRequest> for StoredCrawlRequest {
@@ -239,6 +254,7 @@ impl From<&FrontierRequest> for StoredFrontierRequest {
             request: StoredCrawlRequest::from(&queued.request),
             depth: queued.depth,
             retry_count: queued.retry_count,
+            scheduled_at_ms: queued.scheduled_at.and_then(system_time_to_ms),
         }
     }
 }
@@ -247,10 +263,19 @@ impl TryFrom<StoredFrontierRequest> for FrontierRequest {
     type Error = &'static str;
 
     fn try_from(stored: StoredFrontierRequest) -> Result<Self, Self::Error> {
-        Ok(Self::new(
+        let mut request = Self::new(
             CrawlRequest::try_from(stored.request)?,
             stored.depth,
             stored.retry_count,
-        ))
+        );
+        request.scheduled_at = stored
+            .scheduled_at_ms
+            .map(|ms| UNIX_EPOCH + Duration::from_millis(ms));
+        Ok(request)
     }
+}
+
+fn system_time_to_ms(time: SystemTime) -> Option<u64> {
+    let duration = time.duration_since(UNIX_EPOCH).ok()?;
+    u64::try_from(duration.as_millis()).ok()
 }

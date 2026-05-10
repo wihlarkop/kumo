@@ -19,7 +19,7 @@ use super::{
     setup::{
         FetcherArgs, build_http_client, build_raw_fetcher, build_robots_cache, wrap_with_cache,
     },
-    task::{TaskContext, is_cancelled, process_request_with_retry, should_enqueue},
+    task::{TaskContext, is_cancelled, process_request_once, should_enqueue},
 };
 
 impl CrawlEngine {
@@ -152,12 +152,11 @@ impl CrawlEngine {
                                 middleware: middleware.clone(),
                                 pipelines: pipelines.clone(),
                                 fetcher: fetcher.clone(),
-                                retry_policy: retry_policy.clone(),
                                 stream_cancelled: stream_cancelled.clone(),
                             };
 
                             join_set.spawn(async move {
-                                let result = process_request_with_retry(queued.clone(), ctx).await;
+                                let result = process_request_once(queued.clone(), ctx).await;
                                 (queued, result)
                             });
                         }
@@ -167,9 +166,12 @@ impl CrawlEngine {
                 }
             }
 
-            // Both the queue is empty and no tasks are running â†’ crawl complete.
             if join_set.is_empty() {
-                break;
+                if scheduler.is_empty().await {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                continue;
             }
 
             tokio::select! {
@@ -208,12 +210,39 @@ impl CrawlEngine {
                         }
                         Some(Ok((queued, Err(e)))) => {
                             scheduler.finish(&queued).await;
-                            stats.errors += 1;
                             let url = queued.request.url().to_string();
                             // Notify all middleware of the permanent failure.
                             for mw in middleware.iter() {
                                 mw.on_error(&url, &e).await;
                             }
+                            if !shutting_down
+                                && queued.retry_count < retry_policy.max_attempts
+                                && retry_policy.is_retriable(&e)
+                            {
+                                let delay = retry_policy.delay_for(queued.retry_count);
+                                tracing::warn!(
+                                    spider = spider.name(),
+                                    url = %url,
+                                    attempt = queued.retry_count + 1,
+                                    max = retry_policy.max_attempts,
+                                    retry_in_ms = delay.as_millis(),
+                                    error = %e,
+                                    "scheduling retry"
+                                );
+                                scheduler
+                                    .push_request_force(
+                                        FrontierRequest::new(
+                                            queued.request,
+                                            queued.depth,
+                                            queued.retry_count + 1,
+                                        )
+                                        .scheduled_after(delay),
+                                    )
+                                    .await;
+                                continue;
+                            }
+
+                            stats.errors += 1;
                             match spider.on_error(&url, &e) {
                                 ErrorPolicy::Abort => {
                                     error!(url = %url, error = %e, "aborting crawl");

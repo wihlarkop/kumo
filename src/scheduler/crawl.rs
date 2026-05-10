@@ -52,6 +52,10 @@ impl CrawlScheduler {
         self.frontier.push_request_force(queued).await;
     }
 
+    pub async fn is_empty(&self) -> bool {
+        self.frontier.is_empty().await
+    }
+
     pub async fn try_next_ready(&self) -> Option<FrontierRequest> {
         match self.poll_next().await {
             SchedulerPoll::Ready(queued) => Some(*queued),
@@ -86,6 +90,13 @@ impl CrawlScheduler {
         let Some(queued) = self.frontier.pop_request().await else {
             return SchedulerPoll::Empty;
         };
+        if let Some(scheduled_at) = queued.scheduled_at()
+            && let Ok(wait) = scheduled_at.duration_since(std::time::SystemTime::now())
+        {
+            self.frontier.push_request_force(queued).await;
+            return SchedulerPoll::Pending(wait);
+        }
+
         let Some(domain) = domain_key(queued.request().url()) else {
             return SchedulerPoll::Ready(Box::new(queued));
         };
