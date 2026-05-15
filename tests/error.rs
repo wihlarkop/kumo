@@ -83,6 +83,15 @@ fn ergonomic_error_constructors_match_variants() {
     ));
 }
 
+#[test]
+fn http_status_helpers_expose_status_and_url_without_matching_fields() {
+    let err = KumoError::http_status(503, "https://example.com/api");
+
+    assert_eq!(err.status_code(), Some(503));
+    assert_eq!(err.url(), Some("https://example.com/api"));
+    assert_eq!(err.kind(), KumoErrorKind::HttpStatus);
+}
+
 #[cfg(feature = "persistence")]
 #[test]
 fn file_frontier_reports_malformed_queue_as_store_error() {
