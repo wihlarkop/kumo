@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use tokio::task::JoinSet;
 use tracing::{error, info};
@@ -98,6 +98,7 @@ impl CrawlEngine {
             Result<(u64, u64, Vec<(CrawlRequest, usize)>), KumoError>,
         );
         let mut join_set: JoinSet<MultiTaskResult> = JoinSet::new();
+        let mut task_context = HashMap::new();
 
         let shutdown = async {
             #[cfg(not(target_arch = "wasm32"))]
@@ -149,10 +150,15 @@ impl CrawlEngine {
                                     fetcher: fetcher.clone(),
                                     stream_cancelled: None,
                                 };
-                                join_set.spawn(async move {
-                                    let result = process_request_once(queued.clone(), ctx).await;
-                                    (idx, queued, result)
-                                });
+                                let task_queued = queued.clone();
+                                let task_id = join_set
+                                    .spawn(async move {
+                                        let result =
+                                            process_request_once(task_queued.clone(), ctx).await;
+                                        (idx, task_queued, result)
+                                    })
+                                    .id();
+                                task_context.insert(task_id, (idx, queued));
                                 fill_cursor = idx + 1;
                                 any_popped = true;
                                 break;
@@ -202,9 +208,10 @@ impl CrawlEngine {
                     shutting_down = true;
                     for s in &mut stats_vec { s.interrupted = true; }
                 }
-                result = join_set.join_next() => {
+                result = join_set.join_next_with_id() => {
                     match result {
-                        Some(Ok((spider_idx, queued, Ok((item_count, bytes, follows))))) => {
+                        Some(Ok((task_id, (spider_idx, queued, Ok((item_count, bytes, follows)))))) => {
+                            task_context.remove(&task_id);
                             let (_, scheduler) = &spider_entries[spider_idx];
                             scheduler.finish(&queued).await;
                             let stats = &mut stats_vec[spider_idx];
@@ -226,7 +233,8 @@ impl CrawlEngine {
                                 }
                             }
                         }
-                        Some(Ok((spider_idx, queued, Err(e)))) => {
+                        Some(Ok((task_id, (spider_idx, queued, Err(e))))) => {
+                            task_context.remove(&task_id);
                             let (_, scheduler) = &spider_entries[spider_idx];
                             scheduler.finish(&queued).await;
                             let url = queued.request.url().to_string();
@@ -296,6 +304,12 @@ impl CrawlEngine {
                             }
                         }
                         Some(Err(join_err)) => {
+                            if let Some((spider_idx, queued)) = task_context.remove(&join_err.id()) {
+                                let (_, scheduler) = &spider_entries[spider_idx];
+                                scheduler.finish(&queued).await;
+                                stats_vec[spider_idx].errors += 1;
+                                stats_vec[spider_idx].record_failed(&domain_key(queued.request.url()));
+                            }
                             error!(error = %join_err, "crawl task panicked");
                         }
                         None => break,

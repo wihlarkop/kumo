@@ -92,6 +92,16 @@ impl Spider for MySpider {
 | `duration` | `Duration` | Wall-clock crawl time |
 | `bytes_downloaded` | `u64` | Total response body bytes |
 | `interrupted` | `bool` | `true` if stopped by Ctrl+C |
+| `scheduled` | `u64` | Requests accepted by the scheduler |
+| `deduped` | `u64` | Requests skipped because their fingerprint was already seen |
+| `retries` | `u64` | Retry attempts requeued by retry policy or `ErrorPolicy::Retry` |
+| `robots_blocked` | `u64` | Requests skipped because robots.txt disallowed them |
+| `domains` | `BTreeMap<String, DomainStats>` | Per-domain counters for scheduled, deduped, completed, failed, retries, and robots-blocked requests |
+
+`errors` counts permanent request failures, including exhausted retries,
+unhandled fetch/parse errors, and crawl task panics. Panics are attributed to
+the request's domain in `domains[domain].failed` so production reports do not
+silently lose failed work.
 
 ## Error Handling
 

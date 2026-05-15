@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use tokio::task::JoinSet;
 use tracing::{error, info};
@@ -101,6 +101,7 @@ impl CrawlEngine {
             Result<(u64, u64, Vec<(CrawlRequest, usize)>), KumoError>,
         );
         let mut join_set: JoinSet<TaskResult> = JoinSet::new();
+        let mut task_context = HashMap::new();
 
         // Spawn periodic metrics logger if configured.
         let live_stats = Arc::new(tokio::sync::Mutex::new(CrawlStats::default()));
@@ -175,10 +176,15 @@ impl CrawlEngine {
                                 stream_cancelled: stream_cancelled.clone(),
                             };
 
-                            join_set.spawn(async move {
-                                let result = process_request_once(queued.clone(), ctx).await;
-                                (queued, result)
-                            });
+                            let task_queued = queued.clone();
+                            let task_id = join_set
+                                .spawn(async move {
+                                    let result =
+                                        process_request_once(task_queued.clone(), ctx).await;
+                                    (task_queued, result)
+                                })
+                                .id();
+                            task_context.insert(task_id, queued);
                         }
                         SchedulerPoll::Pending(wait) => {
                             next_scheduler_wait =
@@ -215,9 +221,10 @@ impl CrawlEngine {
                     shutting_down = true;
                     stats.interrupted = true;
                 }
-                result = join_set.join_next() => {
+                result = join_set.join_next_with_id() => {
                     match result {
-                        Some(Ok((queued, Ok((item_count, bytes, follows))))) => {
+                        Some(Ok((task_id, (queued, Ok((item_count, bytes, follows)))))) => {
+                            task_context.remove(&task_id);
                             scheduler.finish(&queued).await;
                             stats.record_completed(&domain_key(queued.request.url()));
                             stats.pages_crawled += 1;
@@ -247,7 +254,8 @@ impl CrawlEngine {
                                 }
                             }
                         }
-                        Some(Ok((queued, Err(e)))) => {
+                        Some(Ok((task_id, (queued, Err(e))))) => {
+                            task_context.remove(&task_id);
                             scheduler.finish(&queued).await;
                             let url = queued.request.url().to_string();
                             // Notify all middleware of the permanent failure.
@@ -317,6 +325,10 @@ impl CrawlEngine {
                         }
                         Some(Err(join_err)) => {
                             stats.errors += 1;
+                            if let Some(queued) = task_context.remove(&join_err.id()) {
+                                scheduler.finish(&queued).await;
+                                stats.record_failed(&domain_key(queued.request.url()));
+                            }
                             error!(spider = spider.name(), error = %join_err, "crawl task panicked");
                         }
                         None => break,
