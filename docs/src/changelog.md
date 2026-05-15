@@ -12,6 +12,13 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.2.4 - 2026-05-15
+
+- Added robots.txt `Crawl-delay` parsing for matching user-agent groups.
+- Wired cached robots crawl-delay values into the scheduler when
+  `PolitenessPolicy::respect_robots_crawl_delay(true)` is enabled.
+- Added robots parser and scheduler coverage for crawl-delay behavior.
+
 ### 0.2.3 - 2026-05-15
 
 - Applied `PolitenessPolicy::jitter` to per-domain scheduler delays so

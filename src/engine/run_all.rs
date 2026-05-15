@@ -133,6 +133,14 @@ impl CrawlEngine {
                                     scheduler.finish(&queued).await;
                                     continue;
                                 }
+                                if let Some(ref cache) = robots_cache
+                                    && let Some(delay) =
+                                        cache.crawl_delay(&client, queued.request.url()).await
+                                {
+                                    scheduler
+                                        .observe_robots_crawl_delay(queued.request.url(), delay)
+                                        .await;
+                                }
                                 let ctx = TaskContext {
                                     spider: spider.clone(),
                                     store: store.clone(),
