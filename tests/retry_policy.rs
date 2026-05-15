@@ -33,6 +33,26 @@ fn retry_policy_reports_jitter_bounds_without_sampling_randomness() {
 }
 
 #[test]
+fn retry_policy_caps_retry_after_delay_hints() {
+    let policy = RetryPolicy::new(3)
+        .base_delay(Duration::from_millis(100))
+        .max_delay(Duration::from_millis(250));
+
+    assert_eq!(
+        policy.delay_for_attempt_with_hint(0, Some(Duration::from_millis(50))),
+        Duration::from_millis(50)
+    );
+    assert_eq!(
+        policy.delay_for_attempt_with_hint(0, Some(Duration::from_secs(10))),
+        Duration::from_millis(250)
+    );
+    assert_eq!(
+        policy.delay_for_attempt_with_hint(1, None),
+        Duration::from_millis(200)
+    );
+}
+
+#[test]
 fn retry_policy_classifies_retriable_errors_without_string_matching() {
     let all_transient = RetryPolicy::new(2);
     assert!(all_transient.is_retriable_error(&KumoError::http_status(429, "https://example.com")));

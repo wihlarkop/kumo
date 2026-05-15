@@ -12,6 +12,15 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.2.8 - 2026-05-16
+
+- Added `Retry-After` support for `StatusRetry` without changing
+  `KumoError::HttpStatus`.
+- Retry scheduling now prefers valid `Retry-After` hints and caps them with
+  `RetryPolicy::max_delay`.
+- Added public retry delay helper coverage for delta-seconds, HTTP-date,
+  invalid header fallback, and capped delay hints.
+
 ### 0.2.7 - 2026-05-15
 
 - Count crawl task panics as request failures in both single-spider and

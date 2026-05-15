@@ -4,6 +4,12 @@ use regex::Regex;
 use crate::{error::KumoError, extract::Response};
 
 use super::{FetchRequest, Middleware};
+use reqwest::header::{HeaderValue, RETRY_AFTER};
+use std::{
+    collections::HashMap,
+    sync::Mutex,
+    time::{Duration, SystemTime},
+};
 
 /// Default HTTP status codes that should trigger an automatic retry.
 const DEFAULT_RETRY_CODES: &[u16] = &[429, 500, 502, 503, 504];
@@ -16,12 +22,12 @@ const DEFAULT_RETRY_CODES: &[u16] = &[429, 500, 502, 503, 504];
 ///
 /// # Examples
 ///
-/// Default — retry the standard transient codes for every URL:
+/// Default - retry the standard transient codes for every URL:
 /// ```rust,ignore
 /// .middleware(StatusRetry::new())
 /// ```
 ///
-/// Per-pattern — retry 404 on dynamic API paths, never retry static assets:
+/// Per-pattern - retry 404 on dynamic API paths, never retry static assets:
 /// ```rust,ignore
 /// .middleware(
 ///     StatusRetry::new()
@@ -32,6 +38,7 @@ const DEFAULT_RETRY_CODES: &[u16] = &[429, 500, 502, 503, 504];
 pub struct StatusRetry {
     codes: Vec<u16>,
     patterns: Vec<(Regex, Vec<u16>)>,
+    retry_after: Mutex<HashMap<(String, u16), Duration>>,
 }
 
 impl StatusRetry {
@@ -40,6 +47,7 @@ impl StatusRetry {
         Self {
             codes: DEFAULT_RETRY_CODES.to_vec(),
             patterns: Vec::new(),
+            retry_after: Mutex::new(HashMap::new()),
         }
     }
 
@@ -48,6 +56,7 @@ impl StatusRetry {
         Self {
             codes,
             patterns: Vec::new(),
+            retry_after: Mutex::new(HashMap::new()),
         }
     }
 
@@ -65,6 +74,45 @@ impl StatusRetry {
         self.patterns.push((re, codes));
         self
     }
+
+    fn error_for_response(&self, response: &Response) -> KumoError {
+        self.record_retry_after(response);
+        KumoError::HttpStatus {
+            status: response.status(),
+            url: response.url().to_string(),
+        }
+    }
+
+    fn record_retry_after(&self, response: &Response) {
+        let key = (response.url().to_string(), response.status());
+        let delay = response
+            .headers()
+            .get(RETRY_AFTER)
+            .and_then(parse_retry_after);
+        let mut retry_after = self
+            .retry_after
+            .lock()
+            .expect("status retry delay mutex poisoned");
+
+        if let Some(delay) = delay {
+            retry_after.insert(key, delay);
+        } else {
+            retry_after.remove(&key);
+        }
+    }
+}
+
+fn parse_retry_after(value: &HeaderValue) -> Option<Duration> {
+    let value = value.to_str().ok()?.trim();
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+
+    let retry_at = httpdate::parse_http_date(value).ok()?;
+    match retry_at.duration_since(SystemTime::now()) {
+        Ok(delay) => Some(delay),
+        Err(_) => Some(Duration::ZERO),
+    }
 }
 
 impl std::fmt::Debug for StatusRetry {
@@ -72,6 +120,10 @@ impl std::fmt::Debug for StatusRetry {
         f.debug_struct("StatusRetry")
             .field("global_codes", &self.codes)
             .field("pattern_rules", &self.patterns.len())
+            .field(
+                "retry_after_hints",
+                &self.retry_after.lock().map(|hints| hints.len()).ok(),
+            )
             .finish()
     }
 }
@@ -93,22 +145,28 @@ impl Middleware for StatusRetry {
         for (pattern, codes) in &self.patterns {
             if pattern.is_match(response.url()) {
                 return if codes.contains(&response.status()) {
-                    Err(KumoError::HttpStatus {
-                        status: response.status(),
-                        url: response.url().to_string(),
-                    })
+                    Err(self.error_for_response(response))
                 } else {
                     Ok(()) // Pattern matched but status not in this rule's retry set.
                 };
             }
         }
-        // No pattern matched — fall back to global codes.
+
+        // No pattern matched - fall back to global codes.
         if self.codes.contains(&response.status()) {
-            return Err(KumoError::HttpStatus {
-                status: response.status(),
-                url: response.url().to_string(),
-            });
+            return Err(self.error_for_response(response));
         }
         Ok(())
+    }
+
+    fn retry_delay(&self, _url: &str, error: &KumoError) -> Option<Duration> {
+        let KumoError::HttpStatus { status, url } = error else {
+            return None;
+        };
+
+        self.retry_after
+            .lock()
+            .expect("status retry delay mutex poisoned")
+            .remove(&(url.clone(), *status))
     }
 }

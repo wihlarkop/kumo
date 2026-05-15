@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "kumo"
-version = "0.2.7"
+version = "0.2.8"
 edition = "2024"
 rust-version = "1.88"
 authors = ["wihlarkop"]
@@ -98,6 +98,7 @@ reqwest = { version = "0.13.2", default-features = false, features = [
 ] }
 url     = "2.5.8"
 bytes   = "1.11.1"
+httpdate = "1.0.3"
 
 # HTML parsing & scraping
 scraper = "0.26.0"

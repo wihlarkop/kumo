@@ -106,6 +106,18 @@ impl RetryPolicy {
         self.base_delay.saturating_mul(factor).min(self.max_delay)
     }
 
+    /// Compute the deterministic retry delay for `attempt`, preferring a
+    /// server-provided delay hint when one is available.
+    ///
+    /// The hint is capped by `max_delay`. If no hint is provided, this returns
+    /// the normal exponential-backoff delay without jitter.
+    pub fn delay_for_attempt_with_hint(&self, attempt: u32, hint: Option<Duration>) -> Duration {
+        hint.map_or_else(
+            || self.delay_for_attempt(attempt),
+            |delay| delay.min(self.max_delay),
+        )
+    }
+
     /// Return the inclusive delay range that can be produced for `attempt`.
     ///
     /// When jitter is disabled, both bounds are the deterministic delay.
@@ -149,6 +161,13 @@ impl RetryPolicy {
         } else {
             raw
         }
+    }
+
+    pub(crate) fn delay_for_with_hint(&self, attempt: u32, hint: Option<Duration>) -> Duration {
+        hint.map_or_else(
+            || self.delay_for(attempt),
+            |delay| delay.min(self.max_delay),
+        )
     }
 
     /// Return `true` if `err` should trigger a retry under this policy.

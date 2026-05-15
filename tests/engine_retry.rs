@@ -14,6 +14,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicU32, Ordering},
 };
+use std::time::{Duration, Instant};
 use support::VecStore;
 
 struct SequentialFetcher {
@@ -184,4 +185,62 @@ async fn retry_policy_succeeds_on_later_attempt() {
         "2 failures + 1 success = 3 fetches"
     );
     assert_eq!(store.collected()[0]["title"], "ok");
+}
+
+#[tokio::test]
+async fn status_retry_uses_retry_after_before_requeueing() {
+    let mut server = mockito::Server::new_async().await;
+    let _m1 = server
+        .mock("GET", "/")
+        .with_status(429)
+        .with_header("retry-after", "1")
+        .create_async()
+        .await;
+    let _m2 = server
+        .mock("GET", "/")
+        .with_status(200)
+        .with_header("content-type", "text/html")
+        .with_body("<html><body><h1>ok</h1></body></html>")
+        .create_async()
+        .await;
+
+    struct RetrySpider(String);
+
+    #[async_trait::async_trait]
+    impl Spider for RetrySpider {
+        type Item = serde_json::Value;
+
+        fn name(&self) -> &str {
+            "retry-after"
+        }
+
+        fn start_urls(&self) -> Vec<String> {
+            vec![self.0.clone()]
+        }
+
+        async fn parse(&self, _res: &Response) -> Result<Output<Self::Item>, KumoError> {
+            Ok(Output::new())
+        }
+    }
+
+    let started = Instant::now();
+    let stats = CrawlEngine::builder()
+        .respect_robots_txt(false)
+        .retry_policy(
+            RetryPolicy::new(1)
+                .base_delay(Duration::from_millis(1))
+                .max_delay(Duration::from_secs(2)),
+        )
+        .middleware(StatusRetry::new())
+        .store(StdoutStore)
+        .run(RetrySpider(server.url()))
+        .await
+        .unwrap();
+
+    assert_eq!(stats.pages_crawled, 1);
+    assert_eq!(stats.errors, 0);
+    assert!(
+        started.elapsed() >= Duration::from_millis(900),
+        "retry should respect Retry-After delay"
+    );
 }
