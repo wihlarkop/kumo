@@ -266,7 +266,10 @@ impl CrawlEngine {
                                 && queued.retry_count < retry_policy.max_attempts
                                 && retry_policy.is_retriable(&e)
                             {
-                                let delay = retry_policy.delay_for(queued.retry_count);
+                                let retry_delay_hint =
+                                    middleware.iter().find_map(|mw| mw.retry_delay(&url, &e));
+                                let delay = retry_policy
+                                    .delay_for_with_hint(queued.retry_count, retry_delay_hint);
                                 stats.record_retry(&domain_key(&url));
                                 tracing::warn!(
                                     spider = spider.name(),

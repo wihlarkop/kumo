@@ -17,7 +17,10 @@ use reqwest::{
     Method,
     header::{HeaderMap, HeaderName, HeaderValue},
 };
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
+};
 
 /// Shared selection strategy used by `UserAgentRotator` and `ProxyRotator`.
 pub(super) enum RotationStrategy {
@@ -126,4 +129,12 @@ pub trait Middleware: Send + Sync {
     /// Use this to log failures, mark proxies as bad, emit metrics, etc.
     /// Default implementation does nothing.
     async fn on_error(&self, _url: &str, _error: &KumoError) {}
+
+    /// Optional retry delay hint for an error observed by this middleware.
+    ///
+    /// Middleware can use this to pass server-provided backoff information,
+    /// such as `Retry-After`, to the engine without changing `KumoError`.
+    fn retry_delay(&self, _url: &str, _error: &KumoError) -> Option<Duration> {
+        None
+    }
 }

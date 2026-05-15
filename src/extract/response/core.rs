@@ -29,6 +29,22 @@ impl Response {
         }
     }
 
+    /// Construct a text `Response` with headers. Primarily useful in tests and examples.
+    pub fn from_parts_with_headers(
+        url: impl Into<String>,
+        status: u16,
+        headers: HeaderMap,
+        body: impl Into<String>,
+    ) -> Self {
+        Self {
+            url: url.into(),
+            status,
+            headers,
+            elapsed: Duration::ZERO,
+            body: ResponseBody::Text(body.into()),
+        }
+    }
+
     /// Override the elapsed duration on an existing response - useful in tests.
     pub fn with_elapsed(mut self, elapsed: Duration) -> Self {
         self.elapsed = elapsed;

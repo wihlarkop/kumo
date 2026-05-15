@@ -66,6 +66,10 @@ Retry on specific HTTP status codes:
 The engine's `.retry()` or `.retry_policy()` setting controls how many times
 the request is retried and how long each retry waits.
 
+When a matching response includes a valid `Retry-After` header, Kumo uses that
+server-provided delay before retrying. Both delta-seconds and HTTP-date formats
+are supported, and the delay is capped by the policy's `.max_delay(...)` value.
+
 ## ProxyRotator
 
 Rotate through a list of proxy URLs per request:
@@ -114,6 +118,10 @@ For full retry control, use `.retry_policy()` instead of `.retry()`:
 `.on_status()`, the policy retries any `KumoError::HttpStatus` or
 `KumoError::Fetch`. Once a status filter is configured, only matching
 HTTP-status errors are retried.
+
+If middleware provides a retry delay hint, such as `StatusRetry` parsing a
+`Retry-After` header, that hint is preferred over exponential backoff and capped
+by `.max_delay(...)`.
 
 ## Custom Middleware
 
