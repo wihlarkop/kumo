@@ -54,6 +54,30 @@ in-flight task is not checkpointed as pending; if the process crashes after
 dispatch and before completion, that request may need to be rescheduled by the
 application or a future lease-based frontier.
 
+Use `FileFrontier::state().await` after opening a frontier when you want to
+verify what was recovered before resuming:
+
+```rust
+let frontier = FileFrontier::open("frontier")?;
+let state = frontier.state().await;
+println!(
+    "recovered {} queued requests and {} seen fingerprints",
+    state.queued, state.seen
+);
+```
+
+The persisted files contain:
+
+| File | Contents | Survives Resume |
+|------|----------|-----------------|
+| `queue.json` | Pending `CrawlRequest`s with method, headers, body, priority, metadata, depth, retry count, and scheduled retry time | Yes |
+| `seen.json` | Exact deduplication fingerprints used to rebuild the Bloom filter | Yes |
+
+Automatic flushing happens every 100 pushes by default. Use
+`.flush_every(n)` to tune that interval. Use `.flush_every(0)` to disable
+automatic flushing and rely only on explicit `frontier.flush().await?` calls or
+the engine's final shutdown flush.
+
 ## RedisFrontier
 
 Requires `features = ["redis-frontier"]`. Distributes the request queue across
