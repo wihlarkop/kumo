@@ -12,6 +12,14 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.2.1 - 2026-05-15
+
+- Fixed scheduler fairness when delayed or domain-blocked requests share a
+  frontier with ready requests from other domains.
+- Reduced idle polling by letting the engine sleep until the scheduler's next
+  known ready time when all queued requests are delayed.
+- Added regression coverage for delayed high-priority requests.
+
 ### 0.2.0 — 2026-05-10
 
 - Added production crawl scheduler controls with `PolitenessPolicy`.

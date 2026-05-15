@@ -26,10 +26,15 @@ pub struct CrawlScheduler {
     domains: Mutex<HashMap<String, DomainState>>,
 }
 
-enum SchedulerPoll {
+pub(crate) enum SchedulerPoll {
     Ready(Box<FrontierRequest>),
     Pending(Duration),
     Empty,
+}
+
+enum CandidateState {
+    Ready,
+    Pending(Duration),
 }
 
 impl CrawlScheduler {
@@ -76,6 +81,10 @@ impl CrawlScheduler {
         }
     }
 
+    pub(crate) async fn poll_ready(&self) -> SchedulerPoll {
+        self.poll_next().await
+    }
+
     pub async fn next_ready(&self) -> Option<FrontierRequest> {
         loop {
             match self.poll_next().await {
@@ -100,41 +109,69 @@ impl CrawlScheduler {
     }
 
     async fn poll_next(&self) -> SchedulerPoll {
-        let Some(queued) = self.frontier.pop_request().await else {
+        let queued_len = self.frontier.len().await;
+        if queued_len == 0 {
             return SchedulerPoll::Empty;
         };
+
+        let mut deferred = Vec::new();
+        let mut shortest_wait: Option<Duration> = None;
+
+        for _ in 0..queued_len {
+            let Some(queued) = self.frontier.pop_request().await else {
+                break;
+            };
+
+            match self.classify_candidate(&queued).await {
+                CandidateState::Ready => {
+                    for item in deferred {
+                        self.frontier.push_request_force(item).await;
+                    }
+                    return SchedulerPoll::Ready(Box::new(queued));
+                }
+                CandidateState::Pending(wait) => {
+                    shortest_wait = Some(shortest_wait.map_or(wait, |current| current.min(wait)));
+                    deferred.push(queued);
+                }
+            }
+        }
+
+        for item in deferred {
+            self.frontier.push_request_force(item).await;
+        }
+
+        shortest_wait.map_or(SchedulerPoll::Empty, SchedulerPoll::Pending)
+    }
+
+    async fn classify_candidate(&self, queued: &FrontierRequest) -> CandidateState {
         if let Some(scheduled_at) = queued.scheduled_at()
             && let Ok(wait) = scheduled_at.duration_since(std::time::SystemTime::now())
         {
-            self.frontier.push_request_force(queued).await;
-            return SchedulerPoll::Pending(wait);
+            return CandidateState::Pending(wait);
         }
 
         let Some(domain) = domain_key(queued.request().url()) else {
-            return SchedulerPoll::Ready(Box::new(queued));
+            return CandidateState::Ready;
         };
 
-        let wait = {
-            let mut domains = self.domains.lock().await;
-            let state = domains.entry(domain.clone()).or_default();
-            let domain_policy = self.policy.policy_for(&domain);
+        let mut domains = self.domains.lock().await;
+        let state = domains.entry(domain.clone()).or_default();
+        let domain_policy = self.policy.policy_for(&domain);
 
-            if state.in_flight >= domain_policy.concurrency() {
-                Some(Duration::from_millis(10))
-            } else if let Some(next) = state.next_available_at {
-                next.checked_duration_since(Instant::now())
-            } else {
-                state.in_flight += 1;
-                None
+        if state.in_flight >= domain_policy.concurrency() {
+            CandidateState::Pending(Duration::from_millis(10))
+        } else if let Some(next) = state.next_available_at {
+            match next.checked_duration_since(Instant::now()) {
+                Some(wait) => CandidateState::Pending(wait),
+                None => {
+                    state.in_flight += 1;
+                    CandidateState::Ready
+                }
             }
-        };
-
-        if let Some(wait) = wait {
-            self.frontier.push_request_force(queued).await;
-            return SchedulerPoll::Pending(wait);
+        } else {
+            state.in_flight += 1;
+            CandidateState::Ready
         }
-
-        SchedulerPoll::Ready(Box::new(queued))
     }
 
     fn apply_fingerprint(&self, request: CrawlRequest) -> CrawlRequest {

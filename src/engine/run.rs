@@ -9,7 +9,7 @@ use crate::{
     middleware::Middleware,
     pipeline::Pipeline,
     request::{CrawlRequest, FrontierRequest},
-    scheduler::CrawlScheduler,
+    scheduler::{CrawlScheduler, SchedulerPoll},
     spider::Spider,
     stats::{CrawlStats, domain_key},
 };
@@ -140,11 +140,14 @@ impl CrawlEngine {
                 stats.interrupted = true;
             }
 
+            let mut next_scheduler_wait: Option<std::time::Duration> = None;
+
             if !shutting_down {
                 // Fill up to the concurrency limit.
                 while join_set.len() < concurrency {
-                    match scheduler.try_next_ready().await {
-                        Some(queued) => {
+                    match scheduler.poll_ready().await {
+                        SchedulerPoll::Ready(queued) => {
+                            let queued = *queued;
                             // Check robots.txt before dispatching.
                             if let Some(ref cache) = robots_cache
                                 && !cache.is_allowed(&client, queued.request.url()).await
@@ -169,8 +172,13 @@ impl CrawlEngine {
                                 (queued, result)
                             });
                         }
+                        SchedulerPoll::Pending(wait) => {
+                            next_scheduler_wait =
+                                Some(next_scheduler_wait.map_or(wait, |current| current.min(wait)));
+                            break;
+                        }
                         // Frontier currently empty â€” tasks may still add URLs.
-                        None => break,
+                        SchedulerPoll::Empty => break,
                     }
                 }
             }
@@ -179,11 +187,22 @@ impl CrawlEngine {
                 if scheduler.is_empty().await {
                     break;
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                tokio::time::sleep(
+                    next_scheduler_wait.unwrap_or(std::time::Duration::from_millis(10)),
+                )
+                .await;
                 continue;
             }
 
+            let scheduler_sleep = tokio::time::sleep(
+                next_scheduler_wait.unwrap_or(std::time::Duration::from_secs(24 * 60 * 60)),
+            );
+            tokio::pin!(scheduler_sleep);
+
             tokio::select! {
+                _ = &mut scheduler_sleep, if next_scheduler_wait.is_some() => {
+                    continue;
+                }
                 _ = &mut shutdown, if !shutting_down => {
                     shutting_down = true;
                     stats.interrupted = true;
