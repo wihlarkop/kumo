@@ -87,3 +87,32 @@ async fn delayed_high_priority_request_does_not_block_ready_other_domain() {
 
     assert_eq!(queued.request().url(), "https://ready.example/page");
 }
+
+#[tokio::test]
+async fn politeness_jitter_extends_domain_delay_within_configured_range() {
+    let frontier = MemoryFrontier::default();
+    let scheduler = CrawlScheduler::new(
+        frontier,
+        PolitenessPolicy::new()
+            .per_domain_delay(Duration::from_millis(30))
+            .jitter(Duration::from_millis(30)),
+    );
+
+    scheduler
+        .push_request(CrawlRequest::get("https://example.com/a"), 0)
+        .await;
+    scheduler
+        .push_request(CrawlRequest::get("https://example.com/b"), 0)
+        .await;
+
+    let first = scheduler.next_ready().await.unwrap();
+    scheduler.finish(&first).await;
+
+    let before = std::time::Instant::now();
+    let second = scheduler.next_ready().await.unwrap();
+    let elapsed = before.elapsed();
+
+    assert_eq!(second.request().url(), "https://example.com/b");
+    assert!(elapsed >= Duration::from_millis(25));
+    assert!(elapsed <= Duration::from_millis(120));
+}

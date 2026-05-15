@@ -103,6 +103,10 @@ CrawlEngine::builder()
 `.crawl_delay(duration)` is still available as shorthand for setting the default
 per-domain scheduler delay.
 
+Add `.jitter(duration)` when many requests may become eligible at the same time.
+Kumo adds a random extra delay from zero up to the configured jitter after each
+completed request for that domain.
+
 ## FingerprintPolicy
 
 The scheduler deduplicates requests by fingerprint. The default fingerprint
