@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use kumo::{
     frontier::MemoryFrontier,
-    request::CrawlRequest,
+    request::{CrawlRequest, FrontierRequest},
     scheduler::{CrawlScheduler, PolitenessPolicy},
 };
 
@@ -58,4 +58,32 @@ async fn same_domain_request_waits_for_delay_after_completion() {
 
     assert!(before.elapsed() >= Duration::from_millis(45));
     assert_eq!(second.request().url(), "https://example.com/b");
+}
+
+#[tokio::test]
+async fn delayed_high_priority_request_does_not_block_ready_other_domain() {
+    let frontier = MemoryFrontier::default();
+    let scheduler = CrawlScheduler::new(frontier, PolitenessPolicy::default());
+
+    scheduler
+        .push_request_force(
+            FrontierRequest::new(
+                CrawlRequest::get("https://slow.example/retry").priority(100),
+                0,
+                1,
+            )
+            .scheduled_after(Duration::from_secs(60)),
+        )
+        .await;
+
+    scheduler
+        .push_request(
+            CrawlRequest::get("https://ready.example/page").priority(1),
+            0,
+        )
+        .await;
+
+    let queued = scheduler.try_next_ready().await.unwrap();
+
+    assert_eq!(queued.request().url(), "https://ready.example/page");
 }

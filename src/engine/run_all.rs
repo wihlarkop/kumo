@@ -9,7 +9,7 @@ use crate::{
     middleware::Middleware,
     pipeline::Pipeline,
     request::{CrawlRequest, FrontierRequest},
-    scheduler::CrawlScheduler,
+    scheduler::{CrawlScheduler, SchedulerPoll},
     stats::{CrawlStats, domain_key},
 };
 
@@ -113,37 +113,48 @@ impl CrawlEngine {
         let mut fill_cursor = 0usize;
 
         loop {
+            let mut next_scheduler_wait: Option<std::time::Duration> = None;
+
             if !shutting_down {
                 'fill: while join_set.len() < concurrency {
                     let mut any_popped = false;
                     for attempt in 0..n {
                         let idx = (fill_cursor + attempt) % n;
                         let (spider, scheduler) = &spider_entries[idx];
-                        if let Some(queued) = scheduler.try_next_ready().await {
-                            if let Some(ref cache) = robots_cache
-                                && !cache.is_allowed(&client, queued.request.url()).await
-                            {
-                                tracing::debug!(url = %queued.request.url(), "blocked by robots.txt, skipping");
-                                stats_vec[idx]
-                                    .record_robots_blocked(&domain_key(queued.request.url()));
-                                scheduler.finish(&queued).await;
-                                continue;
+                        match scheduler.poll_ready().await {
+                            SchedulerPoll::Ready(queued) => {
+                                let queued = *queued;
+                                if let Some(ref cache) = robots_cache
+                                    && !cache.is_allowed(&client, queued.request.url()).await
+                                {
+                                    tracing::debug!(url = %queued.request.url(), "blocked by robots.txt, skipping");
+                                    stats_vec[idx]
+                                        .record_robots_blocked(&domain_key(queued.request.url()));
+                                    scheduler.finish(&queued).await;
+                                    continue;
+                                }
+                                let ctx = TaskContext {
+                                    spider: spider.clone(),
+                                    store: store.clone(),
+                                    middleware: middleware.clone(),
+                                    pipelines: pipelines.clone(),
+                                    fetcher: fetcher.clone(),
+                                    stream_cancelled: None,
+                                };
+                                join_set.spawn(async move {
+                                    let result = process_request_once(queued.clone(), ctx).await;
+                                    (idx, queued, result)
+                                });
+                                fill_cursor = idx + 1;
+                                any_popped = true;
+                                break;
                             }
-                            let ctx = TaskContext {
-                                spider: spider.clone(),
-                                store: store.clone(),
-                                middleware: middleware.clone(),
-                                pipelines: pipelines.clone(),
-                                fetcher: fetcher.clone(),
-                                stream_cancelled: None,
-                            };
-                            join_set.spawn(async move {
-                                let result = process_request_once(queued.clone(), ctx).await;
-                                (idx, queued, result)
-                            });
-                            fill_cursor = idx + 1;
-                            any_popped = true;
-                            break;
+                            SchedulerPoll::Pending(wait) => {
+                                next_scheduler_wait = Some(
+                                    next_scheduler_wait.map_or(wait, |current| current.min(wait)),
+                                );
+                            }
+                            SchedulerPoll::Empty => {}
                         }
                     }
                     if !any_popped {
@@ -163,11 +174,22 @@ impl CrawlEngine {
                 if all_empty {
                     break;
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                tokio::time::sleep(
+                    next_scheduler_wait.unwrap_or(std::time::Duration::from_millis(10)),
+                )
+                .await;
                 continue;
             }
 
+            let scheduler_sleep = tokio::time::sleep(
+                next_scheduler_wait.unwrap_or(std::time::Duration::from_secs(24 * 60 * 60)),
+            );
+            tokio::pin!(scheduler_sleep);
+
             tokio::select! {
+                _ = &mut scheduler_sleep, if next_scheduler_wait.is_some() => {
+                    continue;
+                }
                 _ = &mut shutdown, if !shutting_down => {
                     shutting_down = true;
                     for s in &mut stats_vec { s.interrupted = true; }
