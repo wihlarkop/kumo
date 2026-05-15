@@ -1,6 +1,6 @@
 use std::{
     collections::VecDeque,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -16,6 +16,32 @@ use super::Frontier;
 
 const DEFAULT_FLUSH_EVERY: usize = 100;
 const BLOOM_CAPACITY: usize = 1_000_000;
+
+fn atomic_write(path: &Path, contents: &str) -> Result<(), KumoError> {
+    let tmp_path = path.with_extension(format!(
+        "{}.tmp",
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or("json")
+    ));
+
+    std::fs::write(&tmp_path, contents)
+        .map_err(|e| KumoError::store(format!("write {}", tmp_path.display()), e))?;
+
+    match std::fs::rename(&tmp_path, path) {
+        Ok(()) => Ok(()),
+        Err(_rename_error) if path.exists() => {
+            std::fs::remove_file(path)
+                .map_err(|e| KumoError::store(format!("replace {}", path.display()), e))?;
+            std::fs::rename(&tmp_path, path)
+                .map_err(|e| KumoError::store(format!("rename {}", path.display()), e))
+        }
+        Err(rename_error) => Err(KumoError::store(
+            format!("rename {}", path.display()),
+            rename_error,
+        )),
+    }
+}
 
 /// File-backed frontier that persists queue state to disk so a crawl can be
 /// resumed after a crash or intentional stop.
@@ -123,10 +149,8 @@ impl FileFrontier {
         let seen_json =
             serde_json::to_string(&*seen).map_err(|e| KumoError::store("serialize seen", e))?;
 
-        std::fs::write(self.dir.join("queue.json"), queue_json)
-            .map_err(|e| KumoError::store("write queue.json", e))?;
-        std::fs::write(self.dir.join("seen.json"), seen_json)
-            .map_err(|e| KumoError::store("write seen.json", e))?;
+        atomic_write(&self.dir.join("queue.json"), &queue_json)?;
+        atomic_write(&self.dir.join("seen.json"), &seen_json)?;
 
         Ok(())
     }
