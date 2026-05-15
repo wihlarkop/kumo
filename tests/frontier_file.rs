@@ -65,6 +65,24 @@ async fn resumes_dedup_from_disk() {
 }
 
 #[tokio::test]
+async fn flush_replaces_state_files_atomically_without_temp_leftovers() {
+    let dir = tempdir().unwrap();
+    let f = FileFrontier::open(dir.path()).unwrap();
+
+    f.push_request(CrawlRequest::get("https://example.com/a"), 0)
+        .await;
+    f.flush().await.unwrap();
+
+    assert!(dir.path().join("queue.json").exists());
+    assert!(dir.path().join("seen.json").exists());
+    assert!(!dir.path().join("queue.json.tmp").exists());
+    assert!(!dir.path().join("seen.json.tmp").exists());
+
+    let f = FileFrontier::open(dir.path()).unwrap();
+    assert_eq!(f.len().await, 1);
+}
+
+#[tokio::test]
 async fn request_metadata_survives_flush_and_resume() {
     let dir = tempdir().unwrap();
     {

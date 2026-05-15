@@ -47,6 +47,13 @@ CrawlEngine::builder()
 If the frontier directory exists when the process starts, crawling resumes from
 where it left off. Delete the directory to start fresh.
 
+`FileFrontier` writes queued and seen state through temporary files before
+replacing `queue.json` and `seen.json` on flush. It is designed for normal
+resume after graceful shutdown. A request that has already been popped into an
+in-flight task is not checkpointed as pending; if the process crashes after
+dispatch and before completion, that request may need to be rescheduled by the
+application or a future lease-based frontier.
+
 ## RedisFrontier
 
 Requires `features = ["redis-frontier"]`. Distributes the request queue across

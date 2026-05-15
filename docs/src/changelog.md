@@ -12,6 +12,13 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.2.2 - 2026-05-15
+
+- Hardened `FileFrontier` flushes by writing temporary files before replacing
+  persisted queue and seen state.
+- Documented `FileFrontier` resume guarantees and the current in-flight crash
+  recovery limitation.
+
 ### 0.2.1 - 2026-05-15
 
 - Fixed scheduler fairness when delayed or domain-blocked requests share a
