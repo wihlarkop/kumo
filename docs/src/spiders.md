@@ -99,13 +99,18 @@ impl Spider for MySpider {
 
 ```rust
 fn on_error(&self, url: &str, err: &KumoError) -> ErrorPolicy {
-    if url.contains("/optional/") {
+    if matches!(err.kind(), kumo::error::KumoErrorKind::DomainNotAllowed)
+        || url.contains("/optional/")
+    {
         ErrorPolicy::Skip    // log and continue
     } else {
         ErrorPolicy::Abort   // stop the entire crawl
     }
 }
 ```
+
+Use `err.kind()` when you need stable error classification for metrics,
+logging, or custom retry decisions. This avoids matching on display text.
 
 ## Domain & Depth Filtering
 

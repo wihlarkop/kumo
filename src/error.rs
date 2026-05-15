@@ -1,18 +1,31 @@
 use thiserror::Error;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum KumoErrorKind {
+    Fetch,
+    Parse,
+    Store,
+    InvalidUrl,
+    DepthExceeded,
+    DomainNotAllowed,
+    Llm,
+    Browser,
+    HttpStatus,
+}
+
 #[derive(Debug, Error)]
 pub enum KumoError {
     #[error("fetch error: {0}")]
     Fetch(#[from] reqwest::Error),
 
-    #[error("parse error — {context}: {source}")]
+    #[error("parse error - {context}: {source}")]
     Parse {
         context: String,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,
     },
 
-    #[error("store error — {context}: {source}")]
+    #[error("store error - {context}: {source}")]
     Store {
         context: String,
         #[source]
@@ -51,6 +64,32 @@ impl std::fmt::Display for Msg {
 impl std::error::Error for Msg {}
 
 impl KumoError {
+    pub fn kind(&self) -> KumoErrorKind {
+        match self {
+            Self::Fetch(_) => KumoErrorKind::Fetch,
+            Self::Parse { .. } => KumoErrorKind::Parse,
+            Self::Store { .. } => KumoErrorKind::Store,
+            Self::InvalidUrl(_) => KumoErrorKind::InvalidUrl,
+            Self::DepthExceeded => KumoErrorKind::DepthExceeded,
+            Self::DomainNotAllowed(_) => KumoErrorKind::DomainNotAllowed,
+            Self::Llm(_) => KumoErrorKind::Llm,
+            Self::Browser(_) => KumoErrorKind::Browser,
+            Self::HttpStatus { .. } => KumoErrorKind::HttpStatus,
+        }
+    }
+
+    pub fn invalid_url(url: impl Into<String>) -> Self {
+        Self::InvalidUrl(url.into())
+    }
+
+    pub fn llm(message: impl Into<String>) -> Self {
+        Self::Llm(message.into())
+    }
+
+    pub fn browser(message: impl Into<String>) -> Self {
+        Self::Browser(message.into())
+    }
+
     /// Construct a `Parse` variant from a real source error.
     pub fn parse(
         context: impl Into<String>,

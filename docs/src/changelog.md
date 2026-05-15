@@ -12,6 +12,13 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.2.5 - 2026-05-15
+
+- Added `KumoErrorKind` and `KumoError::kind()` for stable error
+  classification without string matching.
+- Added ergonomic constructors for invalid URL, LLM, and browser errors.
+- Cleaned parse/store error display text and strengthened error source tests.
+
 ### 0.2.4 - 2026-05-15
 
 - Added robots.txt `Crawl-delay` parsing for matching user-agent groups.
