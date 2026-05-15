@@ -2,6 +2,8 @@ use std::time::Duration;
 
 use crate::error::KumoError;
 
+const JITTER_FRACTION: f64 = 0.25;
+
 /// Configures how the engine retries failed fetch attempts.
 ///
 /// # Example
@@ -66,23 +68,61 @@ impl RetryPolicy {
         self
     }
 
-    /// Compute the sleep duration before retry `attempt` (0-indexed).
-    /// Result is capped at `max_delay`. If jitter is on, adds up to 25% extra.
-    pub(crate) fn delay_for(&self, attempt: u32) -> Duration {
+    /// Number of retries allowed by this policy.
+    ///
+    /// Total fetch calls can be up to `max_attempts + 1`, because the first
+    /// fetch is not counted as a retry.
+    pub fn max_attempts(&self) -> u32 {
+        self.max_attempts
+    }
+
+    /// Return the configured base delay before exponential backoff.
+    pub fn base_delay_value(&self) -> Duration {
+        self.base_delay
+    }
+
+    /// Return the maximum retry delay cap.
+    pub fn max_delay_value(&self) -> Duration {
+        self.max_delay
+    }
+
+    /// Return whether this policy adds jitter to retry delays.
+    pub fn jitter_enabled(&self) -> bool {
+        self.jitter
+    }
+
+    /// Return the configured HTTP status filter.
+    ///
+    /// An empty slice means all `KumoError::HttpStatus` and `KumoError::Fetch`
+    /// errors are retryable.
+    pub fn retriable_statuses(&self) -> &[u16] {
+        &self.retriable_statuses
+    }
+
+    /// Compute the deterministic exponential-backoff delay before retry
+    /// `attempt` (0-indexed), excluding random jitter.
+    pub fn delay_for_attempt(&self, attempt: u32) -> Duration {
         let factor = 2_u32.saturating_pow(attempt);
-        let raw = self.base_delay.saturating_mul(factor).min(self.max_delay);
-        if self.jitter {
-            use rand::Rng;
-            let extra_frac = rand::rng().random_range(0.0_f64..0.25);
-            let extra = Duration::from_secs_f64(raw.as_secs_f64() * extra_frac);
-            (raw + extra).min(self.max_delay)
-        } else {
-            raw
+        self.base_delay.saturating_mul(factor).min(self.max_delay)
+    }
+
+    /// Return the inclusive delay range that can be produced for `attempt`.
+    ///
+    /// When jitter is disabled, both bounds are the deterministic delay.
+    /// When jitter is enabled, the upper bound includes up to 25% extra delay
+    /// and is still capped by `max_delay`.
+    pub fn delay_bounds_for_attempt(&self, attempt: u32) -> (Duration, Duration) {
+        let base = self.delay_for_attempt(attempt);
+        if !self.jitter {
+            return (base, base);
         }
+
+        let max_jitter = Duration::from_secs_f64(base.as_secs_f64() * JITTER_FRACTION);
+        (base, (base + max_jitter).min(self.max_delay))
     }
 
     /// Return `true` if `err` should trigger a retry under this policy.
-    pub(crate) fn is_retriable(&self, err: &KumoError) -> bool {
+    pub fn is_retriable_error(&self, err: &KumoError) -> bool {
         match err {
             KumoError::HttpStatus { status, .. } => {
                 if self.retriable_statuses.is_empty() {
@@ -95,5 +135,24 @@ impl RetryPolicy {
             // Never retry parse, store, domain, depth, llm, or browser errors.
             _ => false,
         }
+    }
+
+    /// Compute the sleep duration before retry `attempt` (0-indexed).
+    /// Result is capped at `max_delay`. If jitter is on, adds up to 25% extra.
+    pub(crate) fn delay_for(&self, attempt: u32) -> Duration {
+        let raw = self.delay_for_attempt(attempt);
+        if self.jitter {
+            use rand::Rng;
+            let extra_frac = rand::rng().random_range(0.0_f64..JITTER_FRACTION);
+            let extra = Duration::from_secs_f64(raw.as_secs_f64() * extra_frac);
+            (raw + extra).min(self.max_delay)
+        } else {
+            raw
+        }
+    }
+
+    /// Return `true` if `err` should trigger a retry under this policy.
+    pub(crate) fn is_retriable(&self, err: &KumoError) -> bool {
+        self.is_retriable_error(err)
     }
 }

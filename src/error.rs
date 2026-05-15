@@ -90,6 +90,30 @@ impl KumoError {
         Self::Browser(message.into())
     }
 
+    pub fn http_status(status: u16, url: impl Into<String>) -> Self {
+        Self::HttpStatus {
+            status,
+            url: url.into(),
+        }
+    }
+
+    pub fn status_code(&self) -> Option<u16> {
+        match self {
+            Self::HttpStatus { status, .. } => Some(*status),
+            Self::Fetch(err) => err.status().map(|status| status.as_u16()),
+            _ => None,
+        }
+    }
+
+    pub fn url(&self) -> Option<&str> {
+        match self {
+            Self::HttpStatus { url, .. } => Some(url),
+            Self::Fetch(err) => err.url().map(|url| url.as_str()),
+            Self::InvalidUrl(url) | Self::DomainNotAllowed(url) => Some(url.as_str()),
+            _ => None,
+        }
+    }
+
     /// Construct a `Parse` variant from a real source error.
     pub fn parse(
         context: impl Into<String>,

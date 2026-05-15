@@ -12,6 +12,15 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.2.6 - 2026-05-15
+
+- Added public `RetryPolicy` introspection helpers for retry count, delay
+  bounds, jitter state, status filters, and retryable error classification.
+- Added `KumoError::http_status()`, `KumoError::status_code()`, and
+  `KumoError::url()` helpers without changing existing error variants.
+- Fixed retry middleware documentation so `StatusRetry` and `RetryPolicy`
+  examples match the current API.
+
 ### 0.2.5 - 2026-05-15
 
 - Added `KumoErrorKind` and `KumoError::kind()` for stable error

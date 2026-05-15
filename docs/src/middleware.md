@@ -48,12 +48,23 @@ Retry on specific HTTP status codes:
 ```rust
 .middleware(
     StatusRetry::new()
-        .on_status(429)
-        .on_status(503)
-        .max_attempts(3)
-        .base_delay(Duration::from_millis(500))
 )
 ```
+
+`StatusRetry::new()` retries 429, 500, 502, 503, and 504 by default. Use
+`StatusRetry::with_codes(vec![429, 503])` to replace that global set, or
+`for_pattern()` to override retryable statuses for matching URLs:
+
+```rust
+.middleware(
+    StatusRetry::with_codes(vec![429, 503])
+        .for_pattern(r"\.(js|css|png|jpg)$", vec![])
+)
+```
+
+`StatusRetry` only turns matching responses into retryable HTTP-status errors.
+The engine's `.retry()` or `.retry_policy()` setting controls how many times
+the request is retried and how long each retry waits.
 
 ## ProxyRotator
 
@@ -93,11 +104,16 @@ For full retry control, use `.retry_policy()` instead of `.retry()`:
     RetryPolicy::new(3)
         .base_delay(Duration::from_millis(200))
         .max_delay(Duration::from_secs(30))
-        .jitter(true)          // add random ±25% jitter
+        .jitter(true)          // add up to 25% extra delay
         .on_status(429)
         .on_status(503)
 )
 ```
+
+`RetryPolicy::new(3)` means up to three retries after the initial fetch. Without
+`.on_status()`, the policy retries any `KumoError::HttpStatus` or
+`KumoError::Fetch`. Once a status filter is configured, only matching
+HTTP-status errors are retried.
 
 ## Custom Middleware
 
