@@ -7,7 +7,7 @@ use std::collections::HashMap;
 ///
 /// # Example
 /// ```rust,ignore
-/// DefaultHeaders::new().user_agent("kumo/0.1 (+https://github.com/you/kumo)")
+/// DefaultHeaders::new().user_agent("kumo/0.2 (+https://github.com/you/kumo)")
 /// ```
 pub struct DefaultHeaders {
     headers: HashMap<String, String>,

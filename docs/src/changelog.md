@@ -1,16 +1,28 @@
 ---
-description: kumo and kumo-derive release history — features, fixes, and breaking changes by version.
+description: kumo and kumo-derive release history - features, fixes, and breaking changes by version.
 ---
 
 # Changelog
 
 Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/releases).
 
-`kumo` and `kumo-derive` are versioned independently — one may release without the other.
+`kumo` and `kumo-derive` are versioned independently - one may release without the other.
 
 ---
 
 ## kumo
+
+### 0.2.10 - 2026-05-16
+
+- Polished release-facing README, crate metadata, and docs text for the `0.2.x`
+  line.
+- Aligned getting-started requirements with the crate MSRV
+  (`rust-version = "1.88"`).
+- Added `production_crawler.rs`, a runnable production crawler template covering
+  robots.txt, per-domain politeness, jitter, retry status filtering,
+  `Retry-After`, `StatusRetry`, persistent `FileFrontier` recovery state,
+  metrics, and JSONL storage.
+- Updated release checklist notes for the current `0.2.x` publish flow.
 
 ### 0.2.9 - 2026-05-16
 

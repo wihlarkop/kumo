@@ -7,9 +7,9 @@
   <img src="assets/logo.png" alt="kumo logo" width="200">
 </p>
 
-An async web crawling framework for Rust — Scrapy for Rust.
+An async web crawling framework for Rust - Scrapy for Rust.
 
-**kumo** (蜘蛛/雲 — spider/cloud) gives you a trait-based, async-first API for writing spiders that scrape, follow links, and store data.
+**kumo** means spider/cloud in Japanese. It gives you a trait-based, async-first API for writing spiders that scrape, follow links, and store data.
 
 ## Why Kumo?
 
@@ -19,56 +19,56 @@ An async web crawling framework for Rust — Scrapy for Rust.
 | Type safety | Compile-time | Runtime | Partial |
 | Async model | Tokio (true async) | Twisted (event loop) | goroutines |
 | Memory safety | Guaranteed | GC | GC |
-| CSS / XPath / Regex / JSONPath | ✓ | ✓ | CSS only |
-| `#[derive(Extract)]` macro | ✓ | ✗ | ✗ |
-| LLM extraction (Claude / OpenAI / Gemini / Ollama) | ✓ | ✗ | ✗ |
-| Browser / JS rendering | ✓ (chromiumoxide) | ✓ (Playwright) | ✗ |
-| Stealth mode (TLS/HTTP2 fingerprint spoofing) | ✓ | ✗ | ✗ |
-| Distributed frontier (Redis) | ✓ | ✓ (scrapy-redis) | ✗ |
-| Item stream API | ✓ | ✗ | ✗ |
-| OpenTelemetry export | ✓ | ✗ | ✗ |
-| Pluggable stores (JSONL, CSV, Postgres, SQLite, MySQL) | ✓ | ✓ (pipelines) | ✗ |
-| Single binary deploy | ✓ | ✗ | ✓ |
+| CSS / XPath / Regex / JSONPath | Yes | Yes | CSS only |
+| `#[derive(Extract)]` macro | Yes | No | No |
+| LLM extraction (Claude / OpenAI / Gemini / Ollama) | Yes | No | No |
+| Browser / JS rendering | Yes (chromiumoxide) | Yes (Playwright) | No |
+| Stealth mode (TLS/HTTP2 fingerprint spoofing) | Yes | No | No |
+| Distributed frontier (Redis) | Yes | Yes (scrapy-redis) | No |
+| Item stream API | Yes | No | No |
+| OpenTelemetry export | Yes | No | No |
+| Pluggable stores (JSONL, CSV, Postgres, SQLite, MySQL) | Yes | Yes (pipelines) | No |
+| Single binary deploy | Yes | No | Yes |
 | Binary size / startup | Small / instant | Large / slow | Small / fast |
 
-**Benchmark results** — 1 000 books, concurrency 16, median of 3 runs:
+**Benchmark results** - 1,000 books, concurrency 16, median of 3 runs:
 
 | | **kumo** | Colly (Go) | Scrapy (Python) |
 |---|---|---|---|
-| Real site — Items/s | **76.7** | 73.5 | 53.3 |
-| Local server — Items/s | **12 346** | 4 098 | 180 |
+| Real site - Items/s | **76.7** | 73.5 | 53.3 |
+| Local server - Items/s | **12,346** | 4,098 | 180 |
 | Peak RSS | **12.5 MB** | 31.4 MB | 77.2 MB |
 
-On raw parsing throughput (local server, no network): **3.0× faster than Colly, 69× faster than Scrapy**. See the [benchmark folder](https://github.com/wihlarkop/kumo/tree/main/benchmark) for full methodology and reproduction steps.
+On raw parsing throughput (local server, no network): **3.0x faster than Colly, 69x faster than Scrapy**. See the [benchmark folder](https://github.com/wihlarkop/kumo/tree/main/benchmark) for full methodology and reproduction steps.
 
 ## Features
 
-- **Async-first** — Tokio-based with bounded concurrency via `JoinSet`
-- **CSS selectors** — `res.css(".selector")` backed by `scraper`
-- **XPath selectors** — `res.xpath("//h1/text()")` for XML/HTML documents (feature: `xpath`)
-- **Regex selectors** — `res.re(r"\d+")`, `el.re_first(r"...")`, works on `Response`, `Element`, and `ElementList`
-- **JSONPath selectors** — `res.jsonpath("$.store.books[*].title")` for JSON responses (feature: `jsonpath`)
-- **`#[derive(Extract)]`** — generate CSS extraction boilerplate from field annotations (feature: `derive`)
-- **Rate limiting** — token-bucket `RateLimiter` via `governor`
-- **Auto-throttle** — adaptive delay based on EWMA latency and 429/503 back-off
-- **Retry with backoff** — exponential backoff via `.retry(max, base_delay)`
-- **Item stream** — `CrawlEngine::stream()` returns an async `Stream` for real-time item consumption
-- **robots.txt** — per-domain fetch + cache, enabled by default
-- **Bloom filter dedup** — O(1) URL deduplication, 1M URLs at 0.1% false-positive rate
-- **Request scheduling** — `CrawlRequest` supports priority, headers, method/body, metadata, and `dont_filter`
-- **HTTP cache** — disk-backed response cache via `.http_cache(dir)`, optional TTL
-- **Link extractor** — `LinkExtractor` with allow/deny regex, `allow_domains`, `canonicalize`, `restrict_css`
-- **Pluggable storage** — `JsonlStore`, `JsonStore`, `CsvStore`, `StdoutStore`, PostgreSQL, SQLite, MySQL
-- **Middleware chain** — proxy rotation, custom headers, rate limiting, auto-throttle
-- **Domain + depth filtering** — `allowed_domains()` and `max_depth()` on the `Spider` trait
-- **Multi-spider engine** — run multiple spiders concurrently via `.add_spider()` / `.run_all()`
-- **LLM extraction** — extract structured data without selectors using Claude, OpenAI, Gemini, or Ollama
-- **Browser fetcher** — headless Chromium via chromiumoxide for JS-rendered pages (feature: `browser`)
-- **Distributed frontier** — Redis-backed URL frontier for multi-process crawls (feature: `redis-frontier`)
-- **Persistent frontier** — file-backed URL frontier that survives restarts (feature: `persistence`)
-- **Sitemap spider** — `SitemapSpider` reads `sitemap.xml` and sitemap index files
-- **Metrics** — periodic stats snapshots via `tracing::info!` using `.metrics_interval()`
-- **OpenTelemetry** — OTLP/gRPC export of all spans to Jaeger, Grafana Tempo, Datadog, etc. (feature: `otel`)
+- **Async-first** - Tokio-based with bounded concurrency via `JoinSet`
+- **CSS selectors** - `res.css(".selector")` backed by `scraper`
+- **XPath selectors** - `res.xpath("//h1/text()")` for XML/HTML documents (feature: `xpath`)
+- **Regex selectors** - `res.re(r"\d+")`, `el.re_first(r"...")`, works on `Response`, `Element`, and `ElementList`
+- **JSONPath selectors** - `res.jsonpath("$.store.books[*].title")` for JSON responses (feature: `jsonpath`)
+- **`#[derive(Extract)]`** - generate CSS extraction boilerplate from field annotations (feature: `derive`)
+- **Rate limiting** - token-bucket `RateLimiter` via `governor`
+- **Auto-throttle** - adaptive delay based on EWMA latency and 429/503 back-off
+- **Retry with backoff** - exponential backoff, status filtering, jitter, and `Retry-After` support
+- **Item stream** - `CrawlEngine::stream()` returns an async `Stream` for real-time item consumption
+- **robots.txt** - per-domain fetch + cache, enabled by default, with `Crawl-delay` support
+- **Bloom filter dedup** - O(1) URL deduplication, 1M URLs at 0.1% false-positive rate
+- **Request scheduling** - `CrawlRequest` supports priority, headers, method/body, metadata, and `dont_filter`
+- **HTTP cache** - disk-backed response cache via `.http_cache(dir)`, optional TTL
+- **Link extractor** - `LinkExtractor` with allow/deny regex, `allow_domains`, `canonicalize`, `restrict_css`
+- **Pluggable storage** - `JsonlStore`, `JsonStore`, `CsvStore`, `StdoutStore`, PostgreSQL, SQLite, MySQL
+- **Middleware chain** - proxy rotation, custom headers, status retry, rate limiting, auto-throttle
+- **Domain + depth filtering** - `allowed_domains()` and `max_depth()` on the `Spider` trait
+- **Multi-spider engine** - run multiple spiders concurrently via `.add_spider()` / `.run_all()`
+- **LLM extraction** - extract structured data without selectors using Claude, OpenAI, Gemini, or Ollama
+- **Browser fetcher** - headless Chromium via chromiumoxide for JS-rendered pages (feature: `browser`)
+- **Distributed frontier** - Redis-backed URL frontier for multi-process crawls (feature: `redis-frontier`)
+- **Persistent frontier** - file-backed URL frontier that survives restarts and exposes recovered state (feature: `persistence`)
+- **Sitemap spider** - `SitemapSpider` reads `sitemap.xml` and sitemap index files
+- **Metrics** - periodic stats snapshots via `tracing::info!` using `.metrics_interval()`
+- **OpenTelemetry** - OTLP/gRPC export of all spans to Jaeger, Grafana Tempo, Datadog, etc. (feature: `otel`)
 
 ## Installation
 
@@ -138,7 +138,7 @@ async fn main() -> Result<(), KumoError> {
 }
 ```
 
-For more examples — rate limiting, database stores, LLM extraction, browser mode, and all selector types — see the [`examples/`](examples/) folder.
+For more examples - production crawl controls, rate limiting, database stores, LLM extraction, browser mode, and all selector types - see the [`examples/`](examples/) folder.
 
 ## Documentation
 
@@ -150,7 +150,7 @@ Full documentation at **[kumo.wihlarkop.com](https://kumo.wihlarkop.com)**
 - [derive(Extract)](https://kumo.wihlarkop.com/derive/)
 - [Middleware](https://kumo.wihlarkop.com/middleware/)
 - [Stores](https://kumo.wihlarkop.com/stores/)
-- [Advanced topics](https://kumo.wihlarkop.com/advanced/stream/) — item stream, OpenTelemetry, stealth, browser, and more
+- [Advanced topics](https://kumo.wihlarkop.com/advanced/stream/) - item stream, OpenTelemetry, stealth, browser, and more
 - [Examples](https://kumo.wihlarkop.com/examples/)
 - [Feature Flags](https://kumo.wihlarkop.com/feature-flags/)
 

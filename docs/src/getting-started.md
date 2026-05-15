@@ -1,12 +1,12 @@
 ---
-description: Install kumo and write your first Rust web spider in minutes — step-by-step guide with a complete working example.
+description: Install kumo and write your first Rust web spider in minutes - step-by-step guide with a complete working example.
 ---
 
 # Getting Started
 
 ## Prerequisites
 
-- Rust 1.75+ (stable toolchain)
+- Rust 1.88+ (stable toolchain)
 - `tokio` runtime
 - `async-trait` crate
 
@@ -28,10 +28,10 @@ For optional features (database stores, browser mode, LLM extraction) see [Featu
 
 A spider has four required parts:
 
-1. **An item type** — a `Serialize` struct representing what you scrape
-2. **`name()`** — a unique identifier for this spider
-3. **`start_urls()`** — where the crawl begins
-4. **`parse()`** — how to extract items and follow links from a response
+1. **An item type** - a `Serialize` struct representing what you scrape
+2. **`name()`** - a unique identifier for this spider
+3. **`start_urls()`** - where the crawl begins
+4. **`parse()`** - how to extract items and follow links from a response
 
 ```rust
 use kumo::prelude::*;
@@ -116,10 +116,14 @@ CrawlEngine::builder()
 The scheduler handles request priority, per-domain delay, delayed retries,
 fingerprint-based deduplication, and crawl stats.
 
+For a fuller production-style setup with `Retry-After` aware retries,
+`FileFrontier` resume state, metrics, robots.txt, and JSONL storage, see
+[`production_crawler.rs`](https://github.com/wihlarkop/kumo/blob/main/examples/production_crawler.rs).
+
 ## What's Next?
 
-- [Spiders](spiders.md) — full Spider trait API, lifecycle hooks, error handling
-- [Extractors](extractors.md) — CSS, XPath, Regex, JSONPath, `#[derive(Extract)]`, LLM
-- [Stores](stores.md) — JSONL, JSON, CSV, PostgreSQL, SQLite, MySQL
-- [Middleware](middleware.md) — rate limiting, auto-throttle, retry, proxy rotation
+- [Spiders](spiders.md) - full Spider trait API, lifecycle hooks, error handling
+- [Extractors](extractors.md) - CSS, XPath, Regex, JSONPath, `#[derive(Extract)]`, LLM
+- [Stores](stores.md) - JSONL, JSON, CSV, PostgreSQL, SQLite, MySQL
+- [Middleware](middleware.md) - rate limiting, auto-throttle, retry, proxy rotation
 

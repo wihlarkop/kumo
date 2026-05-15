@@ -32,7 +32,7 @@ pub struct RetryPolicy {
 impl RetryPolicy {
     /// Create a policy with `max_attempts` retries, 500ms base delay, 60s cap, no jitter.
     ///
-    /// `max_attempts` is the number of *retries* — total fetch calls = `max_attempts + 1`.
+    /// `max_attempts` is the number of *retries* - total fetch calls = `max_attempts + 1`.
     pub fn new(max_attempts: u32) -> Self {
         Self {
             max_attempts,
@@ -53,7 +53,7 @@ impl RetryPolicy {
         self
     }
 
-    /// Add ≤25% random jitter to each delay so concurrent retries don't thundering-herd.
+    /// Add up to 25% random jitter to each delay so concurrent retries do not thundering-herd.
     pub fn jitter(mut self, enabled: bool) -> Self {
         self.jitter = enabled;
         self

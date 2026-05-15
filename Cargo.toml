@@ -4,11 +4,11 @@ resolver = "2"
 
 [package]
 name = "kumo"
-version = "0.2.9"
+version = "0.2.10"
 edition = "2024"
 rust-version = "1.88"
 authors = ["wihlarkop"]
-description = "An async web crawling framework for Rust — Scrapy for Rust"
+description = "An async web crawling framework for Rust - Scrapy for Rust"
 license = "MIT"
 repository = "https://github.com/wihlarkop/kumo"
 homepage = "https://github.com/wihlarkop/kumo"
@@ -24,7 +24,7 @@ exclude = [
   "lefthook.yml",
 ]
 
-# ── Feature flags ─────────────────────────────────────────────────────────────
+# Feature flags
 
 [features]
 default = []
@@ -50,8 +50,8 @@ browser = ["dep:chromiumoxide", "dep:futures"]
 stealth = ["dep:rquest", "dep:rquest-util"]   # TLS/HTTP2 fingerprint spoofing; requires cmake + nasm
 
 # Frontiers
-persistence    = []                      # FileFrontier — survives restarts
-redis-frontier = ["dep:redis"]           # RedisFrontier — distributed crawling
+persistence    = []                      # FileFrontier - survives restarts
+redis-frontier = ["dep:redis"]           # RedisFrontier - distributed crawling
 
 # Derive macro
 derive = ["dep:kumo-derive"]
@@ -70,7 +70,7 @@ cloud-s3    = ["cloud", "object_store/aws"]
 cloud-gcs   = ["cloud", "object_store/gcp"]
 cloud-azure = ["cloud", "object_store/azure"]
 
-# ── Dependencies ──────────────────────────────────────────────────────────────
+# Dependencies
 
 [dependencies]
 
@@ -121,7 +121,7 @@ rand = "0.9"
 tracing            = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
-# Optional — OpenTelemetry OTLP export
+# Optional - OpenTelemetry OTLP export
 opentelemetry         = { version = "0.27", optional = true }
 opentelemetry_sdk     = { version = "0.27", optional = true, features = ["rt-tokio"] }
 opentelemetry-otlp    = { version = "0.27", optional = true, features = ["grpc-tonic"] }
@@ -133,35 +133,35 @@ governor = "0.10.4"
 # Robots.txt
 texting_robots = "0.2.2"
 
-# Optional — derive macro
+# Optional - derive macro
 kumo-derive = { version = "0.1.2", path = "kumo-derive", optional = true }
 
-# Optional — selectors
+# Optional - selectors
 jsonpath-rust = { version = "1.0.4", optional = true }
 sxd-xpath    = { version = "0.4.2",  optional = true }
 sxd-document = { version = "0.3.2",  optional = true }
 sxd_html     = { version = "0.1.2",  optional = true }
 
-# Optional — browser fetcher
+# Optional - browser fetcher
 chromiumoxide = { version = "0.9.1", optional = true }
 futures       = { version = "0.3.32", optional = true, default-features = false, features = ["std"] }
 
-# Optional — stealth fetcher (TLS/HTTP2 fingerprint spoofing via BoringSSL)
+# Optional - stealth fetcher (TLS/HTTP2 fingerprint spoofing via BoringSSL)
 rquest      = { version = "5.1.0", optional = true, features = ["cookies"] }
 rquest-util = { version = "2.2.1", optional = true }
 
-# Optional — LLM extraction
+# Optional - LLM extraction
 schemars = { version = "1.2.1", optional = true, features = ["derive"] }
 rig-core = { version = "0.35.0", optional = true }
 
-# Optional — database stores
+# Optional - database stores
 sqlx  = { version = "0.8.6", optional = true, features = ["runtime-tokio-rustls", "json"] }
 redis = { version = "1.2.0", optional = true, features = ["tokio-rustls-comp"] }
 
-# Optional — cloud storage (S3, GCS, Azure Blob, local, memory via object_store)
+# Optional - cloud storage (S3, GCS, Azure Blob, local, memory via object_store)
 object_store = { version = "0.11", optional = true }
 
-# ── Dev dependencies ──────────────────────────────────────────────────────────
+# Dev dependencies
 
 [dev-dependencies]
 criterion = { version = "0.7", features = ["async_tokio"] }
@@ -169,7 +169,7 @@ mockito  = "1.7.2"
 tempfile = "3.27.0"
 trybuild = { version = "1.0.116", features = ["diff"] }
 
-# ── Examples ──────────────────────────────────────────────────────────────────
+# Examples
 
 [[test]]
 name = "derive_macro"
@@ -204,6 +204,10 @@ name = "link_extractor"
 
 [[example]]
 name = "http_cache"
+
+[[example]]
+name = "production_crawler"
+required-features = ["persistence"]
 
 [[example]]
 name = "xpath"
