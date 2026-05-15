@@ -21,7 +21,7 @@ type FrontierOverride = Option<Arc<dyn Frontier>>;
 /// ```rust,ignore
 /// let stats = CrawlEngine::builder()
 ///     .concurrency(8)
-///     .middleware(DefaultHeaders::new().user_agent("kumo/0.1"))
+///     .middleware(DefaultHeaders::new().user_agent("kumo/0.2"))
 ///     .store(JsonlStore::new("items.jsonl"))
 ///     .run(MySpider)
 ///     .await?;
@@ -184,7 +184,7 @@ impl CrawlEngine {
     }
 
     /// Expected number of unique URLs this crawl will visit (default: 1_000_000).
-    /// Used to size the Bloom filter for URL deduplication â€” set lower for small
+    /// Used to size the Bloom filter for URL deduplication - set lower for small
     /// crawls to save memory, higher for large crawls to reduce false-positive skips.
     pub fn max_urls(mut self, n: usize) -> Self {
         self.max_urls = n;
@@ -210,7 +210,7 @@ impl CrawlEngine {
 
     /// Use a custom fetcher instead of the default `HttpFetcher`.
     ///
-    /// Primarily useful for testing â€” inject a [`MockFetcher`](crate::fetch::MockFetcher)
+    /// Primarily useful for testing - inject a [`MockFetcher`](crate::fetch::MockFetcher)
     /// to run spiders against predefined HTML without any network access.
     pub fn fetcher(mut self, f: impl Fetcher + 'static) -> Self {
         self.fetcher_override = Some(Arc::new(f));
@@ -219,7 +219,7 @@ impl CrawlEngine {
 
     /// Cache HTTP responses to disk in `dir`.
     ///
-    /// On subsequent runs, cached responses are served directly â€” no network requests.
+    /// On subsequent runs, cached responses are served directly - no network requests.
     /// Ideal during development to speed up spider iteration.
     /// Use `.cache_ttl()` to set an expiry duration.
     pub fn http_cache(mut self, dir: impl Into<std::path::PathBuf>) -> Result<Self, KumoError> {
@@ -270,7 +270,7 @@ impl CrawlEngine {
     /// Set the internal channel buffer size for [`CrawlEngine::stream`].
     ///
     /// When the buffer is full the crawl pauses until the consumer reads more
-    /// items â€” this is the natural backpressure mechanism. Default: `100`.
+    /// items - this is the natural backpressure mechanism. Default: `100`.
     pub fn stream_buffer(mut self, n: usize) -> Self {
         self.stream_buffer = n;
         self

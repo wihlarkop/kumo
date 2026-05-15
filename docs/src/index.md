@@ -1,5 +1,5 @@
 ---
-description: kumo is an async web crawling framework for Rust — type-safe spiders, CSS/XPath/LLM extraction, pluggable stores, and OpenTelemetry built in.
+description: kumo is an async web crawling framework for Rust - type-safe spiders, CSS/XPath/LLM extraction, pluggable stores, and OpenTelemetry built in.
 ---
 
 # kumo
@@ -8,9 +8,12 @@ description: kumo is an async web crawling framework for Rust — type-safe spid
 [![Crates.io](https://img.shields.io/crates/v/kumo.svg)](https://crates.io/crates/kumo)
 [![docs.rs](https://docs.rs/kumo/badge.svg)](https://docs.rs/kumo)
 
-**kumo** (蜘蛛/雲 — spider/cloud) is an async web crawling framework for Rust — **Scrapy for Rust**.
+**kumo** means spider/cloud in Japanese. It is an async web crawling framework
+for Rust - **Scrapy for Rust**.
 
-It gives you a trait-based, async-first API for writing spiders that scrape, follow links, and store structured data — with batteries included for production crawls.
+It gives you a trait-based, async-first API for writing spiders that scrape,
+follow links, and store structured data - with batteries included for production
+crawls.
 
 ## Why kumo?
 
@@ -20,27 +23,29 @@ It gives you a trait-based, async-first API for writing spiders that scrape, fol
 | Type safety | Compile-time | Runtime | Partial |
 | Async model | Tokio (true async) | Twisted (event loop) | goroutines |
 | Memory safety | Guaranteed | GC | GC |
-| CSS / XPath / Regex / JSONPath | ✅ | ✅ | CSS only |
-| `#[derive(Extract)]` macro | ✅ | ❌ | ❌ |
-| LLM extraction (Claude / OpenAI / Gemini / Ollama) | ✅ | ❌ | ❌ |
-| Browser / JS rendering | ✅ (chromiumoxide) | ✅ (Playwright) | ❌ |
-| Stealth mode (TLS/HTTP2 fingerprint spoofing) | ✅ | ❌ | ❌ |
-| Distributed frontier (Redis) | ✅ | ✅ (scrapy-redis) | ❌ |
-| Item stream API | ✅ | ❌ | ❌ |
-| OpenTelemetry export | ✅ | ❌ | ❌ |
-| Pluggable stores (JSONL, CSV, Postgres, SQLite, MySQL) | ✅ | ✅ (pipelines) | ❌ |
-| Single binary deploy | ✅ | ❌ | ✅ |
+| CSS / XPath / Regex / JSONPath | Yes | Yes | CSS only |
+| `#[derive(Extract)]` macro | Yes | No | No |
+| LLM extraction (Claude / OpenAI / Gemini / Ollama) | Yes | No | No |
+| Browser / JS rendering | Yes (chromiumoxide) | Yes (Playwright) | No |
+| Stealth mode (TLS/HTTP2 fingerprint spoofing) | Yes | No | No |
+| Distributed frontier (Redis) | Yes | Yes (scrapy-redis) | No |
+| Item stream API | Yes | No | No |
+| OpenTelemetry export | Yes | No | No |
+| Pluggable stores (JSONL, CSV, Postgres, SQLite, MySQL) | Yes | Yes (pipelines) | No |
+| Single binary deploy | Yes | No | Yes |
 | Binary size / startup | Small / instant | Large / slow | Small / fast |
 
-**Benchmark results** — 1 000 books, concurrency 16, median of 3 runs:
+**Benchmark results** - 1,000 books, concurrency 16, median of 3 runs:
 
 | | **kumo** | Colly (Go) | Scrapy (Python) |
 |---|---|---|---|
-| Real site — Items/s | **76.7** | 73.5 | 53.3 |
-| Local server — Items/s | **12 346** | 4 098 | 180 |
+| Real site - Items/s | **76.7** | 73.5 | 53.3 |
+| Local server - Items/s | **12,346** | 4,098 | 180 |
 | Peak RSS | **12.5 MB** | 31.4 MB | 77.2 MB |
 
-On raw parsing throughput (local server, no network): **3.0× faster than Colly, 69× faster than Scrapy**. Full methodology and reproduction steps in [`benchmark/`](https://github.com/wihlarkop/kumo/tree/main/benchmark).
+On raw parsing throughput (local server, no network): **3.0x faster than Colly,
+69x faster than Scrapy**. Full methodology and reproduction steps in
+[`benchmark/`](https://github.com/wihlarkop/kumo/tree/main/benchmark).
 
 ## Quick Install
 
@@ -104,6 +109,5 @@ async fn main() -> Result<(), KumoError> {
 }
 ```
 
-[Get started →](getting-started.md){ .md-button .md-button--primary }
-[Feature flags →](feature-flags.md){ .md-button }
-
+[Get started ->](getting-started.md){ .md-button .md-button--primary }
+[Feature flags ->](feature-flags.md){ .md-button }

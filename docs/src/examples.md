@@ -8,15 +8,15 @@ All examples live in the [`examples/`](https://github.com/wihlarkop/kumo/tree/ma
 
 ## Basic Spiders
 
-### `quotes.rs` — minimal spider
+### `quotes.rs` - minimal spider
 
-Scrapes all quotes from [quotes.toscrape.com](https://quotes.toscrape.com), following pagination. The simplest possible kumo spider — CSS selectors and `JsonlStore`.
+Scrapes all quotes from [quotes.toscrape.com](https://quotes.toscrape.com), following pagination. The simplest possible kumo spider - CSS selectors and `JsonlStore`.
 
 ```bash
 cargo run --example quotes
 ```
 
-### `books.rs` — rate limiting + retry
+### `books.rs` - rate limiting + retry
 
 Scrapes all 1000 books from [books.toscrape.com](https://books.toscrape.com) across 50 pages. Demonstrates `RateLimiter`, exponential retry, `allowed_domains`, `max_depth`, and `JsonStore`.
 
@@ -24,7 +24,7 @@ Scrapes all 1000 books from [books.toscrape.com](https://books.toscrape.com) acr
 cargo run --example books
 ```
 
-### `books_derive.rs` — `#[derive(Extract)]`
+### `books_derive.rs` - `#[derive(Extract)]`
 
 Same as `books.rs` but uses `#[derive(Extract)]` with field annotations instead of manual CSS selectors.
 
@@ -32,7 +32,7 @@ Same as `books.rs` but uses `#[derive(Extract)]` with field annotations instead 
 cargo run --example books_derive --features derive
 ```
 
-### `multi_spider.rs` — multiple spiders
+### `multi_spider.rs` - multiple spiders
 
 Runs two independent spiders (quotes + books) concurrently in a single engine using `.add_spider()` / `.run_all()`.
 
@@ -42,9 +42,9 @@ cargo run --example multi_spider
 
 ## Selectors
 
-### `selectors.rs` — CSS, regex, JSONPath
+### `selectors.rs` - CSS, regex, JSONPath
 
-Demonstrates CSS, regex, and JSONPath selectors against local HTML and JSON — no network required.
+Demonstrates CSS, regex, and JSONPath selectors against local HTML and JSON - no network required.
 
 ```bash
 # CSS + regex
@@ -54,7 +54,7 @@ cargo run --example selectors
 cargo run --example selectors --features jsonpath
 ```
 
-### `xpath.rs` — XPath selectors
+### `xpath.rs` - XPath selectors
 
 Demonstrates XPath selectors on an HTML response using the `xpath` feature.
 
@@ -64,7 +64,7 @@ cargo run --example xpath --features xpath
 
 ## Middleware
 
-### `autothrottle.rs` — adaptive throttling
+### `autothrottle.rs` - adaptive throttling
 
 Shows `AutoThrottle` middleware adapting request delay based on server latency and 429/503 responses.
 
@@ -72,7 +72,7 @@ Shows `AutoThrottle` middleware adapting request delay based on server latency a
 cargo run --example autothrottle
 ```
 
-### `proxy_rotation.rs` — proxy rotation
+### `proxy_rotation.rs` - proxy rotation
 
 Demonstrates `ProxyRotator` middleware cycling through a list of proxy URLs.
 
@@ -82,7 +82,7 @@ cargo run --example proxy_rotation
 
 ## Stores
 
-### `sqlite.rs` — SQLite store
+### `sqlite.rs` - SQLite store
 
 Stores scraped items into a local SQLite file.
 
@@ -90,7 +90,7 @@ Stores scraped items into a local SQLite file.
 cargo run --example sqlite --features sqlite
 ```
 
-### `postgres.rs` — PostgreSQL store
+### `postgres.rs` - PostgreSQL store
 
 Stores scraped items into PostgreSQL. Requires a running Postgres instance.
 
@@ -98,9 +98,9 @@ Stores scraped items into PostgreSQL. Requires a running Postgres instance.
 cargo run --example postgres --features postgres
 ```
 
-### `cloud.rs` — Cloud storage (S3 / GCS / Azure / local)
+### `cloud.rs` - Cloud storage (S3 / GCS / Azure / local)
 
-Stores scraped items as JSONL via the backend-agnostic `CloudStore`. The example uses `LocalFileSystem` — no cloud credentials needed. Swap the backend for `AmazonS3`, `GoogleCloudStorage`, or `MicrosoftAzure` with no other code changes.
+Stores scraped items as JSONL via the backend-agnostic `CloudStore`. The example uses `LocalFileSystem` - no cloud credentials needed. Swap the backend for `AmazonS3`, `GoogleCloudStorage`, or `MicrosoftAzure` with no other code changes.
 
 ```bash
 cargo run --example cloud --features cloud
@@ -108,9 +108,9 @@ cargo run --example cloud --features cloud
 
 ## LLM Extraction
 
-### `llm_extract.rs` — LLM extraction
+### `llm_extract.rs` - LLM extraction
 
-Scrapes [quotes.toscrape.com](https://quotes.toscrape.com) without any CSS selectors — the LLM reads the HTML and fills in the struct automatically.
+Scrapes [quotes.toscrape.com](https://quotes.toscrape.com) without any CSS selectors - the LLM reads the HTML and fills in the struct automatically.
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-... cargo run --example llm_extract --features claude
@@ -125,9 +125,9 @@ Swap the feature flag and client to use a different provider:
 | Google Gemini | `gemini` | `GeminiClient` |
 | Ollama (local) | `ollama` | `OllamaClient` |
 
-### `llm_fallback.rs` — CSS + LLM fallback
+### `llm_fallback.rs` - CSS + LLM fallback
 
-Uses `#[extract(llm_fallback = "hint")]` — tries CSS first and falls back to the LLM only when the selector returns nothing.
+Uses `#[extract(llm_fallback = "hint")]` - tries CSS first and falls back to the LLM only when the selector returns nothing.
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-... cargo run --example llm_fallback --features claude,derive
@@ -135,7 +135,18 @@ ANTHROPIC_API_KEY=sk-ant-... cargo run --example llm_fallback --features claude,
 
 ## Advanced
 
-### `http_cache.rs` — HTTP response cache
+### `production_crawler.rs` - production crawl controls
+
+Combines the production defaults most crawlers need: robots.txt, per-domain
+concurrency, per-domain delay, jitter, `Retry-After` aware retries,
+`StatusRetry`, persistent `FileFrontier` recovery state, metrics, and JSONL
+storage.
+
+```bash
+cargo run --example production_crawler --features persistence
+```
+
+### `http_cache.rs` - HTTP response cache
 
 Demonstrates disk-backed response caching. Run once to populate the cache, run again to see instant responses from disk.
 
@@ -143,7 +154,7 @@ Demonstrates disk-backed response caching. Run once to populate the cache, run a
 cargo run --example http_cache
 ```
 
-### `link_extractor.rs` — link extraction with filtering
+### `link_extractor.rs` - link extraction with filtering
 
 Demonstrates `LinkExtractor` with `allow_domains`, `allow`, `deny`, `restrict_css`, and `canonicalize`.
 
@@ -151,7 +162,7 @@ Demonstrates `LinkExtractor` with `allow_domains`, `allow`, `deny`, `restrict_cs
 cargo run --example link_extractor
 ```
 
-### `request_scheduling.rs` — request scheduling
+### `request_scheduling.rs` - request scheduling
 
 Demonstrates `CrawlRequest` with custom method/body, headers, priority, and metadata.
 
@@ -159,7 +170,7 @@ Demonstrates `CrawlRequest` with custom method/body, headers, priority, and meta
 cargo run --example request_scheduling
 ```
 
-### `browser.rs` — headless browser
+### `browser.rs` - headless browser
 
 Fetches a JS-rendered page using headless Chromium. Requires the `browser` feature.
 
@@ -167,7 +178,7 @@ Fetches a JS-rendered page using headless Chromium. Requires the `browser` featu
 cargo run --example browser --features browser
 ```
 
-### `stealth.rs` — stealth mode
+### `stealth.rs` - stealth mode
 
 Sends requests with a Chrome 131 TLS fingerprint using the `stealth` feature. Requires cmake and nasm.
 
