@@ -116,3 +116,54 @@ async fn politeness_jitter_extends_domain_delay_within_configured_range() {
     assert!(elapsed >= Duration::from_millis(25));
     assert!(elapsed <= Duration::from_millis(120));
 }
+
+#[tokio::test]
+async fn robots_crawl_delay_waits_between_same_domain_requests() {
+    let frontier = MemoryFrontier::default();
+    let scheduler = CrawlScheduler::new(frontier, PolitenessPolicy::default());
+
+    scheduler
+        .push_request(CrawlRequest::get("https://example.com/a"), 0)
+        .await;
+    scheduler
+        .push_request(CrawlRequest::get("https://example.com/b"), 0)
+        .await;
+
+    let first = scheduler.next_ready().await.unwrap();
+    scheduler
+        .observe_robots_crawl_delay(first.request().url(), Duration::from_millis(50))
+        .await;
+    scheduler.finish(&first).await;
+
+    let before = std::time::Instant::now();
+    let second = scheduler.next_ready().await.unwrap();
+
+    assert!(before.elapsed() >= Duration::from_millis(45));
+    assert_eq!(second.request().url(), "https://example.com/b");
+}
+
+#[tokio::test]
+async fn robots_crawl_delay_can_be_disabled_by_policy() {
+    let frontier = MemoryFrontier::default();
+    let scheduler = CrawlScheduler::new(
+        frontier,
+        PolitenessPolicy::new().respect_robots_crawl_delay(false),
+    );
+
+    scheduler
+        .push_request(CrawlRequest::get("https://example.com/a"), 0)
+        .await;
+    scheduler
+        .push_request(CrawlRequest::get("https://example.com/b"), 0)
+        .await;
+
+    let first = scheduler.next_ready().await.unwrap();
+    scheduler
+        .observe_robots_crawl_delay(first.request().url(), Duration::from_secs(60))
+        .await;
+    scheduler.finish(&first).await;
+
+    let queued = scheduler.try_next_ready().await.unwrap();
+
+    assert_eq!(queued.request().url(), "https://example.com/b");
+}

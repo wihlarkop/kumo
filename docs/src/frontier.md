@@ -107,6 +107,11 @@ Add `.jitter(duration)` when many requests may become eligible at the same time.
 Kumo adds a random extra delay from zero up to the configured jitter after each
 completed request for that domain.
 
+When robots.txt contains `Crawl-delay`, Kumo uses the larger of the configured
+per-domain delay and the robots delay. Disable this with
+`.respect_robots_crawl_delay(false)` if your application handles robots timing
+outside Kumo.
+
 ## FingerprintPolicy
 
 The scheduler deduplicates requests by fingerprint. The default fingerprint

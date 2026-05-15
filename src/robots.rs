@@ -8,9 +8,90 @@ use tokio::sync::Mutex;
 
 const DEFAULT_TTL: Duration = Duration::from_secs(24 * 60 * 60); // 24 hours
 
+#[derive(Clone)]
 struct CacheEntry {
     txt: Option<Arc<String>>,
+    crawl_delay: Option<Duration>,
     fetched_at: Instant,
+}
+
+fn parse_crawl_delay_value(value: &str) -> Option<Duration> {
+    let seconds = value.trim().parse::<f64>().ok()?;
+    if !seconds.is_finite() || seconds < 0.0 {
+        return None;
+    }
+    Some(Duration::from_secs_f64(seconds))
+}
+
+/// Parse the best matching `Crawl-delay` value for `user_agent`.
+///
+/// Exact user-agent groups take precedence over wildcard (`*`) groups.
+pub fn parse_crawl_delay_for_agent(txt: &str, user_agent: &str) -> Option<Duration> {
+    fn finish_group(
+        agents: &[String],
+        delay: Option<Duration>,
+        wanted: &str,
+        best: &mut Option<(u8, Duration)>,
+    ) {
+        let Some(delay) = delay else {
+            return;
+        };
+
+        let score = agents.iter().fold(0, |score, agent| {
+            if agent == wanted {
+                score.max(2)
+            } else if agent == "*" {
+                score.max(1)
+            } else {
+                score
+            }
+        });
+
+        if score > best.map_or(0, |(best_score, _)| best_score) {
+            *best = Some((score, delay));
+        }
+    }
+
+    let wanted = user_agent.to_ascii_lowercase();
+    let mut best = None;
+    let mut agents = Vec::new();
+    let mut delay = None;
+    let mut saw_directive = false;
+
+    for raw_line in txt.lines() {
+        let line = raw_line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            finish_group(&agents, delay, &wanted, &mut best);
+            agents.clear();
+            delay = None;
+            saw_directive = false;
+            continue;
+        }
+
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        let name = name.trim().to_ascii_lowercase();
+        let value = value.trim();
+
+        if name == "user-agent" {
+            if saw_directive {
+                finish_group(&agents, delay, &wanted, &mut best);
+                agents.clear();
+                delay = None;
+                saw_directive = false;
+            }
+            agents.push(value.to_ascii_lowercase());
+        } else {
+            saw_directive = true;
+            if name == "crawl-delay" && delay.is_none() {
+                delay = parse_crawl_delay_value(value);
+            }
+        }
+    }
+
+    finish_group(&agents, delay, &wanted, &mut best);
+    best.map(|(_, delay)| delay)
 }
 
 /// Fetches and caches robots.txt for each domain encountered during a crawl.
@@ -45,9 +126,27 @@ impl RobotsCache {
     /// cache until the TTL expires. Returns `true` (allowed) if fetching
     /// robots.txt fails or it is absent.
     pub async fn is_allowed(&self, client: &reqwest::Client, url: &str) -> bool {
+        let Some(entry) = self.entry_for_url(client, url).await else {
+            return true;
+        };
+        Self::robot_allows(
+            &self.user_agent,
+            entry.txt.as_deref().map(|s| s.as_str()),
+            url,
+        )
+    }
+
+    /// Return this URL's robots.txt `Crawl-delay`, if present for the cache user agent.
+    pub async fn crawl_delay(&self, client: &reqwest::Client, url: &str) -> Option<Duration> {
+        self.entry_for_url(client, url)
+            .await
+            .and_then(|entry| entry.crawl_delay)
+    }
+
+    async fn entry_for_url(&self, client: &reqwest::Client, url: &str) -> Option<CacheEntry> {
         let parsed = match url::Url::parse(url) {
-            Ok(u) => u,
-            Err(_) => return true,
+            Ok(parsed) => parsed,
+            Err(_) => return None,
         };
 
         let origin = format!("{}://{}", parsed.scheme(), parsed.host_str().unwrap_or(""));
@@ -58,11 +157,7 @@ impl RobotsCache {
             if let Some(entry) = cache.get(&origin)
                 && entry.fetched_at.elapsed() < self.ttl
             {
-                return Self::robot_allows(
-                    &self.user_agent,
-                    entry.txt.as_deref().map(|s| s.as_str()),
-                    url,
-                );
+                return Some(entry.clone());
             }
         }
 
@@ -81,17 +176,17 @@ impl RobotsCache {
             None => None,
         };
 
+        let txt = txt.map(Arc::new);
+        let crawl_delay = txt
+            .as_deref()
+            .and_then(|txt| parse_crawl_delay_for_agent(txt, &self.user_agent));
         let entry = CacheEntry {
-            txt: txt.map(Arc::new),
+            txt,
+            crawl_delay,
             fetched_at: Instant::now(),
         };
-        let allowed = Self::robot_allows(
-            &self.user_agent,
-            entry.txt.as_deref().map(|s| s.as_str()),
-            url,
-        );
-        self.cache.lock().await.insert(origin, entry);
-        allowed
+        self.cache.lock().await.insert(origin, entry.clone());
+        Some(entry)
     }
 
     fn robot_allows(user_agent: &str, txt: Option<&str>, url: &str) -> bool {

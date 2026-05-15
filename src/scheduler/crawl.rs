@@ -18,6 +18,7 @@ use super::{domain::domain_key, fingerprint::FingerprintPolicy, policy::Politene
 struct DomainState {
     in_flight: usize,
     next_available_at: Option<Instant>,
+    robots_delay: Option<Duration>,
 }
 
 pub struct CrawlScheduler {
@@ -116,10 +117,26 @@ impl CrawlScheduler {
         let mut domains = self.domains.lock().await;
         let state = domains.entry(domain.clone()).or_default();
         state.in_flight = state.in_flight.saturating_sub(1);
-        if let Some(delay) = self.policy.policy_for(&domain).delay() {
+        let policy_delay = self.policy.policy_for(&domain).delay();
+        let robots_delay = if self.policy.respects_robots_crawl_delay() {
+            state.robots_delay
+        } else {
+            None
+        };
+        if let Some(delay) = [policy_delay, robots_delay].into_iter().flatten().max() {
             let delay = delay_with_jitter(delay, self.policy.jitter_range());
             state.next_available_at = Some(Instant::now() + delay);
         }
+    }
+
+    pub async fn observe_robots_crawl_delay(&self, url: &str, delay: Duration) {
+        let Some(domain) = domain_key(url) else {
+            return;
+        };
+
+        let mut domains = self.domains.lock().await;
+        let state = domains.entry(domain).or_default();
+        state.robots_delay = Some(delay);
     }
 
     async fn poll_next(&self) -> SchedulerPoll {
