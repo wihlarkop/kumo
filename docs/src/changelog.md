@@ -12,6 +12,14 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.2.7 - 2026-05-15
+
+- Count crawl task panics as request failures in both single-spider and
+  multi-spider runs.
+- Attribute task-panic failures to the correct domain in `CrawlStats`.
+- Strengthened stats coverage for scheduled, completed, deduped, failed, and
+  panic paths.
+
 ### 0.2.6 - 2026-05-15
 
 - Added public `RetryPolicy` introspection helpers for retry count, delay

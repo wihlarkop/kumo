@@ -34,6 +34,11 @@ struct DuplicateSpider {
     target: String,
 }
 
+struct PanicSpider {
+    start: String,
+    name: &'static str,
+}
+
 #[async_trait::async_trait]
 impl Spider for DuplicateSpider {
     type Item = serde_json::Value;
@@ -53,6 +58,23 @@ impl Spider for DuplicateSpider {
                 .request(CrawlRequest::get(&self.target)));
         }
         Ok(Output::new())
+    }
+}
+
+#[async_trait::async_trait]
+impl Spider for PanicSpider {
+    type Item = serde_json::Value;
+
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn start_urls(&self) -> Vec<String> {
+        vec![self.start.clone()]
+    }
+
+    async fn parse(&self, _res: &Response) -> Result<Output<Self::Item>, KumoError> {
+        panic!("intentional panic for stats coverage");
     }
 }
 
@@ -82,4 +104,76 @@ async fn engine_stats_count_scheduled_completed_and_deduped_requests() {
     assert_eq!(stats.domains["example.com"].scheduled, 2);
     assert_eq!(stats.domains["example.com"].deduped, 1);
     assert_eq!(stats.domains["example.com"].completed, 2);
+}
+
+#[tokio::test]
+async fn engine_stats_count_task_panic_as_domain_failure() {
+    let start = "https://panic.example.com/start";
+    let mock = MockFetcher::new().with_response(start, 200, "<h1>panic</h1>");
+
+    let stats = CrawlEngine::builder()
+        .concurrency(1)
+        .respect_robots_txt(false)
+        .fetcher(mock)
+        .store(StdoutStore)
+        .run(PanicSpider {
+            start: start.to_string(),
+            name: "panic-single",
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(stats.errors, 1);
+    assert_eq!(stats.pages_crawled, 0);
+    assert_eq!(stats.domains["panic.example.com"].failed, 1);
+}
+
+#[tokio::test]
+async fn run_all_stats_count_task_panic_for_the_right_spider() {
+    let panic_url = "https://panic.example.com/start";
+    let ok_url = "https://ok.example.com/start";
+    let mock = MockFetcher::new()
+        .with_response(panic_url, 200, "<h1>panic</h1>")
+        .with_response(ok_url, 200, "<h1>ok</h1>");
+
+    struct OkSpider(String);
+
+    #[async_trait::async_trait]
+    impl Spider for OkSpider {
+        type Item = serde_json::Value;
+
+        fn name(&self) -> &str {
+            "ok"
+        }
+
+        fn start_urls(&self) -> Vec<String> {
+            vec![self.0.clone()]
+        }
+
+        async fn parse(&self, _res: &Response) -> Result<Output<Self::Item>, KumoError> {
+            Ok(Output::new())
+        }
+    }
+
+    let stats = CrawlEngine::builder()
+        .concurrency(2)
+        .respect_robots_txt(false)
+        .fetcher(mock)
+        .store(StdoutStore)
+        .add_spider(PanicSpider {
+            start: panic_url.to_string(),
+            name: "panic-multi",
+        })
+        .add_spider(OkSpider(ok_url.to_string()))
+        .run_all()
+        .await
+        .unwrap();
+
+    assert_eq!(stats[0].errors, 1);
+    assert_eq!(stats[0].pages_crawled, 0);
+    assert_eq!(stats[0].domains["panic.example.com"].failed, 1);
+
+    assert_eq!(stats[1].errors, 0);
+    assert_eq!(stats[1].pages_crawled, 1);
+    assert_eq!(stats[1].domains["ok.example.com"].completed, 1);
 }
