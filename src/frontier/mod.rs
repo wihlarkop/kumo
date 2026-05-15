@@ -9,7 +9,7 @@ pub mod redis_frontier;
 pub use memory::MemoryFrontier;
 
 #[cfg(feature = "persistence")]
-pub use file::FileFrontier;
+pub use file::{FileFrontier, FileFrontierState};
 
 #[cfg(feature = "redis-frontier")]
 pub use redis_frontier::RedisFrontier;

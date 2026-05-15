@@ -12,6 +12,16 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.2.9 - 2026-05-16
+
+- Added `FileFrontier::state()` and `FileFrontierState` for inspecting
+  recovered queue, seen, and flush configuration after opening persisted state.
+- Made `FileFrontier::flush_every(0)` disable automatic flushes instead of
+  risking invalid flush interval behavior; explicit and engine shutdown flushes
+  still persist state.
+- Expanded `FileFrontier` recovery tests and documented exact resume guarantees
+  and current in-flight crash recovery limits.
+
 ### 0.2.8 - 2026-05-16
 
 - Added `Retry-After` support for `StatusRetry` without changing

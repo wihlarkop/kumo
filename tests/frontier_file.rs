@@ -156,3 +156,36 @@ async fn dont_filter_allows_duplicate_url() {
     );
     assert_eq!(f.len().await, 2);
 }
+
+#[tokio::test]
+async fn flush_every_zero_disables_automatic_flush() {
+    let dir = tempdir().unwrap();
+    let f = FileFrontier::open(dir.path()).unwrap().flush_every(0);
+
+    assert!(f.push("https://example.com/a".into(), 0).await);
+    assert!(!dir.path().join("queue.json").exists());
+    assert!(!dir.path().join("seen.json").exists());
+
+    f.flush().await.unwrap();
+    assert!(dir.path().join("queue.json").exists());
+    assert!(dir.path().join("seen.json").exists());
+}
+
+#[tokio::test]
+async fn state_reports_loaded_queue_and_seen_counts() {
+    let dir = tempdir().unwrap();
+    {
+        let f = FileFrontier::open(dir.path()).unwrap();
+        assert!(f.push("https://example.com/a".into(), 0).await);
+        assert!(f.push("https://example.com/b".into(), 0).await);
+        f.pop().await;
+        f.flush().await.unwrap();
+    }
+
+    let f = FileFrontier::open(dir.path()).unwrap();
+    let state = f.state().await;
+
+    assert_eq!(state.queued, 1);
+    assert_eq!(state.seen, 2);
+    assert_eq!(state.dir, dir.path());
+}

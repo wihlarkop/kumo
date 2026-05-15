@@ -70,6 +70,19 @@ pub struct FileFrontier {
     push_count: AtomicUsize,
 }
 
+/// Snapshot of a [`FileFrontier`] in-memory state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileFrontierState {
+    /// Frontier directory containing `queue.json` and `seen.json`.
+    pub dir: PathBuf,
+    /// Number of pending requests currently in the queue.
+    pub queued: usize,
+    /// Number of exact seen request fingerprints loaded for deduplication.
+    pub seen: usize,
+    /// Number of pushes between automatic flushes. `0` means automatic flush is disabled.
+    pub flush_every: usize,
+}
+
 impl std::fmt::Debug for FileFrontier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FileFrontier")
@@ -133,9 +146,27 @@ impl FileFrontier {
     }
 
     /// Override how often the state is flushed to disk (default: every 100 pushes).
+    ///
+    /// Set to `0` to disable automatic flushes and rely on explicit
+    /// [`flush`](Self::flush) calls or the engine's final shutdown flush.
     pub fn flush_every(mut self, n: usize) -> Self {
         self.flush_every = n;
         self
+    }
+
+    /// Return a lightweight snapshot of the loaded frontier state.
+    ///
+    /// This is useful after opening a persisted frontier to confirm how much
+    /// queued and deduplication state was recovered before resuming a crawl.
+    pub async fn state(&self) -> FileFrontierState {
+        let queued = self.queue.lock().await.len();
+        let seen = self.seen_exact.lock().await.len();
+        FileFrontierState {
+            dir: self.dir.clone(),
+            queued,
+            seen,
+            flush_every: self.flush_every,
+        }
     }
 
     async fn flush_to_disk(&self) -> Result<(), KumoError> {
@@ -212,7 +243,7 @@ impl Frontier for FileFrontier {
             .push_back(FrontierRequest::new(request, depth, 0));
 
         let count = self.push_count.fetch_add(1, Ordering::Relaxed) + 1;
-        if count.is_multiple_of(self.flush_every) {
+        if self.flush_every != 0 && count.is_multiple_of(self.flush_every) {
             self.flush_to_disk().await.ok();
         }
         true
@@ -221,7 +252,7 @@ impl Frontier for FileFrontier {
     async fn push_request_force(&self, queued: FrontierRequest) {
         self.queue.lock().await.push_back(queued);
         let count = self.push_count.fetch_add(1, Ordering::Relaxed) + 1;
-        if count.is_multiple_of(self.flush_every) {
+        if self.flush_every != 0 && count.is_multiple_of(self.flush_every) {
             self.flush_to_disk().await.ok();
         }
     }
