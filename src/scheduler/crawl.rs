@@ -4,6 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use rand::Rng;
 use tokio::sync::Mutex;
 
 use crate::{
@@ -35,6 +36,18 @@ pub(crate) enum SchedulerPoll {
 enum CandidateState {
     Ready,
     Pending(Duration),
+}
+
+fn delay_with_jitter(base: Duration, jitter: Option<Duration>) -> Duration {
+    let Some(jitter) = jitter else {
+        return base;
+    };
+    if jitter.is_zero() {
+        return base;
+    }
+
+    let extra = rand::rng().random_range(Duration::ZERO..=jitter);
+    base.saturating_add(extra)
 }
 
 impl CrawlScheduler {
@@ -104,6 +117,7 @@ impl CrawlScheduler {
         let state = domains.entry(domain.clone()).or_default();
         state.in_flight = state.in_flight.saturating_sub(1);
         if let Some(delay) = self.policy.policy_for(&domain).delay() {
+            let delay = delay_with_jitter(delay, self.policy.jitter_range());
             state.next_available_at = Some(Instant::now() + delay);
         }
     }
@@ -184,5 +198,30 @@ impl CrawlScheduler {
             .fingerprint(request.url())
             .unwrap_or_else(|_| request.url().to_string());
         request.with_dedup_key(key)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn delay_with_jitter_keeps_delay_within_configured_range() {
+        let base = Duration::from_millis(10);
+        let jitter = Duration::from_millis(50);
+
+        for _ in 0..100 {
+            let delay = delay_with_jitter(base, Some(jitter));
+            assert!(delay >= base);
+            assert!(delay <= base + jitter);
+        }
+    }
+
+    #[test]
+    fn delay_with_jitter_returns_base_when_jitter_is_disabled() {
+        let base = Duration::from_millis(10);
+
+        assert_eq!(delay_with_jitter(base, None), base);
+        assert_eq!(delay_with_jitter(base, Some(Duration::ZERO)), base);
     }
 }

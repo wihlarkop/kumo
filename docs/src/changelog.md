@@ -12,6 +12,12 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.2.3 - 2026-05-15
+
+- Applied `PolitenessPolicy::jitter` to per-domain scheduler delays so
+  completed requests can spread follow-up traffic by a random extra delay.
+- Added unit and scheduler coverage for jitter delay behavior.
+
 ### 0.2.2 - 2026-05-15
 
 - Hardened `FileFrontier` flushes by writing temporary files before replacing
