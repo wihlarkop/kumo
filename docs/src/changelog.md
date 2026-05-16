@@ -153,6 +153,17 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo-derive
 
+### 0.1.3 - 2026-05-16
+
+- Added clear compile-time diagnostics for unsupported field types. The derive
+  macro now accepts only `String` and `Option<String>` fields instead of
+  producing later Rust type errors.
+- Added a compile-time diagnostic for fields with multiple `#[extract(...)]`
+  attributes.
+- Made `attr` and `re` compose: when both are present, the macro reads the
+  attribute first and then applies the regex to that attribute value.
+- Updated `kumo-derive` README and crate metadata for the `kumo 0.2` line.
+
 ### 0.1.2 — 2026-04-25
 
 - Added `default = "value"` — fallback string for `String` fields

@@ -1,10 +1,10 @@
 [package]
 name = "kumo-derive"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 rust-version = "1.85"
 authors = ["wihlarkop"]
-description = "Derive macro for the kumo web scraping framework — generates Extract impls from #[extract(...)] field annotations"
+description = "Derive macro for the kumo web scraping framework - generates Extract impls from #[extract(...)] field annotations"
 license = "MIT"
 repository = "https://github.com/wihlarkop/kumo"
 homepage = "https://github.com/wihlarkop/kumo"

@@ -1,0 +1,7 @@
+error: field has multiple #[extract(...)] attributes; combine them into one
+ --> tests/derive/fail/duplicate_extract_attr.rs:5:5
+  |
+5 | /     #[extract(css = "h1")]
+6 | |     #[extract(css = ".title")]
+7 | |     title: String,
+  | |_________________^
