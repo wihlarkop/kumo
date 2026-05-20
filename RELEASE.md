@@ -17,7 +17,8 @@ cargo publish -p kumo --dry-run
 ```
 
 The `stealth` feature requires CMake and NASM because it builds BoringSSL.
-Check it separately on a machine with those tools installed:
+It is also experimental while the upstream `rquest 5.1.0` dependency is yanked
+on crates.io. Check it separately on a machine with those tools installed:
 
 ```bash
 cargo check --features stealth
