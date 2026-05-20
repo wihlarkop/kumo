@@ -12,6 +12,15 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.2.11 - 2026-05-20
+
+- Published the main `kumo` crate with the `derive` feature pointing at
+  `kumo-derive 0.1.3`, so users get the latest derive diagnostics and
+  `attr` + `re` extraction behavior through `kumo`.
+- Hardened the publish workflow so crates.io "already exists" races are treated
+  as successful publishes instead of leaving a red release run after the crate
+  is already available.
+
 ### 0.2.10 - 2026-05-16
 
 - Polished release-facing README, crate metadata, and docs text for the `0.2.x`
