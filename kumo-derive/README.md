@@ -1,8 +1,8 @@
 # kumo-derive
 
-Procedural macro crate for [kumo](https://github.com/wihlarkop/kumo) — generates [`Extract`] implementations from `#[extract(...)]` field annotations.
+Procedural macro crate for [kumo](https://github.com/wihlarkop/kumo) - generates [`Extract`] implementations from `#[extract(...)]` field annotations.
 
-> This crate is an implementation detail of kumo. You should not depend on it directly — use the `derive` feature flag on the main `kumo` crate instead.
+> This crate is an implementation detail of kumo. You should not depend on it directly - use the `derive` feature flag on the main `kumo` crate instead.
 
 ## Usage
 
@@ -10,7 +10,7 @@ Enable the `derive` feature on `kumo`:
 
 ```toml
 [dependencies]
-kumo = { version = "0.1", features = ["derive"] }
+kumo = { version = "0.2", features = ["derive"] }
 ```
 
 Then annotate your struct:
@@ -59,8 +59,11 @@ async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
 
 ## Field types
 
-- `String` — uses `unwrap_or_default()` on missing matches (empty string when not found)
-- `Option<String>` — stays as `None` when not found
+- `String` - uses `unwrap_or_default()` on missing matches (empty string when not found)
+- `Option<String>` - stays as `None` when not found
+
+Other field types produce a compile error. Use manual extraction when a field
+needs parsing into numbers, booleans, dates, or custom types.
 
 ## License
 

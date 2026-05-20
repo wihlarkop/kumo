@@ -1,0 +1,5 @@
+error: #[derive(Extract)] only supports String and Option<String> fields
+ --> tests/derive/fail/unsupported_option_type.rs:6:12
+  |
+6 |     stock: Option<u32>,
+  |            ^^^^^^^^^^^

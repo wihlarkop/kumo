@@ -1,16 +1,18 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::{Data, DeriveInput, Fields, LitStr, Type, parse_macro_input};
+use syn::{
+    Data, DeriveInput, Fields, GenericArgument, LitStr, PathArguments, Type, parse_macro_input,
+};
 
 /// Derive macro that generates an [`Extract`] implementation for a struct.
 ///
 /// Each field must carry `#[extract(css = "selector")]` plus optional modifiers:
-/// - `attr = "name"` — read an HTML attribute instead of text content
-/// - `re = r"pattern"` — apply a regex and take the first capture / match
-/// - `text` — explicit text content (the default; can be omitted)
-/// - `llm_fallback = "hint"` — fall back to LLM when selector returns empty
-/// - `llm_fallback` — same, using field name as the extraction hint
+/// - `attr = "name"` - read an HTML attribute instead of text content
+/// - `re = r"pattern"` - apply a regex and take the first capture / match
+/// - `text` - explicit text content (the default; can be omitted)
+/// - `llm_fallback = "hint"` - fall back to LLM when selector returns empty
+/// - `llm_fallback` - same, using field name as the extraction hint
 ///
 /// `String` fields use `unwrap_or_default()` on missing matches.
 /// `Option<String>` fields stay as `Option` (no unwrap).
@@ -35,8 +37,14 @@ pub fn derive_extract(input: TokenStream) -> TokenStream {
 
 struct FieldInfo {
     name: syn::Ident,
-    is_option: bool,
+    kind: FieldKind,
     args: ExtractArgs,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FieldKind {
+    String,
+    OptionString,
 }
 
 fn impl_extract(input: &DeriveInput) -> syn::Result<TokenStream2> {
@@ -60,7 +68,7 @@ fn impl_extract(input: &DeriveInput) -> syn::Result<TokenStream2> {
         .map(|field| {
             Ok(FieldInfo {
                 name: field.ident.as_ref().unwrap().clone(),
-                is_option: is_option_type(&field.ty),
+                kind: field_kind(&field.ty)?,
                 args: parse_extract_args(field)?,
             })
         })
@@ -75,10 +83,20 @@ fn impl_extract(input: &DeriveInput) -> syn::Result<TokenStream2> {
             let field_name = &fi.name;
             let css = &fi.args.css;
             let base = quote! { element.css(#css).first() };
-            let valued = match (&fi.args.attr, &fi.args.re) {
-                (Some(attr), _) => quote! { #base.and_then(|e| e.attr(#attr)) },
-                (_, Some(re)) => quote! { #base.and_then(|e| e.re_first(#re)) },
-                _ => quote! { #base.map(|e| e.text()) },
+            let raw_value = match &fi.args.attr {
+                Some(attr) => quote! { #base.and_then(|e| e.attr(#attr)) },
+                None => quote! { #base.map(|e| e.text()) },
+            };
+            let valued = match &fi.args.re {
+                Some(re) => quote! {
+                    (#raw_value).and_then(|s| {
+                        <::kumo::extract::RegexExtractor as ::kumo::extract::ValueExtractor>
+                            ::extract_values(&::kumo::extract::RegexExtractor, &s, #re)
+                            .ok()
+                            .and_then(|values| values.into_iter().next())
+                    })
+                },
+                None => raw_value,
             };
             let transform_expr = match fi.args.transform.as_ref().map(|t| t.value()) {
                 Some(ref t) if t == "trim" => {
@@ -179,7 +197,7 @@ fn impl_extract(input: &DeriveInput) -> syn::Result<TokenStream2> {
         .map(|fi| {
             let field_name = &fi.name;
             let var = quote::format_ident!("__field_{}", field_name);
-            if fi.is_option {
+            if fi.kind == FieldKind::OptionString {
                 quote! { #field_name: #var }
             } else if let Some(default) = &fi.args.default_val {
                 quote! { #field_name: #var.unwrap_or_else(|| #default.to_string()) }
@@ -219,13 +237,21 @@ struct ExtractArgs {
 }
 
 fn parse_extract_args(field: &syn::Field) -> syn::Result<ExtractArgs> {
-    let attr = field
+    let attrs = field
         .attrs
         .iter()
-        .find(|a| a.path().is_ident("extract"))
-        .ok_or_else(|| {
-            syn::Error::new_spanned(field, "field is missing #[extract(css = \"...\")]")
-        })?;
+        .filter(|a| a.path().is_ident("extract"))
+        .collect::<Vec<_>>();
+    if attrs.len() > 1 {
+        return Err(syn::Error::new_spanned(
+            field,
+            "field has multiple #[extract(...)] attributes; combine them into one",
+        ));
+    }
+
+    let attr = attrs.first().copied().ok_or_else(|| {
+        syn::Error::new_spanned(field, "field is missing #[extract(css = \"...\")]")
+    })?;
 
     let mut css: Option<LitStr> = None;
     let mut attr_val: Option<LitStr> = None;
@@ -242,7 +268,7 @@ fn parse_extract_args(field: &syn::Field) -> syn::Result<ExtractArgs> {
         } else if meta.path.is_ident("re") {
             re_val = Some(meta.value()?.parse()?);
         } else if meta.path.is_ident("text") {
-            // explicit text — no-op, it's the default
+            // explicit text - no-op, it's the default
         } else if meta.path.is_ident("llm_fallback") {
             if meta.input.peek(syn::Token![=]) {
                 let hint: LitStr = meta.value()?.parse()?;
@@ -258,7 +284,9 @@ fn parse_extract_args(field: &syn::Field) -> syn::Result<ExtractArgs> {
             if !matches!(val.as_str(), "trim" | "lowercase" | "uppercase") {
                 return Err(syn::Error::new(
                     lit.span(),
-                    format!("unknown transform `{val}` — valid values: trim, lowercase, uppercase"),
+                    format!(
+                        "unknown transform `{val}` - valid values: trim, lowercase, uppercase"
+                    ),
                 ));
             }
             transform = Some(lit);
@@ -269,7 +297,7 @@ fn parse_extract_args(field: &syn::Field) -> syn::Result<ExtractArgs> {
                 .map(|i| i.to_string())
                 .unwrap_or_default();
             return Err(meta.error(format!(
-                "unknown extract attribute `{key}` — valid keys: css, attr, re, text, llm_fallback, default, transform"
+                "unknown extract attribute `{key}` - valid keys: css, attr, re, text, llm_fallback, default, transform"
             )));
         }
         Ok(())
@@ -288,11 +316,35 @@ fn parse_extract_args(field: &syn::Field) -> syn::Result<ExtractArgs> {
     })
 }
 
-fn is_option_type(ty: &Type) -> bool {
+fn field_kind(ty: &Type) -> syn::Result<FieldKind> {
+    if is_string_type(ty) {
+        return Ok(FieldKind::String);
+    }
+
     if let Type::Path(tp) = ty
+        && tp.qself.is_none()
+        && let Some(seg) = tp.path.segments.last()
+        && seg.ident == "Option"
+        && let PathArguments::AngleBracketed(args) = &seg.arguments
+        && args.args.len() == 1
+        && let Some(GenericArgument::Type(inner)) = args.args.first()
+        && is_string_type(inner)
+    {
+        return Ok(FieldKind::OptionString);
+    }
+
+    Err(syn::Error::new_spanned(
+        ty,
+        "#[derive(Extract)] only supports String and Option<String> fields",
+    ))
+}
+
+fn is_string_type(ty: &Type) -> bool {
+    if let Type::Path(tp) = ty
+        && tp.qself.is_none()
         && let Some(seg) = tp.path.segments.last()
     {
-        return seg.ident == "Option";
+        return seg.ident == "String";
     }
     false
 }

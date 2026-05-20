@@ -243,7 +243,15 @@ jobs:
         run: cargo publish -p kumo-derive --dry-run
 
       - name: Dry-run kumo package
-        run: cargo publish -p kumo --dry-run
+        run: |
+          version="$(awk '/^\[package\]/{in_package=1; next} /^\[/{in_package=0} in_package && /^version = / {gsub(/"/, "", $3); print $3; exit}' Cargo.toml)"
+          if curl --fail --silent --show-error \
+            --user-agent "wihlarkop/kumo ci package dry-run" \
+            "https://crates.io/api/v1/crates/kumo/${version}" > /dev/null; then
+            echo "kumo@${version} already exists on crates.io; skipping package dry-run."
+          else
+            cargo publish -p kumo --dry-run
+          fi
 
   benchmarks:
     name: Benchmark compile
