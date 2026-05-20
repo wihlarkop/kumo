@@ -12,6 +12,15 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### Unreleased
+
+- Documented the current `stealth` dependency risk: the optional upstream
+  `rquest 5.1.0` dependency is yanked on crates.io, so `stealth` remains
+  experimental until upstream publishes a healthy replacement.
+- Added a CI warning annotation for the locked yanked `rquest` dependency so
+  future releases keep the `stealth` risk visible without breaking unrelated
+  checks.
+
 ### 0.2.11 - 2026-05-20
 
 - Published the main `kumo` crate with the `derive` feature pointing at

@@ -29,6 +29,11 @@ All optional capabilities in kumo are behind feature flags, so you only compile 
 | `otel` | `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`, `tracing-opentelemetry` | OTLP/gRPC export of all spans and events |
 
 > ¹ The `stealth` feature compiles BoringSSL from source. It requires **cmake** and **nasm** on the build machine. See [Stealth Mode](advanced/stealth.md) for setup instructions.
+>
+> `stealth` is also considered experimental while its upstream `rquest 5.1.0`
+> dependency is yanked on crates.io. Existing lockfiles can continue to build,
+> but fresh dependency resolution may warn or fail until upstream publishes a
+> healthy replacement.
 
 ## Common Combinations
 

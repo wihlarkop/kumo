@@ -9,6 +9,14 @@ The `stealth` feature replaces the default `reqwest` HTTP client with `rquest`, 
     - macOS: `brew install cmake nasm`
     - Windows: install via [cmake.org](https://cmake.org/download/) and [nasm.us](https://www.nasm.us/)
 
+!!! warning "Experimental dependency status"
+    `stealth` depends on the upstream `rquest` crate for TLS/HTTP2 browser
+    emulation. The version currently locked by `kumo` (`rquest 5.1.0`) is
+    reported as yanked by crates.io, so fresh dependency resolution may warn or
+    fail until upstream publishes a healthy replacement. Keep `stealth` behind
+    an explicit feature flag and prefer the standard HTTP or browser fetchers
+    unless you specifically need TLS fingerprint emulation.
+
 ## Installation
 
 ```toml
