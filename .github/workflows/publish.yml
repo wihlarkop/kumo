@@ -104,8 +104,46 @@ jobs:
 
       - name: Publish kumo-derive to crates.io
         if: ${{ steps.release.outputs.crate == 'kumo-derive' && steps.crates_io.outputs.published != 'true' && inputs.dry_run_only != true }}
-        run: cargo publish -p kumo-derive --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        shell: bash
+        run: |
+          set +e
+          output="$(cargo publish -p kumo-derive 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+
+          if [[ "$status" -eq 0 ]]; then
+            exit 0
+          fi
+
+          if printf '%s\n' "$output" | grep -q "already exists"; then
+            echo "kumo-derive@${{ steps.release.outputs.version }} already exists on crates.io; treating publish as success."
+            exit 0
+          fi
+
+          exit "$status"
 
       - name: Publish kumo to crates.io
         if: ${{ steps.release.outputs.crate == 'kumo' && steps.crates_io.outputs.published != 'true' && inputs.dry_run_only != true }}
-        run: cargo publish -p kumo --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        shell: bash
+        run: |
+          set +e
+          output="$(cargo publish -p kumo 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+
+          if [[ "$status" -eq 0 ]]; then
+            exit 0
+          fi
+
+          if printf '%s\n' "$output" | grep -q "already exists"; then
+            echo "kumo@${{ steps.release.outputs.version }} already exists on crates.io; treating publish as success."
+            exit 0
+          fi
+
+          exit "$status"
