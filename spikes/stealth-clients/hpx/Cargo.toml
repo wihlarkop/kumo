@@ -1,0 +1,15 @@
+[package]
+name = "kumo-hpx-stealth-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+async-trait = "0.1.89"
+bytes = "1.11.1"
+hpx = { version = "2.4.11", default-features = false, features = ["stealth"] }
+hpx-emulation = "2.4.11"
+reqwest = { version = "0.13.2", default-features = false }
+tokio = { version = "1.52.1", features = ["macros", "rt-multi-thread"] }

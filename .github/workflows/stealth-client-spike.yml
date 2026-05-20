@@ -1,0 +1,51 @@
+name: Stealth Client Spike
+
+on:
+  push:
+    branches:
+      - "spike/stealth-client-evaluation"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/stealth-client-spike.yml"
+      - "spikes/stealth-clients/**"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  evaluate:
+    name: Evaluate ${{ matrix.client }} stealth adapter
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - client: hpx
+            manifest: spikes/stealth-clients/hpx/Cargo.toml
+          - client: wreq
+            manifest: spikes/stealth-clients/wreq/Cargo.toml
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install BoringSSL build deps
+        run: sudo apt-get update && sudo apt-get install -y cmake nasm
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            spikes/stealth-clients/${{ matrix.client }}/target
+          key: ${{ runner.os }}-stealth-spike-${{ matrix.client }}-${{ hashFiles(format('spikes/stealth-clients/{0}/Cargo.lock', matrix.client)) }}
+          restore-keys: ${{ runner.os }}-stealth-spike-${{ matrix.client }}-
+
+      - name: Check adapter
+        run: cargo check --manifest-path "${{ matrix.manifest }}"
+
+      - name: Test adapter without network probes
+        run: cargo test --manifest-path "${{ matrix.manifest }}"
