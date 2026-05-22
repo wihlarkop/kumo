@@ -259,7 +259,7 @@ impl CrawlEngine {
     /// Use a stealth HTTP fetcher with TLS + HTTP/2 fingerprint spoofing.
     ///
     /// Requires the `stealth` feature flag (and cmake/NASM build tools for BoringSSL).
-    /// Replaces the default `HttpFetcher` with one backed by `rquest` that reproduces
+    /// Replaces the default `HttpFetcher` with one backed by `wreq` that reproduces
     /// the exact TLS client hello of a real browser, defeating JA3/JA4 fingerprinting.
     #[cfg(feature = "stealth")]
     pub fn stealth(mut self, profile: crate::fetch::StealthProfile) -> Self {

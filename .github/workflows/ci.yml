@@ -138,12 +138,6 @@ jobs:
           key: ${{ runner.os }}-cargo-stealth-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-stealth-
 
-      - name: Report upstream rquest status
-        run: |
-          if grep -A1 'name = "rquest"' Cargo.lock | grep -q 'version = "5.1.0"'; then
-            echo "::warning file=Cargo.toml,line=150::The optional stealth feature currently locks rquest 5.1.0, which crates.io reports as yanked. Keep stealth documented as experimental until upstream publishes a healthy replacement."
-          fi
-
       - name: Check stealth feature
         run: cargo check --features stealth
 

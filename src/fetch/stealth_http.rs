@@ -1,9 +1,9 @@
-//! HTTP fetcher with TLS/HTTP2 fingerprint spoofing via [`rquest`].
+//! HTTP fetcher with TLS/HTTP2 fingerprint spoofing via [`wreq`].
 //!
 //! Requires the `stealth` feature flag. Building with `stealth` also requires
 //! cmake and NASM (for BoringSSL compilation) to be present on the system.
 //!
-//! [`rquest`]: https://crates.io/crates/rquest
+//! [`wreq`]: https://crates.io/crates/wreq
 
 use super::Fetcher;
 use crate::{
@@ -11,10 +11,11 @@ use crate::{
     extract::{Response, response::ResponseBody},
     middleware::FetchRequest,
 };
-use rquest_util::Emulation;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use wreq::{Client, Method};
+use wreq_util::Emulation;
 
 /// A browser profile for TLS + HTTP/2 fingerprint impersonation.
 ///
@@ -45,7 +46,7 @@ impl StealthProfile {
 
 /// HTTP fetcher with TLS + HTTP/2 fingerprint spoofing.
 ///
-/// Wraps [`rquest`] which compiles BoringSSL and reproduces the exact TLS
+/// Wraps [`wreq`] which compiles BoringSSL and reproduces the exact TLS
 /// client hello + HTTP/2 SETTINGS of real browsers, defeating JA3/JA4 detection.
 ///
 /// # Example
@@ -56,14 +57,14 @@ impl StealthProfile {
 ///     .await?;
 /// ```
 pub struct StealthHttpFetcher {
-    client: rquest::Client,
-    proxy_clients: Arc<RwLock<HashMap<String, rquest::Client>>>,
+    client: Client,
+    proxy_clients: Arc<RwLock<HashMap<String, Client>>>,
     profile: StealthProfile,
 }
 
 impl StealthHttpFetcher {
     pub fn new(profile: StealthProfile) -> Result<Self, KumoError> {
-        let client = rquest::Client::builder()
+        let client = Client::builder()
             .emulation(profile.to_emulation())
             .cookie_store(true)
             .build()
@@ -76,7 +77,7 @@ impl StealthHttpFetcher {
         })
     }
 
-    async fn client_for(&self, request: &FetchRequest) -> Result<rquest::Client, KumoError> {
+    async fn client_for(&self, request: &FetchRequest) -> Result<Client, KumoError> {
         let Some(ref proxy_url) = request.proxy else {
             return Ok(self.client.clone());
         };
@@ -88,12 +89,10 @@ impl StealthHttpFetcher {
             }
         }
 
-        let proxy = rquest::Proxy::all(proxy_url.as_str())
-            .map_err(|e| KumoError::Browser(format!("stealth proxy: {e}")))?;
-        let new_client = rquest::Client::builder()
+        let new_client = Client::builder()
             .emulation(self.profile.to_emulation())
             .cookie_store(true)
-            .proxy(proxy)
+            .proxy(proxy_url)
             .build()
             .map_err(|e| KumoError::Browser(format!("stealth proxy client: {e}")))?;
 
@@ -102,12 +101,17 @@ impl StealthHttpFetcher {
     }
 }
 
+fn to_wreq_method(method: &reqwest::Method) -> Result<Method, KumoError> {
+    Method::from_bytes(method.as_str().as_bytes())
+        .map_err(|e| KumoError::Browser(format!("stealth method: {e}")))
+}
+
 #[async_trait::async_trait]
 impl Fetcher for StealthHttpFetcher {
     async fn fetch(&self, request: &FetchRequest) -> Result<Response, KumoError> {
         let client = self.client_for(request).await?;
 
-        let mut builder = client.request(request.method.clone(), request.url());
+        let mut builder = client.request(to_wreq_method(&request.method)?, request.url());
         for (name, value) in &request.headers {
             builder = builder.header(name.as_str(), value.to_str().unwrap_or(""));
         }
@@ -122,7 +126,7 @@ impl Fetcher for StealthHttpFetcher {
             .map_err(|e| KumoError::Browser(format!("stealth fetch: {e}")))?;
         let status = res.status().as_u16();
 
-        // Convert rquest headers to reqwest headers before consuming the response body.
+        // Convert wreq headers to reqwest headers before consuming the response body.
         let headers = {
             let mut h = reqwest::header::HeaderMap::new();
             for (name, value) in res.headers() {
