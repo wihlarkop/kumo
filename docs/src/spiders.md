@@ -103,6 +103,9 @@ unhandled fetch/parse errors, and crawl task panics. Panics are attributed to
 the request's domain in `domains[domain].failed` so production reports do not
 silently lose failed work.
 
+When updating stats manually, use `record_error(domain)` to increment both the
+global error count and the matching per-domain failure count together.
+
 ## Error Handling
 
 `on_error` lets each spider decide what to do with a failed URL:

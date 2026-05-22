@@ -23,6 +23,19 @@ use super::{
     task::{TaskContext, is_cancelled, process_request_once, should_enqueue},
 };
 
+async fn update_live_stats(
+    metrics_interval: Option<std::time::Duration>,
+    live_stats: &Arc<tokio::sync::Mutex<CrawlStats>>,
+    stats: &CrawlStats,
+    start: std::time::Instant,
+) {
+    if metrics_interval.is_some() {
+        let mut snap = live_stats.lock().await;
+        *snap = stats.clone();
+        snap.duration = start.elapsed();
+    }
+}
+
 impl CrawlEngine {
     /// Consume the engine, run the spider, and return crawl statistics.
     pub async fn run<S>(self, spider: S) -> Result<CrawlStats, KumoError>
@@ -155,6 +168,8 @@ impl CrawlEngine {
                             {
                                 tracing::debug!(url = %queued.request.url(), "blocked by robots.txt, skipping");
                                 stats.record_robots_blocked(&domain_key(queued.request.url()));
+                                update_live_stats(metrics_interval, &live_stats, &stats, start)
+                                    .await;
                                 scheduler.finish(&queued).await;
                                 continue;
                             }
@@ -234,12 +249,7 @@ impl CrawlEngine {
                                 shutting_down = true;
                                 stats.interrupted = true;
                             }
-                            // Keep live snapshot up to date for the metrics task.
-                            if metrics_interval.is_some() {
-                                let mut snap = live_stats.lock().await;
-                                *snap = stats.clone();
-                                snap.duration = start.elapsed();
-                            }
+                            update_live_stats(metrics_interval, &live_stats, &stats, start).await;
 
                             if !shutting_down {
                                 for (follow_request, follow_depth) in follows {
@@ -250,6 +260,7 @@ impl CrawlEngine {
                                         } else {
                                             stats.record_deduped(&domain);
                                         }
+                                        update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                                     }
                                 }
                             }
@@ -271,6 +282,7 @@ impl CrawlEngine {
                                 let delay = retry_policy
                                     .delay_for_with_hint(queued.retry_count, retry_delay_hint);
                                 stats.record_retry(&domain_key(&url));
+                                update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                                 tracing::warn!(
                                     spider = spider.name(),
                                     url = %url,
@@ -293,8 +305,8 @@ impl CrawlEngine {
                                 continue;
                             }
 
-                            stats.errors += 1;
-                            stats.record_failed(&domain_key(&url));
+                            stats.record_error(&domain_key(&url));
+                            update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                             match spider.on_error(&url, &e) {
                                 ErrorPolicy::Abort => {
                                     error!(url = %url, error = %e, "aborting crawl");
@@ -311,6 +323,7 @@ impl CrawlEngine {
                                     );
                                     if !shutting_down {
                                         stats.record_retry(&domain_key(&url));
+                                        update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                                         scheduler.push_request_force(FrontierRequest::new(
                                             queued.request,
                                             queued.depth,
@@ -327,10 +340,13 @@ impl CrawlEngine {
                             }
                         }
                         Some(Err(join_err)) => {
-                            stats.errors += 1;
                             if let Some(queued) = task_context.remove(&join_err.id()) {
                                 scheduler.finish(&queued).await;
-                                stats.record_failed(&domain_key(queued.request.url()));
+                                stats.record_error(&domain_key(queued.request.url()));
+                                update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                            } else {
+                                stats.errors += 1;
+                                update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                             }
                             error!(spider = spider.name(), error = %join_err, "crawl task panicked");
                         }
