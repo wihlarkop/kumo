@@ -13,6 +13,10 @@ CrawlEngine::builder()
 
 Responses are stored by URL hash. On subsequent runs, cached responses are served from disk instantly.
 
+Only `GET` responses are cached. Requests with bodies or non-GET methods bypass
+the cache so one request variant cannot be accidentally replayed for another.
+Binary responses also bypass cache writes.
+
 ## TTL
 
 Set a maximum cache age:
