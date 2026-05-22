@@ -29,6 +29,23 @@ fn crawl_report_exposes_scheduler_counters() {
     assert_eq!(report.domains["example.com"].robots_blocked, 1);
 }
 
+#[test]
+fn record_error_keeps_global_and_domain_failures_in_sync() {
+    let mut stats = CrawlStats::default();
+    stats.record_scheduled("example.com");
+    stats.record_retry("example.com");
+    stats.record_error("example.com");
+
+    let report = CrawlReport::from(stats);
+
+    assert_eq!(report.scheduled, 1);
+    assert_eq!(report.retries, 1);
+    assert_eq!(report.errors, 1);
+    assert_eq!(report.domains["example.com"].scheduled, 1);
+    assert_eq!(report.domains["example.com"].retries, 1);
+    assert_eq!(report.domains["example.com"].failed, 1);
+}
+
 struct DuplicateSpider {
     start: String,
     target: String,

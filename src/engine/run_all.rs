@@ -273,8 +273,7 @@ impl CrawlEngine {
                                 continue;
                             }
 
-                            stats_vec[spider_idx].errors += 1;
-                            stats_vec[spider_idx].record_failed(&domain_key(&url));
+                            stats_vec[spider_idx].record_error(&domain_key(&url));
                             match spider.on_error(&url, &e) {
                                 ErrorPolicy::Abort => {
                                     error!(url = %url, error = %e, "aborting crawl");
@@ -310,8 +309,7 @@ impl CrawlEngine {
                             if let Some((spider_idx, queued)) = task_context.remove(&join_err.id()) {
                                 let (_, scheduler) = &spider_entries[spider_idx];
                                 scheduler.finish(&queued).await;
-                                stats_vec[spider_idx].errors += 1;
-                                stats_vec[spider_idx].record_failed(&domain_key(queued.request.url()));
+                                stats_vec[spider_idx].record_error(&domain_key(queued.request.url()));
                             }
                             error!(error = %join_err, "crawl task panicked");
                         }

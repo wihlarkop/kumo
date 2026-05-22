@@ -47,6 +47,11 @@ impl CrawlStats {
         self.domain_mut(domain).failed += 1;
     }
 
+    pub fn record_error(&mut self, domain: &str) {
+        self.errors += 1;
+        self.record_failed(domain);
+    }
+
     pub fn record_retry(&mut self, domain: &str) {
         self.retries += 1;
         self.domain_mut(domain).retries += 1;
