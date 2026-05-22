@@ -84,6 +84,10 @@ impl CachingFetcher {
             Some(ttl) => Self::now_secs().saturating_sub(entry.cached_at) < ttl.as_secs(),
         }
     }
+
+    fn is_cacheable(request: &FetchRequest) -> bool {
+        request.method == reqwest::Method::GET
+    }
 }
 
 impl std::fmt::Debug for CachingFetcher {
@@ -98,6 +102,15 @@ impl std::fmt::Debug for CachingFetcher {
 #[async_trait]
 impl Fetcher for CachingFetcher {
     async fn fetch(&self, request: &FetchRequest) -> Result<Response, KumoError> {
+        if !Self::is_cacheable(request) {
+            tracing::debug!(
+                url = request.url(),
+                method = %request.method,
+                "http cache bypass"
+            );
+            return self.inner.fetch(request).await;
+        }
+
         let path = self.cache_path(request.url());
 
         // Try cache hit.
