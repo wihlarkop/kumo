@@ -14,6 +14,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### Unreleased
 
+- Expanded `FileFrontier` resume coverage for `dont_filter` requests and
+  scheduler-normalized dedup fingerprints.
+
 ### 0.2.12 - 2026-05-23
 
 - Added `CrawlStats::record_error()` so global error counts and per-domain
