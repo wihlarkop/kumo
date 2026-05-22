@@ -14,11 +14,12 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### Unreleased
 
+### 0.2.12 - 2026-05-23
+
 - Added `CrawlStats::record_error()` so global error counts and per-domain
   failure counts can be updated together.
 - Kept single-spider live metrics snapshots current after robots-blocked,
   retry, permanent failure, and task-panic events, not only successful pages.
-
 - Documented the current `stealth` dependency risk: the optional upstream
   `rquest 5.1.0` dependency is yanked on crates.io, so `stealth` remains
   experimental until upstream publishes a healthy replacement.
