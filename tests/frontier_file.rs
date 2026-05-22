@@ -4,6 +4,7 @@ use kumo::{
     CrawlRequest,
     frontier::{FileFrontier, Frontier},
     request::FrontierRequest,
+    scheduler::{CrawlScheduler, FingerprintPolicy, PolitenessPolicy},
 };
 use reqwest::header::{HeaderName, HeaderValue};
 use std::time::Duration;
@@ -155,6 +156,55 @@ async fn dont_filter_allows_duplicate_url() {
         .await
     );
     assert_eq!(f.len().await, 2);
+}
+
+#[tokio::test]
+async fn dont_filter_survives_flush_and_resume() {
+    let dir = tempdir().unwrap();
+    {
+        let f = FileFrontier::open(dir.path()).unwrap();
+        f.push_request(
+            CrawlRequest::get("https://example.com/revisit").dont_filter(true),
+            0,
+        )
+        .await;
+        f.flush().await.unwrap();
+    }
+
+    let f = FileFrontier::open(dir.path()).unwrap();
+    let queued = f.pop_request().await.unwrap();
+    assert_eq!(queued.request().url(), "https://example.com/revisit");
+    assert!(queued.request().dont_filter_enabled());
+}
+
+#[tokio::test]
+async fn scheduler_dedup_fingerprint_survives_file_frontier_resume() {
+    let dir = tempdir().unwrap();
+    {
+        let frontier = FileFrontier::open(dir.path()).unwrap();
+        let scheduler = CrawlScheduler::new(frontier, PolitenessPolicy::default())
+            .with_fingerprint_policy(FingerprintPolicy::default().strip_tracking_params(true));
+
+        assert!(
+            scheduler
+                .push_request(
+                    CrawlRequest::get("https://example.com/products?b=2&a=1&utm_source=test"),
+                    0,
+                )
+                .await
+        );
+        scheduler.flush().await.unwrap();
+    }
+
+    let frontier = FileFrontier::open(dir.path()).unwrap();
+    let scheduler = CrawlScheduler::new(frontier, PolitenessPolicy::default())
+        .with_fingerprint_policy(FingerprintPolicy::default().strip_tracking_params(true));
+
+    assert!(
+        !scheduler
+            .push_request(CrawlRequest::get("https://EXAMPLE.com/products?a=1&b=2"), 0,)
+            .await
+    );
 }
 
 #[tokio::test]
