@@ -20,7 +20,7 @@ pub mod scheduler;
 pub mod sitemap;
 pub mod spider;
 pub mod stats;
-pub use stats::{CrawlReport, CrawlStats};
+pub use stats::{CrawlReport, CrawlStats, StopReason};
 pub mod store;
 
 /// Convenience re-exports for writing spiders with minimal `use` statements.
@@ -65,6 +65,7 @@ pub mod prelude {
     pub use crate::scheduler::{CrawlScheduler, DomainPolicy, FingerprintPolicy, PolitenessPolicy};
     pub use crate::sitemap::{SitemapEntry, SitemapSpider};
     pub use crate::spider::{Output, Spider};
+    pub use crate::stats::StopReason;
     #[cfg(feature = "mysql")]
     pub use crate::store::MySqlStore;
     #[cfg(feature = "postgres")]

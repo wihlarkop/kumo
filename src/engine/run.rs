@@ -15,6 +15,7 @@ use crate::{
 };
 
 use super::{
+    budget::CrawlBudgets,
     builder::CrawlEngine,
     erased::{ErasedSpider, SpiderErased},
     setup::{
@@ -43,6 +44,12 @@ impl CrawlEngine {
         S: Spider + 'static,
     {
         let start = std::time::Instant::now();
+        let budgets = CrawlBudgets {
+            max_pages: self.max_pages,
+            max_items: self.max_items,
+            max_duration: self.max_duration,
+            max_errors: self.max_errors,
+        };
         let metrics_interval = self.metrics_interval;
         let stream_cancelled = self.stream_cancelled.clone();
         let spider: Arc<dyn ErasedSpider> = Arc::new(SpiderErased(spider));
@@ -152,6 +159,11 @@ impl CrawlEngine {
             if is_cancelled(&stream_cancelled) {
                 shutting_down = true;
                 stats.interrupted = true;
+                stats.stop_reason = Some(crate::stats::StopReason::Interrupted);
+            }
+
+            if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
+                shutting_down = true;
             }
 
             let mut next_scheduler_wait: Option<std::time::Duration> = None;
@@ -213,6 +225,9 @@ impl CrawlEngine {
             }
 
             if join_set.is_empty() {
+                if shutting_down {
+                    break;
+                }
                 if scheduler.is_empty().await {
                     break;
                 }
@@ -235,6 +250,7 @@ impl CrawlEngine {
                 _ = &mut shutdown, if !shutting_down => {
                     shutting_down = true;
                     stats.interrupted = true;
+                    stats.stop_reason = Some(crate::stats::StopReason::Interrupted);
                 }
                 result = join_set.join_next_with_id() => {
                     match result {
@@ -248,8 +264,13 @@ impl CrawlEngine {
                             if is_cancelled(&stream_cancelled) {
                                 shutting_down = true;
                                 stats.interrupted = true;
+                                stats.stop_reason = Some(crate::stats::StopReason::Interrupted);
                             }
                             update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+
+                            if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
+                                shutting_down = true;
+                            }
 
                             if !shutting_down {
                                 for (follow_request, follow_depth) in follows {
@@ -307,6 +328,9 @@ impl CrawlEngine {
 
                             stats.record_error(&domain_key(&url));
                             update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                            if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
+                                shutting_down = true;
+                            }
                             match spider.on_error(&url, &e) {
                                 ErrorPolicy::Abort => {
                                     error!(url = %url, error = %e, "aborting crawl");
@@ -344,9 +368,15 @@ impl CrawlEngine {
                                 scheduler.finish(&queued).await;
                                 stats.record_error(&domain_key(queued.request.url()));
                                 update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                                if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
+                                    shutting_down = true;
+                                }
                             } else {
                                 stats.errors += 1;
                                 update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                                if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
+                                    shutting_down = true;
+                                }
                             }
                             error!(spider = spider.name(), error = %join_err, "crawl task panicked");
                         }
@@ -363,6 +393,13 @@ impl CrawlEngine {
         scheduler.flush().await?;
         store.flush().await?;
         stats.duration = start.elapsed();
+        if stats.stop_reason.is_none() {
+            stats.stop_reason = if stats.interrupted {
+                Some(crate::stats::StopReason::Interrupted)
+            } else {
+                Some(crate::stats::StopReason::FrontierExhausted)
+            };
+        }
 
         // close() errors are intentionally not propagated â€” the crawl and store
         // flush completed successfully. Cleanup failures are logged only.

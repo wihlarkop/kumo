@@ -5,7 +5,7 @@ use kumo::{
     extract::Response,
     fetch::MockFetcher,
     spider::{Output, Spider},
-    stats::{CrawlReport, CrawlStats},
+    stats::{CrawlReport, CrawlStats, StopReason},
     store::StdoutStore,
 };
 
@@ -27,6 +27,18 @@ fn crawl_report_exposes_scheduler_counters() {
     assert_eq!(report.domains["example.com"].deduped, 1);
     assert_eq!(report.domains["example.com"].retries, 1);
     assert_eq!(report.domains["example.com"].robots_blocked, 1);
+}
+
+#[test]
+fn crawl_report_exposes_stop_reason() {
+    let stats = CrawlStats {
+        stop_reason: Some(StopReason::MaxPages),
+        ..CrawlStats::default()
+    };
+
+    let report = CrawlReport::from(stats);
+
+    assert_eq!(report.stop_reason, Some(StopReason::MaxPages));
 }
 
 #[test]

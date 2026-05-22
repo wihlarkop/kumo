@@ -18,6 +18,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   scheduler-normalized dedup fingerprints.
 - Made `CachingFetcher` bypass non-GET requests and expanded HTTP cache coverage
   for TTL refetching, cached statuses, and binary-response bypass behavior.
+- Added crawl budget controls: `max_pages()`, `max_items()`, `max_duration()`,
+  `max_errors()`, and `CrawlStats::stop_reason`.
 
 ### 0.2.12 - 2026-05-23
 
