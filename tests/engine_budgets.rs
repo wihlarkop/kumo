@@ -175,6 +175,37 @@ async fn max_duration_zero_stops_before_dispatching_requests() {
 }
 
 #[tokio::test]
+async fn max_duration_wakes_single_spider_before_scheduler_delay() {
+    let urls = vec![
+        "https://example.com/page/1".to_string(),
+        "https://example.com/page/2".to_string(),
+    ];
+    let mock = MockFetcher::new()
+        .with_response(&urls[0], 200, "<h1>one</h1>")
+        .with_response(&urls[1], 200, "<h1>two</h1>");
+
+    let started = std::time::Instant::now();
+    let stats = CrawlEngine::builder()
+        .concurrency(1)
+        .crawl_delay(Duration::from_secs(1))
+        .respect_robots_txt(false)
+        .max_duration(Duration::from_millis(100))
+        .fetcher(mock)
+        .store(StdoutStore)
+        .run(ChainSpider { urls })
+        .await
+        .unwrap();
+
+    assert_eq!(stats.pages_crawled, 1);
+    assert_eq!(stats.stop_reason, Some(StopReason::MaxDuration));
+    assert!(
+        started.elapsed() < Duration::from_millis(700),
+        "duration budget waited for scheduler delay: {:?}",
+        started.elapsed()
+    );
+}
+
+#[tokio::test]
 async fn max_errors_stops_after_permanent_error() {
     let url = "https://example.com/error";
     let mock = MockFetcher::new().with_response(url, 200, "<h1>error</h1>");
@@ -227,4 +258,36 @@ async fn run_all_applies_budgets_per_spider() {
 
     assert_eq!(stats[1].pages_crawled, 2);
     assert_eq!(stats[1].stop_reason, Some(StopReason::MaxPages));
+}
+
+#[tokio::test]
+async fn max_duration_wakes_run_all_before_scheduler_delay() {
+    let urls = vec![
+        "https://example.com/page/1".to_string(),
+        "https://example.com/page/2".to_string(),
+    ];
+    let mock = MockFetcher::new()
+        .with_response(&urls[0], 200, "<h1>one</h1>")
+        .with_response(&urls[1], 200, "<h1>two</h1>");
+
+    let started = std::time::Instant::now();
+    let stats = CrawlEngine::builder()
+        .concurrency(1)
+        .crawl_delay(Duration::from_secs(1))
+        .respect_robots_txt(false)
+        .max_duration(Duration::from_millis(100))
+        .fetcher(mock)
+        .store(StdoutStore)
+        .add_spider(ChainSpider { urls })
+        .run_all()
+        .await
+        .unwrap();
+
+    assert_eq!(stats[0].pages_crawled, 1);
+    assert_eq!(stats[0].stop_reason, Some(StopReason::MaxDuration));
+    assert!(
+        started.elapsed() < Duration::from_millis(700),
+        "duration budget waited for scheduler delay: {:?}",
+        started.elapsed()
+    );
 }

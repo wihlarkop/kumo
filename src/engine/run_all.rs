@@ -193,6 +193,13 @@ impl CrawlEngine {
                 }
             }
 
+            let next_wake = match (next_scheduler_wait, budgets.remaining_duration(start)) {
+                (Some(scheduler_wait), Some(budget_wait)) => Some(scheduler_wait.min(budget_wait)),
+                (Some(scheduler_wait), None) => Some(scheduler_wait),
+                (None, Some(budget_wait)) => Some(budget_wait),
+                (None, None) => None,
+            };
+
             if join_set.is_empty() {
                 let mut all_empty = true;
                 for (idx, (_, scheduler)) in spider_entries.iter().enumerate() {
@@ -213,20 +220,17 @@ impl CrawlEngine {
                     }
                     break;
                 }
-                tokio::time::sleep(
-                    next_scheduler_wait.unwrap_or(std::time::Duration::from_millis(10)),
-                )
-                .await;
+                tokio::time::sleep(next_wake.unwrap_or(std::time::Duration::from_millis(10))).await;
                 continue;
             }
 
             let scheduler_sleep = tokio::time::sleep(
-                next_scheduler_wait.unwrap_or(std::time::Duration::from_secs(24 * 60 * 60)),
+                next_wake.unwrap_or(std::time::Duration::from_secs(24 * 60 * 60)),
             );
             tokio::pin!(scheduler_sleep);
 
             tokio::select! {
-                _ = &mut scheduler_sleep, if next_scheduler_wait.is_some() => {
+                _ = &mut scheduler_sleep, if next_wake.is_some() => {
                     continue;
                 }
                 _ = &mut shutdown, if !shutting_down => {
