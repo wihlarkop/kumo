@@ -14,6 +14,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### Unreleased
 
+### 0.3.0 - 2026-05-23
+
 - Expanded `FileFrontier` resume coverage for `dont_filter` requests and
   scheduler-normalized dedup fingerprints.
 - Made `CachingFetcher` bypass non-GET requests and expanded HTTP cache coverage
