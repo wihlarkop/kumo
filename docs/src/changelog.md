@@ -14,6 +14,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### Unreleased
 
+### 0.3.2 - 2026-05-23
+
 - Added stable JSON export helpers for `CrawlReport`, including compact and
   pretty-printed report strings.
 
