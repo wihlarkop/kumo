@@ -16,6 +16,7 @@ fn crawl_report_exposes_scheduler_counters() {
     stats.record_scheduled("example.com");
     stats.record_deduped("example.com");
     stats.record_retry("example.com");
+    stats.record_retry_exhausted("example.com");
     stats.record_robots_blocked("example.com");
 
     let report = CrawlReport::from(stats);
@@ -23,10 +24,12 @@ fn crawl_report_exposes_scheduler_counters() {
     assert_eq!(report.scheduled, 1);
     assert_eq!(report.deduped, 1);
     assert_eq!(report.retries, 1);
+    assert_eq!(report.retry_exhausted, 1);
     assert_eq!(report.robots_blocked, 1);
     assert_eq!(report.domains["example.com"].scheduled, 1);
     assert_eq!(report.domains["example.com"].deduped, 1);
     assert_eq!(report.domains["example.com"].retries, 1);
+    assert_eq!(report.domains["example.com"].retry_exhausted, 1);
     assert_eq!(report.domains["example.com"].robots_blocked, 1);
 }
 
@@ -68,6 +71,7 @@ fn crawl_report_exports_stable_json() {
     stats.record_completed("example.com");
     stats.record_error("example.com");
     stats.record_retry("example.com");
+    stats.record_retry_exhausted("example.com");
     stats.record_robots_blocked("example.com");
 
     let report = CrawlReport::from(stats);
@@ -85,6 +89,8 @@ fn crawl_report_exports_stable_json() {
     assert_eq!(json["domains"]["example.com"]["completed"], 1);
     assert_eq!(json["domains"]["example.com"]["failed"], 1);
     assert_eq!(json["domains"]["example.com"]["retries"], 1);
+    assert_eq!(json["retry_exhausted"], 1);
+    assert_eq!(json["domains"]["example.com"]["retry_exhausted"], 1);
     assert_eq!(json["domains"]["example.com"]["robots_blocked"], 1);
 
     let compact: serde_json::Value = serde_json::from_str(&report.to_json_string()).unwrap();

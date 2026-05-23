@@ -278,6 +278,10 @@ impl CrawlEngine {
                             for mw in middleware.iter() {
                                 mw.on_error(&url, &e).await;
                             }
+                            let domain = domain_key(&url);
+                            let retry_policy_exhausted = retry_policy.max_attempts > 0
+                                && retry_policy.is_retriable(&e)
+                                && queued.retry_count >= retry_policy.max_attempts;
                             let (spider, scheduler) = &spider_entries[spider_idx];
                             if !shutting_down
                                 && queued.retry_count < retry_policy.max_attempts
@@ -287,7 +291,7 @@ impl CrawlEngine {
                                     middleware.iter().find_map(|mw| mw.retry_delay(&url, &e));
                                 let delay = retry_policy
                                     .delay_for_with_hint(queued.retry_count, retry_delay_hint);
-                                stats_vec[spider_idx].record_retry(&domain_key(&url));
+                                stats_vec[spider_idx].record_retry(&domain);
                                 tracing::warn!(
                                     spider = spider.name(),
                                     url = %url,
@@ -310,7 +314,12 @@ impl CrawlEngine {
                                 continue;
                             }
 
-                            stats_vec[spider_idx].record_error(&domain_key(&url));
+                            let mut retry_exhausted_recorded = false;
+                            if retry_policy_exhausted {
+                                stats_vec[spider_idx].record_retry_exhausted(&domain);
+                                retry_exhausted_recorded = true;
+                            }
+                            stats_vec[spider_idx].record_error(&domain);
                             budgets.mark_if_reached(&mut stats_vec[spider_idx], start);
                             match spider.on_error(&url, &e) {
                                 ErrorPolicy::Abort => {
@@ -329,7 +338,7 @@ impl CrawlEngine {
                                     if !shutting_down
                                         && stats_vec[spider_idx].stop_reason.is_none()
                                     {
-                                        stats_vec[spider_idx].record_retry(&domain_key(&url));
+                                        stats_vec[spider_idx].record_retry(&domain);
                                         scheduler.push_request_force(FrontierRequest::new(
                                             queued.request,
                                             queued.depth,
@@ -338,6 +347,9 @@ impl CrawlEngine {
                                     }
                                 }
                                 ErrorPolicy::Retry(_) => {
+                                    if !retry_exhausted_recorded {
+                                        stats_vec[spider_idx].record_retry_exhausted(&domain);
+                                    }
                                     tracing::warn!(spider = spider.name(), url = %url, error = %e, "fetch.skip.retry_exhausted");
                                 }
                                 ErrorPolicy::Skip => {

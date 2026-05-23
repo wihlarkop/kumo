@@ -117,12 +117,13 @@ async fn main() -> Result<(), KumoError> {
         .await?;
 
     println!(
-        "pages={} items={} scheduled={} errors={} retries={} deduped={} robots_blocked={}",
+        "pages={} items={} scheduled={} errors={} retries={} retry_exhausted={} deduped={} robots_blocked={}",
         stats.pages_crawled,
         stats.items_scraped,
         stats.scheduled,
         stats.errors,
         stats.retries,
+        stats.retry_exhausted,
         stats.deduped,
         stats.robots_blocked
     );

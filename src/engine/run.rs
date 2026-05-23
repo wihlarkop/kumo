@@ -298,6 +298,10 @@ impl CrawlEngine {
                             for mw in middleware.iter() {
                                 mw.on_error(&url, &e).await;
                             }
+                            let domain = domain_key(&url);
+                            let retry_policy_exhausted = retry_policy.max_attempts > 0
+                                && retry_policy.is_retriable(&e)
+                                && queued.retry_count >= retry_policy.max_attempts;
                             if !shutting_down
                                 && queued.retry_count < retry_policy.max_attempts
                                 && retry_policy.is_retriable(&e)
@@ -306,7 +310,7 @@ impl CrawlEngine {
                                     middleware.iter().find_map(|mw| mw.retry_delay(&url, &e));
                                 let delay = retry_policy
                                     .delay_for_with_hint(queued.retry_count, retry_delay_hint);
-                                stats.record_retry(&domain_key(&url));
+                                stats.record_retry(&domain);
                                 update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                                 tracing::warn!(
                                     spider = spider.name(),
@@ -330,7 +334,12 @@ impl CrawlEngine {
                                 continue;
                             }
 
-                            stats.record_error(&domain_key(&url));
+                            let mut retry_exhausted_recorded = false;
+                            if retry_policy_exhausted {
+                                stats.record_retry_exhausted(&domain);
+                                retry_exhausted_recorded = true;
+                            }
+                            stats.record_error(&domain);
                             update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                             if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
                                 shutting_down = true;
@@ -350,7 +359,7 @@ impl CrawlEngine {
                                         "re-queuing failed URL"
                                     );
                                     if !shutting_down {
-                                        stats.record_retry(&domain_key(&url));
+                                        stats.record_retry(&domain);
                                         update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                                         scheduler.push_request_force(FrontierRequest::new(
                                             queued.request,
@@ -360,6 +369,10 @@ impl CrawlEngine {
                                     }
                                 }
                                 ErrorPolicy::Retry(_) => {
+                                    if !retry_exhausted_recorded {
+                                        stats.record_retry_exhausted(&domain);
+                                        update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                                    }
                                     tracing::warn!(spider = spider.name(), url = %url, error = %e, "fetch.skip.retry_exhausted");
                                 }
                                 ErrorPolicy::Skip => {
