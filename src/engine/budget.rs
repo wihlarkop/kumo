@@ -48,4 +48,9 @@ impl CrawlBudgets {
         }
         stats.stop_reason.is_some()
     }
+
+    pub(super) fn remaining_duration(&self, start: Instant) -> Option<Duration> {
+        self.max_duration
+            .map(|max_duration| max_duration.saturating_sub(start.elapsed()))
+    }
 }
