@@ -8,6 +8,7 @@ pub struct DomainStats {
     pub completed: u64,
     pub failed: u64,
     pub retries: u64,
+    pub retry_exhausted: u64,
     pub robots_blocked: u64,
 }
 
@@ -41,6 +42,7 @@ pub struct CrawlStats {
     pub scheduled: u64,
     pub deduped: u64,
     pub retries: u64,
+    pub retry_exhausted: u64,
     pub robots_blocked: u64,
     pub domains: BTreeMap<String, DomainStats>,
     pub stop_reason: Option<StopReason>,
@@ -73,6 +75,11 @@ impl CrawlStats {
     pub fn record_retry(&mut self, domain: &str) {
         self.retries += 1;
         self.domain_mut(domain).retries += 1;
+    }
+
+    pub fn record_retry_exhausted(&mut self, domain: &str) {
+        self.retry_exhausted += 1;
+        self.domain_mut(domain).retry_exhausted += 1;
     }
 
     pub fn record_robots_blocked(&mut self, domain: &str) {
@@ -111,6 +118,7 @@ pub struct CrawlReport {
     pub scheduled: u64,
     pub deduped: u64,
     pub retries: u64,
+    pub retry_exhausted: u64,
     pub robots_blocked: u64,
     pub domains: BTreeMap<String, DomainStats>,
     pub stop_reason: Option<StopReason>,
@@ -128,6 +136,7 @@ impl From<CrawlStats> for CrawlReport {
             scheduled: stats.scheduled,
             deduped: stats.deduped,
             retries: stats.retries,
+            retry_exhausted: stats.retry_exhausted,
             robots_blocked: stats.robots_blocked,
             domains: stats.domains,
             stop_reason: stats.stop_reason,
@@ -153,6 +162,7 @@ impl CrawlReport {
                         "completed": stats.completed,
                         "failed": stats.failed,
                         "retries": stats.retries,
+                        "retry_exhausted": stats.retry_exhausted,
                         "robots_blocked": stats.robots_blocked,
                     }),
                 )
@@ -170,6 +180,7 @@ impl CrawlReport {
             "scheduled": self.scheduled,
             "deduped": self.deduped,
             "retries": self.retries,
+            "retry_exhausted": self.retry_exhausted,
             "robots_blocked": self.robots_blocked,
             "domains": domains,
             "stop_reason": self.stop_reason.map(StopReason::as_str),
