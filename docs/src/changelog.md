@@ -14,6 +14,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### Unreleased
 
+### 0.3.1 - 2026-05-23
+
 - Made `max_duration()` wake crawls promptly even when the scheduler is waiting
   on longer politeness or retry delays.
 
