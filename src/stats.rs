@@ -11,6 +11,23 @@ pub struct DomainStats {
     pub robots_blocked: u64,
 }
 
+/// Why a crawl stopped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopReason {
+    /// The frontier ran out of eligible requests.
+    FrontierExhausted,
+    /// The crawl was interrupted, for example by Ctrl+C or stream cancellation.
+    Interrupted,
+    /// The configured page budget was reached.
+    MaxPages,
+    /// The configured item budget was reached.
+    MaxItems,
+    /// The configured duration budget was reached.
+    MaxDuration,
+    /// The configured error budget was reached.
+    MaxErrors,
+}
+
 /// Statistics returned by `CrawlEngine::run` after the crawl finishes.
 #[derive(Debug, Default, Clone)]
 pub struct CrawlStats {
@@ -26,6 +43,7 @@ pub struct CrawlStats {
     pub retries: u64,
     pub robots_blocked: u64,
     pub domains: BTreeMap<String, DomainStats>,
+    pub stop_reason: Option<StopReason>,
 }
 
 impl CrawlStats {
@@ -81,6 +99,7 @@ pub struct CrawlReport {
     pub retries: u64,
     pub robots_blocked: u64,
     pub domains: BTreeMap<String, DomainStats>,
+    pub stop_reason: Option<StopReason>,
 }
 
 impl From<CrawlStats> for CrawlReport {
@@ -97,6 +116,7 @@ impl From<CrawlStats> for CrawlReport {
             retries: stats.retries,
             robots_blocked: stats.robots_blocked,
             domains: stats.domains,
+            stop_reason: stats.stop_reason,
         }
     }
 }

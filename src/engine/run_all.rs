@@ -14,6 +14,7 @@ use crate::{
 };
 
 use super::{
+    budget::CrawlBudgets,
     builder::CrawlEngine,
     erased::ErasedSpider,
     setup::{
@@ -33,6 +34,12 @@ impl CrawlEngine {
         }
 
         let start = std::time::Instant::now();
+        let budgets = CrawlBudgets {
+            max_pages: self.max_pages,
+            max_items: self.max_items,
+            max_duration: self.max_duration,
+            max_errors: self.max_errors,
+        };
         let n = self.spiders.len();
         let politeness_policy = self.politeness_policy;
         let fingerprint_policy = self.fingerprint_policy;
@@ -114,6 +121,12 @@ impl CrawlEngine {
         let mut fill_cursor = 0usize;
 
         loop {
+            for stats in &mut stats_vec {
+                if stats.stop_reason.is_none() && budgets.mark_if_reached(stats, start) {
+                    // This spider is done, but other spiders may still have work.
+                }
+            }
+
             let mut next_scheduler_wait: Option<std::time::Duration> = None;
 
             if !shutting_down {
@@ -121,6 +134,9 @@ impl CrawlEngine {
                     let mut any_popped = false;
                     for attempt in 0..n {
                         let idx = (fill_cursor + attempt) % n;
+                        if stats_vec[idx].stop_reason.is_some() {
+                            continue;
+                        }
                         let (spider, scheduler) = &spider_entries[idx];
                         match scheduler.poll_ready().await {
                             SchedulerPoll::Ready(queued) => {
@@ -179,13 +195,22 @@ impl CrawlEngine {
 
             if join_set.is_empty() {
                 let mut all_empty = true;
-                for (_, scheduler) in &spider_entries {
-                    if !scheduler.is_empty().await {
+                for (idx, (_, scheduler)) in spider_entries.iter().enumerate() {
+                    if stats_vec[idx].stop_reason.is_none() && !scheduler.is_empty().await {
                         all_empty = false;
                         break;
                     }
                 }
                 if all_empty {
+                    for stats in &mut stats_vec {
+                        if stats.stop_reason.is_none() {
+                            stats.stop_reason = if stats.interrupted {
+                                Some(crate::stats::StopReason::Interrupted)
+                            } else {
+                                Some(crate::stats::StopReason::FrontierExhausted)
+                            };
+                        }
+                    }
                     break;
                 }
                 tokio::time::sleep(
@@ -206,7 +231,12 @@ impl CrawlEngine {
                 }
                 _ = &mut shutdown, if !shutting_down => {
                     shutting_down = true;
-                    for s in &mut stats_vec { s.interrupted = true; }
+                    for s in &mut stats_vec {
+                        s.interrupted = true;
+                        if s.stop_reason.is_none() {
+                            s.stop_reason = Some(crate::stats::StopReason::Interrupted);
+                        }
+                    }
                 }
                 result = join_set.join_next_with_id() => {
                     match result {
@@ -219,15 +249,18 @@ impl CrawlEngine {
                             stats.pages_crawled += 1;
                             stats.items_scraped += item_count;
                             stats.bytes_downloaded += bytes;
+                            let budget_reached = budgets.mark_if_reached(stats, start);
                             if !shutting_down {
                                 let (spider, scheduler) = &spider_entries[spider_idx];
-                                for (follow_request, follow_depth) in follows {
-                                    if should_enqueue(&follow_request, follow_depth, spider.as_ref()) {
-                                        let domain = domain_key(follow_request.url());
-                                        if scheduler.push_request(follow_request, follow_depth).await {
-                                            stats.record_scheduled(&domain);
-                                        } else {
-                                            stats.record_deduped(&domain);
+                                if !budget_reached {
+                                    for (follow_request, follow_depth) in follows {
+                                        if should_enqueue(&follow_request, follow_depth, spider.as_ref()) {
+                                            let domain = domain_key(follow_request.url());
+                                            if scheduler.push_request(follow_request, follow_depth).await {
+                                                stats.record_scheduled(&domain);
+                                            } else {
+                                                stats.record_deduped(&domain);
+                                            }
                                         }
                                     }
                                 }
@@ -274,6 +307,7 @@ impl CrawlEngine {
                             }
 
                             stats_vec[spider_idx].record_error(&domain_key(&url));
+                            budgets.mark_if_reached(&mut stats_vec[spider_idx], start);
                             match spider.on_error(&url, &e) {
                                 ErrorPolicy::Abort => {
                                     error!(url = %url, error = %e, "aborting crawl");
@@ -288,7 +322,9 @@ impl CrawlEngine {
                                         error = %e,
                                         "re-queuing failed URL"
                                     );
-                                    if !shutting_down {
+                                    if !shutting_down
+                                        && stats_vec[spider_idx].stop_reason.is_none()
+                                    {
                                         stats_vec[spider_idx].record_retry(&domain_key(&url));
                                         scheduler.push_request_force(FrontierRequest::new(
                                             queued.request,
@@ -310,6 +346,7 @@ impl CrawlEngine {
                                 let (_, scheduler) = &spider_entries[spider_idx];
                                 scheduler.finish(&queued).await;
                                 stats_vec[spider_idx].record_error(&domain_key(queued.request.url()));
+                                budgets.mark_if_reached(&mut stats_vec[spider_idx], start);
                             }
                             error!(error = %join_err, "crawl task panicked");
                         }
@@ -330,6 +367,13 @@ impl CrawlEngine {
 
         for (i, (spider, _)) in spider_entries.iter().enumerate() {
             stats_vec[i].duration = elapsed;
+            if stats_vec[i].stop_reason.is_none() {
+                stats_vec[i].stop_reason = if stats_vec[i].interrupted {
+                    Some(crate::stats::StopReason::Interrupted)
+                } else {
+                    Some(crate::stats::StopReason::FrontierExhausted)
+                };
+            }
             if let Err(e) = spider.close(&stats_vec[i]).await {
                 tracing::error!(spider = spider.name(), error = %e, "spider::close failed");
             }

@@ -92,6 +92,7 @@ impl Spider for MySpider {
 | `duration` | `Duration` | Wall-clock crawl time |
 | `bytes_downloaded` | `u64` | Total response body bytes |
 | `interrupted` | `bool` | `true` if stopped by Ctrl+C |
+| `stop_reason` | `Option<StopReason>` | Why the crawl stopped |
 | `scheduled` | `u64` | Requests accepted by the scheduler |
 | `deduped` | `u64` | Requests skipped because their fingerprint was already seen |
 | `retries` | `u64` | Retry attempts requeued by retry policy or `ErrorPolicy::Retry` |
@@ -105,6 +106,17 @@ silently lose failed work.
 
 When updating stats manually, use `record_error(domain)` to increment both the
 global error count and the matching per-domain failure count together.
+
+`stop_reason` is set when the crawl ends:
+
+| Reason | Meaning |
+|--------|---------|
+| `FrontierExhausted` | No scheduled or in-flight requests remain |
+| `Interrupted` | The crawl received Ctrl+C or stream cancellation |
+| `MaxPages` | `max_pages()` was reached |
+| `MaxItems` | `max_items()` was reached after a response finished |
+| `MaxDuration` | `max_duration()` was reached |
+| `MaxErrors` | `max_errors()` was reached |
 
 ## Error Handling
 
@@ -148,6 +160,10 @@ CrawlEngine::builder()
     .retry(3, Duration::from_millis(200))     // retry up to 3× with 200ms base delay
     .respect_robots_txt(true)                 // honours robots.txt (default: true)
     .max_urls(500_000)                        // Bloom filter size (default: 1_000_000)
+    .max_pages(10_000)                        // stop after enough pages
+    .max_items(100_000)                       // stop after enough items
+    .max_duration(Duration::from_secs(3600))  // stop after elapsed wall-clock time
+    .max_errors(100)                          // stop after permanent failures
     .metrics_interval(Duration::from_secs(30))
     .middleware(DefaultHeaders::new().user_agent("my-bot/1.0"))
     .store(JsonlStore::new("output.jsonl")?)
