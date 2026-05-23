@@ -119,7 +119,8 @@ The scheduler handles request priority, per-domain delay, delayed retries,
 fingerprint-based deduplication, crawl budgets, and crawl stats. Inspect
 `stats.stop_reason` after `run()` or `run_all()` to see whether a crawl ended
 because the frontier was exhausted, it was interrupted, or a configured budget
-was reached.
+was reached. Convert stats into `CrawlReport` and call `to_json_string_pretty()`
+when production jobs need to save a crawl summary.
 
 For a fuller production-style setup with `Retry-After` aware retries,
 `FileFrontier` resume state, metrics, robots.txt, and JSONL storage, see

@@ -85,6 +85,20 @@ impl CrawlStats {
     }
 }
 
+impl StopReason {
+    /// Stable snake_case label for reports, logs, and metrics.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FrontierExhausted => "frontier_exhausted",
+            Self::Interrupted => "interrupted",
+            Self::MaxPages => "max_pages",
+            Self::MaxItems => "max_items",
+            Self::MaxDuration => "max_duration",
+            Self::MaxErrors => "max_errors",
+        }
+    }
+}
+
 /// Final crawl report. This is a stable, cloneable snapshot of [`CrawlStats`].
 #[derive(Debug, Clone)]
 pub struct CrawlReport {
@@ -118,6 +132,59 @@ impl From<CrawlStats> for CrawlReport {
             domains: stats.domains,
             stop_reason: stats.stop_reason,
         }
+    }
+}
+
+impl CrawlReport {
+    /// Convert the report to a stable JSON value.
+    ///
+    /// Durations are exported as `duration_ms` and `duration_secs` so consumers
+    /// do not need to know Rust's `Duration` representation.
+    pub fn to_json_value(&self) -> serde_json::Value {
+        let domains = self
+            .domains
+            .iter()
+            .map(|(domain, stats)| {
+                (
+                    domain.clone(),
+                    serde_json::json!({
+                        "scheduled": stats.scheduled,
+                        "deduped": stats.deduped,
+                        "completed": stats.completed,
+                        "failed": stats.failed,
+                        "retries": stats.retries,
+                        "robots_blocked": stats.robots_blocked,
+                    }),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>();
+
+        serde_json::json!({
+            "pages_crawled": self.pages_crawled,
+            "items_scraped": self.items_scraped,
+            "errors": self.errors,
+            "duration_ms": self.duration.as_millis(),
+            "duration_secs": self.duration.as_secs_f64(),
+            "bytes_downloaded": self.bytes_downloaded,
+            "interrupted": self.interrupted,
+            "scheduled": self.scheduled,
+            "deduped": self.deduped,
+            "retries": self.retries,
+            "robots_blocked": self.robots_blocked,
+            "domains": domains,
+            "stop_reason": self.stop_reason.map(StopReason::as_str),
+        })
+    }
+
+    /// Serialize the report as compact JSON.
+    pub fn to_json_string(&self) -> String {
+        self.to_json_value().to_string()
+    }
+
+    /// Serialize the report as pretty-printed JSON.
+    pub fn to_json_string_pretty(&self) -> String {
+        serde_json::to_string_pretty(&self.to_json_value())
+            .expect("CrawlReport JSON value should always serialize")
     }
 }
 

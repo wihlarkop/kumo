@@ -8,6 +8,7 @@ use kumo::{
     stats::{CrawlReport, CrawlStats, StopReason},
     store::StdoutStore,
 };
+use std::time::Duration;
 
 #[test]
 fn crawl_report_exposes_scheduler_counters() {
@@ -39,6 +40,57 @@ fn crawl_report_exposes_stop_reason() {
     let report = CrawlReport::from(stats);
 
     assert_eq!(report.stop_reason, Some(StopReason::MaxPages));
+}
+
+#[test]
+fn stop_reason_exports_stable_labels() {
+    assert_eq!(StopReason::FrontierExhausted.as_str(), "frontier_exhausted");
+    assert_eq!(StopReason::Interrupted.as_str(), "interrupted");
+    assert_eq!(StopReason::MaxPages.as_str(), "max_pages");
+    assert_eq!(StopReason::MaxItems.as_str(), "max_items");
+    assert_eq!(StopReason::MaxDuration.as_str(), "max_duration");
+    assert_eq!(StopReason::MaxErrors.as_str(), "max_errors");
+}
+
+#[test]
+fn crawl_report_exports_stable_json() {
+    let mut stats = CrawlStats {
+        pages_crawled: 2,
+        items_scraped: 3,
+        errors: 1,
+        duration: Duration::from_millis(1_500),
+        bytes_downloaded: 42,
+        stop_reason: Some(StopReason::MaxErrors),
+        ..CrawlStats::default()
+    };
+    stats.record_scheduled("example.com");
+    stats.record_deduped("example.com");
+    stats.record_completed("example.com");
+    stats.record_error("example.com");
+    stats.record_retry("example.com");
+    stats.record_robots_blocked("example.com");
+
+    let report = CrawlReport::from(stats);
+    let json = report.to_json_value();
+
+    assert_eq!(json["pages_crawled"], 2);
+    assert_eq!(json["items_scraped"], 3);
+    assert_eq!(json["errors"], 2);
+    assert_eq!(json["duration_ms"], 1_500);
+    assert_eq!(json["duration_secs"], 1.5);
+    assert_eq!(json["bytes_downloaded"], 42);
+    assert_eq!(json["stop_reason"], "max_errors");
+    assert_eq!(json["domains"]["example.com"]["scheduled"], 1);
+    assert_eq!(json["domains"]["example.com"]["deduped"], 1);
+    assert_eq!(json["domains"]["example.com"]["completed"], 1);
+    assert_eq!(json["domains"]["example.com"]["failed"], 1);
+    assert_eq!(json["domains"]["example.com"]["retries"], 1);
+    assert_eq!(json["domains"]["example.com"]["robots_blocked"], 1);
+
+    let compact: serde_json::Value = serde_json::from_str(&report.to_json_string()).unwrap();
+    let pretty: serde_json::Value = serde_json::from_str(&report.to_json_string_pretty()).unwrap();
+    assert_eq!(compact, json);
+    assert_eq!(pretty, json);
 }
 
 #[test]
