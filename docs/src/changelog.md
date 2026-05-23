@@ -14,6 +14,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### Unreleased
 
+- Added stable JSON export helpers for `CrawlReport`, including compact and
+  pretty-printed report strings.
+
 ### 0.3.1 - 2026-05-23
 
 - Made `max_duration()` wake crawls promptly even when the scheduler is waiting

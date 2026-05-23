@@ -65,6 +65,7 @@ pub mod prelude {
     pub use crate::scheduler::{CrawlScheduler, DomainPolicy, FingerprintPolicy, PolitenessPolicy};
     pub use crate::sitemap::{SitemapEntry, SitemapSpider};
     pub use crate::spider::{Output, Spider};
+    pub use crate::stats::CrawlReport;
     pub use crate::stats::StopReason;
     #[cfg(feature = "mysql")]
     pub use crate::store::MySqlStore;

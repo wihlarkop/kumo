@@ -118,6 +118,23 @@ global error count and the matching per-domain failure count together.
 | `MaxDuration` | `max_duration()` was reached |
 | `MaxErrors` | `max_errors()` was reached |
 
+Use `CrawlReport::from(stats)` when you need a stable snapshot for logging or
+export. Reports can be exported directly with `to_json_value()`,
+`to_json_string()`, or `to_json_string_pretty()`:
+
+```rust
+let stats = CrawlEngine::builder()
+    .run(MySpider)
+    .await?;
+
+let report = CrawlReport::from(stats);
+std::fs::write("crawl-report.json", report.to_json_string_pretty())?;
+```
+
+Report JSON uses stable snake_case field names. `duration` is exported as
+`duration_ms` and `duration_secs`, and `stop_reason` is exported as a snake_case
+string such as `"frontier_exhausted"` or `"max_pages"`.
+
 ## Error Handling
 
 `on_error` lets each spider decide what to do with a failed URL:
