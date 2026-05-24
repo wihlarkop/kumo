@@ -74,10 +74,9 @@ impl Spider for ProductionSpider {
 #[tokio::main]
 async fn main() -> Result<(), KumoError> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            std::env::var("RUST_LOG")
-                .unwrap_or_else(|_| "kumo=info,production_crawler=info".into()),
-        )
+        .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| {
+            "kumo::crawl=info,kumo::request=info,production_crawler=info".into()
+        }))
         .init();
 
     let frontier = FileFrontier::open("production-frontier")?.flush_every(25);
@@ -107,7 +106,7 @@ async fn main() -> Result<(), KumoError> {
                 .on_status(503)
                 .on_status(504),
         )
-        .middleware(DefaultHeaders::new().user_agent("kumo-production-example/0.2"))
+        .middleware(DefaultHeaders::new().user_agent("kumo-production-example/0.3"))
         .middleware(StatusRetry::new())
         .fingerprint_policy(FingerprintPolicy::default().strip_tracking_params(true))
         .frontier(frontier)
@@ -124,7 +123,7 @@ async fn main() -> Result<(), KumoError> {
     .map_err(|e| KumoError::store("write production crawl report", e))?;
 
     println!(
-        "pages={} items={} scheduled={} errors={} error_kinds={:?} retries={} retry_exhausted={} deduped={} robots_blocked={}",
+        "pages={} items={} scheduled={} errors={} error_kinds={:?} retries={} retry_exhausted={} deduped={} robots_blocked={} report=production-crawl-report.json",
         stats.pages_crawled,
         stats.items_scraped,
         stats.scheduled,

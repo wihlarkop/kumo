@@ -87,7 +87,11 @@ impl CrawlEngine {
         let mut stats_vec: Vec<CrawlStats> = (0..n).map(|_| CrawlStats::default()).collect();
 
         for (idx, (spider, scheduler)) in spider_entries.iter().enumerate() {
-            info!(spider = spider.name(), "registering spider for multi-crawl");
+            info!(
+                target: "kumo::crawl",
+                spider = spider.name(),
+                "crawl.start"
+            );
             for url in spider.start_urls() {
                 let domain = domain_key(&url);
                 let stats = &mut stats_vec[idx];
@@ -111,7 +115,7 @@ impl CrawlEngine {
             #[cfg(not(target_arch = "wasm32"))]
             {
                 tokio::signal::ctrl_c().await.ok();
-                tracing::info!("ctrl-c received â€” finishing in-flight tasks then exiting");
+                tracing::info!(target: "kumo::crawl", "crawl.interrupted");
             }
             #[cfg(target_arch = "wasm32")]
             std::future::pending::<()>().await
@@ -144,7 +148,11 @@ impl CrawlEngine {
                                 if let Some(ref cache) = robots_cache
                                     && !cache.is_allowed(&client, queued.request.url()).await
                                 {
-                                    tracing::debug!(url = %queued.request.url(), "blocked by robots.txt, skipping");
+                                    tracing::debug!(
+                                        target: "kumo::request",
+                                        url = %queued.request.url(),
+                                        "request.robots_blocked"
+                                    );
                                     stats_vec[idx]
                                         .record_robots_blocked(&domain_key(queued.request.url()));
                                     scheduler.finish(&queued).await;
@@ -292,14 +300,15 @@ impl CrawlEngine {
                                 let delay = retry_policy
                                     .delay_for_with_hint(queued.retry_count, retry_delay_hint);
                                 stats_vec[spider_idx].record_retry(&domain);
-                                tracing::warn!(
+                                tracing::info!(
+                                    target: "kumo::request",
                                     spider = spider.name(),
                                     url = %url,
                                     attempt = queued.retry_count + 1,
                                     max = retry_policy.max_attempts,
                                     retry_in_ms = delay.as_millis(),
                                     error = %e,
-                                    "scheduling retry"
+                                    "request.retry"
                                 );
                                 scheduler
                                     .push_request_force(
@@ -323,17 +332,23 @@ impl CrawlEngine {
                             budgets.mark_if_reached(&mut stats_vec[spider_idx], start);
                             match spider.on_error(&url, &e) {
                                 ErrorPolicy::Abort => {
-                                    error!(url = %url, error = %e, "aborting crawl");
+                                    error!(
+                                        target: "kumo::crawl",
+                                        url = %url,
+                                        error = %e,
+                                        "crawl.abort"
+                                    );
                                     return Err(e);
                                 }
                                 ErrorPolicy::Retry(max) if queued.retry_count < max => {
-                                    tracing::warn!(
+                                    tracing::info!(
+                                        target: "kumo::request",
                                         spider = spider.name(),
                                         url = %url,
                                         attempt = queued.retry_count + 1,
                                         max,
                                         error = %e,
-                                        "re-queuing failed URL"
+                                        "request.retry"
                                     );
                                     if !shutting_down
                                         && stats_vec[spider_idx].stop_reason.is_none()
@@ -350,10 +365,22 @@ impl CrawlEngine {
                                     if !retry_exhausted_recorded {
                                         stats_vec[spider_idx].record_retry_exhausted(&domain);
                                     }
-                                    tracing::warn!(spider = spider.name(), url = %url, error = %e, "fetch.skip.retry_exhausted");
+                                    tracing::warn!(
+                                        target: "kumo::request",
+                                        spider = spider.name(),
+                                        url = %url,
+                                        error = %e,
+                                        "request.retry_exhausted"
+                                    );
                                 }
                                 ErrorPolicy::Skip => {
-                                    tracing::warn!(spider = spider.name(), url = %url, error = %e, "fetch.skip");
+                                    tracing::warn!(
+                                        target: "kumo::request",
+                                        spider = spider.name(),
+                                        url = %url,
+                                        error = %e,
+                                        "request.skip"
+                                    );
                                 }
                             }
                         }
@@ -364,7 +391,11 @@ impl CrawlEngine {
                                 stats_vec[spider_idx].record_error(&domain_key(queued.request.url()));
                                 budgets.mark_if_reached(&mut stats_vec[spider_idx], start);
                             }
-                            error!(error = %join_err, "crawl task panicked");
+                            error!(
+                                target: "kumo::crawl",
+                                error = %join_err,
+                                "crawl.task_panic"
+                            );
                         }
                         None => break,
                     }
@@ -391,7 +422,12 @@ impl CrawlEngine {
                 };
             }
             if let Err(e) = spider.close(&stats_vec[i]).await {
-                tracing::error!(spider = spider.name(), error = %e, "spider::close failed");
+                tracing::error!(
+                    target: "kumo::crawl",
+                    spider = spider.name(),
+                    error = %e,
+                    "spider.close_failed"
+                );
             }
             let rps = if elapsed.as_secs_f64() > 0.0 {
                 stats_vec[i].pages_crawled as f64 / elapsed.as_secs_f64()
@@ -399,13 +435,21 @@ impl CrawlEngine {
                 0.0
             };
             info!(
+                target: "kumo::crawl",
                 spider = spider.name(),
                 pages = stats_vec[i].pages_crawled,
                 items = stats_vec[i].items_scraped,
                 errors = stats_vec[i].errors,
+                scheduled = stats_vec[i].scheduled,
+                deduped = stats_vec[i].deduped,
+                retries = stats_vec[i].retries,
+                retry_exhausted = stats_vec[i].retry_exhausted,
+                robots_blocked = stats_vec[i].robots_blocked,
                 bytes = stats_vec[i].bytes_downloaded,
                 pages_per_sec = format!("{rps:.1}"),
-                "spider complete"
+                stop_reason = stats_vec[i].stop_reason.map(crate::stats::StopReason::as_str),
+                error_kinds = ?stats_vec[i].error_kinds,
+                "crawl.complete"
             );
         }
 

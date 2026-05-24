@@ -14,6 +14,11 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### Unreleased
 
+- Hardened logging with stable `tracing` event targets and event names for
+  crawl lifecycle, request retry/skip, item drops, and HTTP cache activity.
+- Added production logging docs covering `RUST_LOG`, structured targets, and
+  JSON log setup.
+
 ### 0.3.4 - 2026-05-24
 
 - Added `CrawlStats::error_kinds`, per-domain error-kind counters, stable

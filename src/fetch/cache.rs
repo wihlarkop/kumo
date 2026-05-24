@@ -104,9 +104,10 @@ impl Fetcher for CachingFetcher {
     async fn fetch(&self, request: &FetchRequest) -> Result<Response, KumoError> {
         if !Self::is_cacheable(request) {
             tracing::debug!(
+                target: "kumo::cache",
                 url = request.url(),
                 method = %request.method,
-                "http cache bypass"
+                "cache.bypass"
             );
             return self.inner.fetch(request).await;
         }
@@ -120,7 +121,11 @@ impl Fetcher for CachingFetcher {
             && entry.url == request.url()
             && self.is_fresh(&entry)
         {
-            tracing::debug!(url = request.url(), "http cache hit");
+            tracing::debug!(
+                target: "kumo::cache",
+                url = request.url(),
+                "cache.hit"
+            );
             return Ok(Response::new(
                 entry.url,
                 entry.status,
@@ -131,7 +136,11 @@ impl Fetcher for CachingFetcher {
         }
 
         // Cache miss — fetch live.
-        tracing::debug!(url = request.url(), "http cache miss");
+        tracing::debug!(
+            target: "kumo::cache",
+            url = request.url(),
+            "cache.miss"
+        );
         let response = self.inner.fetch(request).await?;
 
         // Only cache text responses; skip binary.
@@ -142,8 +151,15 @@ impl Fetcher for CachingFetcher {
                 body: body_text.to_string(),
                 cached_at: Self::now_secs(),
             };
-            if let Ok(json) = serde_json::to_string(&entry) {
-                let _ = std::fs::write(&path, json); // best-effort write
+            if let Ok(json) = serde_json::to_string(&entry)
+                && std::fs::write(&path, json).is_err()
+            {
+                tracing::debug!(
+                    target: "kumo::cache",
+                    url = response.url(),
+                    path = %path.display(),
+                    "cache.store_skip"
+                );
             }
         }
 

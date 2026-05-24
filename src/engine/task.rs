@@ -54,11 +54,20 @@ async fn process_request(
             match pipeline.process(current).await {
                 Ok(Some(v)) => current = v,
                 Ok(None) => {
-                    tracing::debug!(spider = ctx.spider.name(), url, "item.drop");
+                    tracing::debug!(
+                        target: "kumo::item",
+                        spider = ctx.spider.name(),
+                        url,
+                        "item.drop"
+                    );
                     continue 'items;
                 }
                 Err(e) => {
-                    tracing::warn!(error = %e, "pipeline dropped item due to error");
+                    tracing::warn!(
+                        target: "kumo::item",
+                        error = %e,
+                        "item.drop.pipeline_error"
+                    );
                     continue 'items;
                 }
             }
@@ -71,13 +80,14 @@ async fn process_request(
     }
 
     tracing::debug!(
+        target: "kumo::request",
         spider = ctx.spider.name(),
         url,
         status = response.status(),
         bytes = bytes_downloaded,
         depth,
         items = item_count,
-        "fetch.ok"
+        "request.ok"
     );
 
     let follows = output.follow.into_iter().map(|r| (r, depth + 1)).collect();
