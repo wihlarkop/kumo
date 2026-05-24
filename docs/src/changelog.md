@@ -14,6 +14,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### Unreleased
 
+### 0.3.4 - 2026-05-24
+
 - Added `CrawlStats::error_kinds`, per-domain error-kind counters, stable
   `KumoErrorKind::as_str()` labels, and JSON report export for failure
   breakdowns.
