@@ -14,6 +14,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### Unreleased
 
+- Hardened `FileFrontier` flushes by syncing temporary state files before
+  replacing `queue.json` and `seen.json`, with best-effort directory sync on
+  Unix platforms.
 - Added `CrawlStats::retry_exhausted`, per-domain retry exhaustion counters,
   and JSON report export for exhausted retries.
 

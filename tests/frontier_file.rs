@@ -84,6 +84,24 @@ async fn flush_replaces_state_files_atomically_without_temp_leftovers() {
 }
 
 #[tokio::test]
+async fn stale_temp_files_do_not_affect_resume() {
+    let dir = tempdir().unwrap();
+    {
+        let f = FileFrontier::open(dir.path()).unwrap();
+        assert!(f.push("https://example.com/a".into(), 0).await);
+        f.flush().await.unwrap();
+    }
+
+    std::fs::write(dir.path().join("queue.json.tmp"), "not json").unwrap();
+    std::fs::write(dir.path().join("seen.json.tmp"), "not json").unwrap();
+
+    let f = FileFrontier::open(dir.path()).unwrap();
+    let queued = f.pop().await.unwrap();
+    assert_eq!(queued.0, "https://example.com/a");
+    assert!(!f.push("https://example.com/a".into(), 0).await);
+}
+
+#[tokio::test]
 async fn request_metadata_survives_flush_and_resume() {
     let dir = tempdir().unwrap();
     {

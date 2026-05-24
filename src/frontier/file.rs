@@ -1,5 +1,6 @@
 use std::{
     collections::VecDeque,
+    io::Write,
     path::{Path, PathBuf},
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -17,6 +18,25 @@ use super::Frontier;
 const DEFAULT_FLUSH_EVERY: usize = 100;
 const BLOOM_CAPACITY: usize = 1_000_000;
 
+fn sync_parent_dir(path: &Path) -> Result<(), KumoError> {
+    #[cfg(unix)]
+    {
+        if let Some(parent) = path.parent() {
+            let dir = std::fs::File::open(parent)
+                .map_err(|e| KumoError::store(format!("open {}", parent.display()), e))?;
+            dir.sync_all()
+                .map_err(|e| KumoError::store(format!("sync {}", parent.display()), e))?;
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+
+    Ok(())
+}
+
 fn atomic_write(path: &Path, contents: &str) -> Result<(), KumoError> {
     let tmp_path = path.with_extension(format!(
         "{}.tmp",
@@ -25,16 +45,27 @@ fn atomic_write(path: &Path, contents: &str) -> Result<(), KumoError> {
             .unwrap_or("json")
     ));
 
-    std::fs::write(&tmp_path, contents)
-        .map_err(|e| KumoError::store(format!("write {}", tmp_path.display()), e))?;
+    {
+        let mut tmp = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&tmp_path)
+            .map_err(|e| KumoError::store(format!("open {}", tmp_path.display()), e))?;
+        tmp.write_all(contents.as_bytes())
+            .map_err(|e| KumoError::store(format!("write {}", tmp_path.display()), e))?;
+        tmp.sync_all()
+            .map_err(|e| KumoError::store(format!("sync {}", tmp_path.display()), e))?;
+    }
 
     match std::fs::rename(&tmp_path, path) {
-        Ok(()) => Ok(()),
+        Ok(()) => sync_parent_dir(path),
         Err(_rename_error) if path.exists() => {
             std::fs::remove_file(path)
                 .map_err(|e| KumoError::store(format!("replace {}", path.display()), e))?;
             std::fs::rename(&tmp_path, path)
-                .map_err(|e| KumoError::store(format!("rename {}", path.display()), e))
+                .map_err(|e| KumoError::store(format!("rename {}", path.display()), e))?;
+            sync_parent_dir(path)
         }
         Err(rename_error) => Err(KumoError::store(
             format!("rename {}", path.display()),
@@ -50,9 +81,10 @@ fn atomic_write(path: &Path, contents: &str) -> Result<(), KumoError> {
 /// - `queue.json` — pending URLs with depth and retry count
 /// - `seen.json`  — all URLs ever enqueued (used to rebuild the Bloom filter on resume)
 ///
-/// The state is flushed every `flush_every` pushes (default: 100). Remaining
-/// unflushed state is also written when the engine calls `flush()` on the store
-/// (end of crawl), though you should call `flush()` explicitly if you stop early.
+/// The state is flushed every `flush_every` pushes (default: 100). Flushes write
+/// temporary files, sync them, then replace the state files. Remaining unflushed
+/// state is also written when the engine calls `flush()` on the frontier (end
+/// of crawl), though you should call `flush()` explicitly if you stop early.
 ///
 /// # Example
 /// ```rust,ignore
