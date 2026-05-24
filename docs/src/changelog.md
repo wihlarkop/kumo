@@ -14,6 +14,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### Unreleased
 
+### 0.3.3 - 2026-05-24
+
 - Hardened `FileFrontier` flushes by syncing temporary state files before
   replacing `queue.json` and `seen.json`, with best-effort directory sync on
   Unix platforms.
