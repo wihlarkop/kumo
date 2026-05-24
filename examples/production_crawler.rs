@@ -116,12 +116,20 @@ async fn main() -> Result<(), KumoError> {
         .run(ProductionSpider)
         .await?;
 
+    let report = CrawlReport::from(stats.clone());
+    std::fs::write(
+        "production-crawl-report.json",
+        report.to_json_string_pretty(),
+    )
+    .map_err(|e| KumoError::store("write production crawl report", e))?;
+
     println!(
-        "pages={} items={} scheduled={} errors={} retries={} retry_exhausted={} deduped={} robots_blocked={}",
+        "pages={} items={} scheduled={} errors={} error_kinds={:?} retries={} retry_exhausted={} deduped={} robots_blocked={}",
         stats.pages_crawled,
         stats.items_scraped,
         stats.scheduled,
         stats.errors,
+        stats.error_kinds,
         stats.retries,
         stats.retry_exhausted,
         stats.deduped,

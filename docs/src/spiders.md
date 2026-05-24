@@ -92,13 +92,14 @@ impl Spider for MySpider {
 | `duration` | `Duration` | Wall-clock crawl time |
 | `bytes_downloaded` | `u64` | Total response body bytes |
 | `interrupted` | `bool` | `true` if stopped by Ctrl+C |
+| `error_kinds` | `BTreeMap<String, u64>` | Permanent failures grouped by stable `KumoErrorKind` label |
 | `stop_reason` | `Option<StopReason>` | Why the crawl stopped |
 | `scheduled` | `u64` | Requests accepted by the scheduler |
 | `deduped` | `u64` | Requests skipped because their fingerprint was already seen |
 | `retries` | `u64` | Retry attempts requeued by retry policy or `ErrorPolicy::Retry` |
 | `retry_exhausted` | `u64` | URLs that permanently failed after retry capacity was exhausted |
 | `robots_blocked` | `u64` | Requests skipped because robots.txt disallowed them |
-| `domains` | `BTreeMap<String, DomainStats>` | Per-domain counters for scheduled, deduped, completed, failed, retries, retry exhaustion, and robots-blocked requests |
+| `domains` | `BTreeMap<String, DomainStats>` | Per-domain counters for scheduled, deduped, completed, failed, error kinds, retries, retry exhaustion, and robots-blocked requests |
 
 `errors` counts permanent request failures, including exhausted retries,
 unhandled fetch/parse errors, and crawl task panics. Panics are attributed to
@@ -106,9 +107,12 @@ the request's domain in `domains[domain].failed` so production reports do not
 silently lose failed work.
 Use `retry_exhausted` when alerts need to distinguish "we retried and still
 failed" from one-off permanent failures.
+Use `error_kinds` when alerts or dashboards need to separate parse failures,
+HTTP status failures, fetch failures, and other `KumoErrorKind` categories.
 
 When updating stats manually, use `record_error(domain)` to increment both the
-global error count and the matching per-domain failure count together.
+global error count and the matching per-domain failure count together. Use
+`record_error_kind(domain, kind)` when you also know the `KumoErrorKind`.
 
 `stop_reason` is set when the crawl ends:
 

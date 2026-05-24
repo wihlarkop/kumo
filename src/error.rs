@@ -64,6 +64,10 @@ impl std::fmt::Display for Msg {
 impl std::error::Error for Msg {}
 
 impl KumoError {
+    pub fn kind_label(&self) -> &'static str {
+        self.kind().as_str()
+    }
+
     pub fn kind(&self) -> KumoErrorKind {
         match self {
             Self::Fetch(_) => KumoErrorKind::Fetch,
@@ -151,6 +155,22 @@ impl KumoError {
         Self::Store {
             context: msg.clone(),
             source: Box::new(Msg(msg)),
+        }
+    }
+}
+
+impl KumoErrorKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fetch => "fetch",
+            Self::Parse => "parse",
+            Self::Store => "store",
+            Self::InvalidUrl => "invalid_url",
+            Self::DepthExceeded => "depth_exceeded",
+            Self::DomainNotAllowed => "domain_not_allowed",
+            Self::Llm => "llm",
+            Self::Browser => "browser",
+            Self::HttpStatus => "http_status",
         }
     }
 }

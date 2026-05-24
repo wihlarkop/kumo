@@ -1,5 +1,7 @@
 use std::{collections::BTreeMap, time::Duration};
 
+use crate::error::KumoErrorKind;
+
 /// Per-domain crawl counters collected while the engine runs.
 #[derive(Debug, Default, Clone)]
 pub struct DomainStats {
@@ -7,6 +9,7 @@ pub struct DomainStats {
     pub deduped: u64,
     pub completed: u64,
     pub failed: u64,
+    pub error_kinds: BTreeMap<String, u64>,
     pub retries: u64,
     pub retry_exhausted: u64,
     pub robots_blocked: u64,
@@ -39,6 +42,7 @@ pub struct CrawlStats {
     pub bytes_downloaded: u64,
     /// `true` when the crawl was stopped early by Ctrl+C.
     pub interrupted: bool,
+    pub error_kinds: BTreeMap<String, u64>,
     pub scheduled: u64,
     pub deduped: u64,
     pub retries: u64,
@@ -70,6 +74,17 @@ impl CrawlStats {
     pub fn record_error(&mut self, domain: &str) {
         self.errors += 1;
         self.record_failed(domain);
+    }
+
+    pub fn record_error_kind(&mut self, domain: &str, kind: KumoErrorKind) {
+        self.record_error(domain);
+        let label = kind.as_str().to_string();
+        *self.error_kinds.entry(label.clone()).or_insert(0) += 1;
+        *self
+            .domain_mut(domain)
+            .error_kinds
+            .entry(label)
+            .or_insert(0) += 1;
     }
 
     pub fn record_retry(&mut self, domain: &str) {
@@ -115,6 +130,7 @@ pub struct CrawlReport {
     pub duration: Duration,
     pub bytes_downloaded: u64,
     pub interrupted: bool,
+    pub error_kinds: BTreeMap<String, u64>,
     pub scheduled: u64,
     pub deduped: u64,
     pub retries: u64,
@@ -133,6 +149,7 @@ impl From<CrawlStats> for CrawlReport {
             duration: stats.duration,
             bytes_downloaded: stats.bytes_downloaded,
             interrupted: stats.interrupted,
+            error_kinds: stats.error_kinds,
             scheduled: stats.scheduled,
             deduped: stats.deduped,
             retries: stats.retries,
@@ -161,6 +178,7 @@ impl CrawlReport {
                         "deduped": stats.deduped,
                         "completed": stats.completed,
                         "failed": stats.failed,
+                        "error_kinds": stats.error_kinds,
                         "retries": stats.retries,
                         "retry_exhausted": stats.retry_exhausted,
                         "robots_blocked": stats.robots_blocked,
@@ -177,6 +195,7 @@ impl CrawlReport {
             "duration_secs": self.duration.as_secs_f64(),
             "bytes_downloaded": self.bytes_downloaded,
             "interrupted": self.interrupted,
+            "error_kinds": self.error_kinds,
             "scheduled": self.scheduled,
             "deduped": self.deduped,
             "retries": self.retries,

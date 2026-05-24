@@ -339,7 +339,7 @@ impl CrawlEngine {
                                 stats.record_retry_exhausted(&domain);
                                 retry_exhausted_recorded = true;
                             }
-                            stats.record_error(&domain);
+                            stats.record_error_kind(&domain, e.kind());
                             update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                             if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
                                 shutting_down = true;
