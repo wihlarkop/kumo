@@ -125,6 +125,7 @@ async fn retry_policy_exhausted_counts_as_single_error() {
         .unwrap();
 
     assert_eq!(stats.errors, 1, "all retries exhausted = one error");
+    assert_eq!(stats.error_kinds["http_status"], 1);
     assert_eq!(stats.retries, 3);
     assert_eq!(stats.retry_exhausted, 1);
     assert_eq!(stats.domains["example.com"].retries, 3);
@@ -231,6 +232,7 @@ async fn error_policy_retry_exhaustion_is_observable() {
 
     assert_eq!(stats.pages_crawled, 0);
     assert_eq!(stats.errors, 2);
+    assert_eq!(stats.error_kinds["parse"], 2);
     assert_eq!(stats.retries, 1);
     assert_eq!(stats.retry_exhausted, 1);
     assert_eq!(stats.domains["example.com"].retry_exhausted, 1);

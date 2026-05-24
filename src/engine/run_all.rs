@@ -319,7 +319,7 @@ impl CrawlEngine {
                                 stats_vec[spider_idx].record_retry_exhausted(&domain);
                                 retry_exhausted_recorded = true;
                             }
-                            stats_vec[spider_idx].record_error(&domain);
+                            stats_vec[spider_idx].record_error_kind(&domain, e.kind());
                             budgets.mark_if_reached(&mut stats_vec[spider_idx], start);
                             match spider.on_error(&url, &e) {
                                 ErrorPolicy::Abort => {

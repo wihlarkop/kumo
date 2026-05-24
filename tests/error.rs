@@ -68,6 +68,23 @@ fn error_kind_classifies_every_variant() {
 }
 
 #[test]
+fn error_kind_exports_stable_labels() {
+    assert_eq!(KumoErrorKind::Fetch.as_str(), "fetch");
+    assert_eq!(KumoErrorKind::Parse.as_str(), "parse");
+    assert_eq!(KumoErrorKind::Store.as_str(), "store");
+    assert_eq!(KumoErrorKind::InvalidUrl.as_str(), "invalid_url");
+    assert_eq!(KumoErrorKind::DepthExceeded.as_str(), "depth_exceeded");
+    assert_eq!(
+        KumoErrorKind::DomainNotAllowed.as_str(),
+        "domain_not_allowed"
+    );
+    assert_eq!(KumoErrorKind::Llm.as_str(), "llm");
+    assert_eq!(KumoErrorKind::Browser.as_str(), "browser");
+    assert_eq!(KumoErrorKind::HttpStatus.as_str(), "http_status");
+    assert_eq!(KumoError::parse_msg("bad html").kind_label(), "parse");
+}
+
+#[test]
 fn ergonomic_error_constructors_match_variants() {
     assert!(matches!(
         KumoError::invalid_url("not a url"),

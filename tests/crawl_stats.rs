@@ -1,7 +1,7 @@
 use kumo::{
     CrawlRequest,
     engine::CrawlEngine,
-    error::KumoError,
+    error::{KumoError, KumoErrorKind},
     extract::Response,
     fetch::MockFetcher,
     spider::{Output, Spider},
@@ -69,7 +69,7 @@ fn crawl_report_exports_stable_json() {
     stats.record_scheduled("example.com");
     stats.record_deduped("example.com");
     stats.record_completed("example.com");
-    stats.record_error("example.com");
+    stats.record_error_kind("example.com", KumoErrorKind::HttpStatus);
     stats.record_retry("example.com");
     stats.record_retry_exhausted("example.com");
     stats.record_robots_blocked("example.com");
@@ -80,6 +80,7 @@ fn crawl_report_exports_stable_json() {
     assert_eq!(json["pages_crawled"], 2);
     assert_eq!(json["items_scraped"], 3);
     assert_eq!(json["errors"], 2);
+    assert_eq!(json["error_kinds"]["http_status"], 1);
     assert_eq!(json["duration_ms"], 1_500);
     assert_eq!(json["duration_secs"], 1.5);
     assert_eq!(json["bytes_downloaded"], 42);
@@ -88,6 +89,10 @@ fn crawl_report_exports_stable_json() {
     assert_eq!(json["domains"]["example.com"]["deduped"], 1);
     assert_eq!(json["domains"]["example.com"]["completed"], 1);
     assert_eq!(json["domains"]["example.com"]["failed"], 1);
+    assert_eq!(
+        json["domains"]["example.com"]["error_kinds"]["http_status"],
+        1
+    );
     assert_eq!(json["domains"]["example.com"]["retries"], 1);
     assert_eq!(json["retry_exhausted"], 1);
     assert_eq!(json["domains"]["example.com"]["retry_exhausted"], 1);
@@ -114,6 +119,27 @@ fn record_error_keeps_global_and_domain_failures_in_sync() {
     assert_eq!(report.domains["example.com"].scheduled, 1);
     assert_eq!(report.domains["example.com"].retries, 1);
     assert_eq!(report.domains["example.com"].failed, 1);
+}
+
+#[test]
+fn record_error_kind_tracks_global_and_domain_error_breakdown() {
+    let mut stats = CrawlStats::default();
+    stats.record_error_kind("example.com", KumoErrorKind::Parse);
+    stats.record_error_kind("example.com", KumoErrorKind::Parse);
+    stats.record_error_kind("api.example.com", KumoErrorKind::HttpStatus);
+
+    let report = CrawlReport::from(stats);
+
+    assert_eq!(report.errors, 3);
+    assert_eq!(report.error_kinds["parse"], 2);
+    assert_eq!(report.error_kinds["http_status"], 1);
+    assert_eq!(report.domains["example.com"].failed, 2);
+    assert_eq!(report.domains["example.com"].error_kinds["parse"], 2);
+    assert_eq!(report.domains["api.example.com"].failed, 1);
+    assert_eq!(
+        report.domains["api.example.com"].error_kinds["http_status"],
+        1
+    );
 }
 
 struct DuplicateSpider {
