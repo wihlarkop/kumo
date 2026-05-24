@@ -108,7 +108,13 @@ impl Pipeline for DropDuplicates {
 
         let mut inner = self.inner.lock().await;
         if inner.seen.contains(&key) {
-            tracing::debug!(field = %self.field, key = %key, "item.drop.duplicate");
+            tracing::debug!(
+                target: "kumo::item",
+                field = %self.field,
+                key = %key,
+                reason = "duplicate",
+                "item.drop"
+            );
             return Ok(None);
         }
 

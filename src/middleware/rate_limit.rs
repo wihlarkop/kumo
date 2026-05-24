@@ -41,7 +41,12 @@ impl Middleware for RateLimiter {
         self.inner.until_ready().await;
         let delay_ms = start.elapsed().as_millis();
         if delay_ms > 0 {
-            tracing::debug!(url = %request.url(), delay_ms, "rate.limit");
+            tracing::debug!(
+                target: "kumo::request",
+                url = %request.url(),
+                delay_ms,
+                "request.rate_limit"
+            );
         }
         Ok(())
     }
