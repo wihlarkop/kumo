@@ -123,16 +123,20 @@ async fn main() -> Result<(), KumoError> {
     .map_err(|e| KumoError::store("write production crawl report", e))?;
 
     println!(
-        "pages={} items={} scheduled={} errors={} error_kinds={:?} retries={} retry_exhausted={} deduped={} robots_blocked={} report=production-crawl-report.json",
-        stats.pages_crawled,
-        stats.items_scraped,
-        stats.scheduled,
-        stats.errors,
-        stats.error_kinds,
-        stats.retries,
-        stats.retry_exhausted,
-        stats.deduped,
-        stats.robots_blocked
+        "pages={} items={} scheduled={} errors={} error_rate={:.3} pages_per_second={:.2} items_per_second={:.2} retries={} retry_exhausted={} retry_exhaustion_rate={:.3} deduped={} robots_blocked={} error_kinds={:?} report=production-crawl-report.json",
+        report.pages_crawled,
+        report.items_scraped,
+        report.scheduled,
+        report.errors,
+        report.error_rate(),
+        report.pages_per_second(),
+        report.items_per_second(),
+        report.retries,
+        report.retry_exhausted,
+        report.retry_exhaustion_rate(),
+        report.deduped,
+        report.robots_blocked,
+        report.error_kinds
     );
 
     Ok(())
