@@ -12,8 +12,6 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
-### Unreleased
-
 ### 0.3.9 - 2026-06-01
 
 - Added a typed crawl events design document covering goals, candidate event
