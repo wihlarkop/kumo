@@ -86,6 +86,7 @@ nav:
     - Feature Flags: feature-flags.md
   - Advanced:
     - Logging: advanced/logging.md
+    - Production Reports: advanced/production-reports.md
     - Performance: advanced/performance.md
     - Item Stream: advanced/stream.md
     - OpenTelemetry: advanced/otel.md
