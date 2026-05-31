@@ -162,6 +162,36 @@ impl From<CrawlStats> for CrawlReport {
 }
 
 impl CrawlReport {
+    /// Successful pages crawled per elapsed second.
+    pub fn pages_per_second(&self) -> f64 {
+        per_second(self.pages_crawled, self.duration)
+    }
+
+    /// Items scraped per elapsed second.
+    pub fn items_per_second(&self) -> f64 {
+        per_second(self.items_scraped, self.duration)
+    }
+
+    /// Downloaded response bytes per elapsed second.
+    pub fn bytes_per_second(&self) -> f64 {
+        per_second(self.bytes_downloaded, self.duration)
+    }
+
+    /// Failed requests divided by completed and failed requests.
+    pub fn error_rate(&self) -> f64 {
+        ratio(self.errors, self.pages_crawled + self.errors)
+    }
+
+    /// Completed requests divided by completed and failed requests.
+    pub fn success_rate(&self) -> f64 {
+        ratio(self.pages_crawled, self.pages_crawled + self.errors)
+    }
+
+    /// Retry-exhausted requests divided by retry attempts.
+    pub fn retry_exhaustion_rate(&self) -> f64 {
+        ratio(self.retry_exhausted, self.retries)
+    }
+
     /// Convert the report to a stable JSON value.
     ///
     /// Durations are exported as `duration_ms` and `duration_secs` so consumers
@@ -193,6 +223,9 @@ impl CrawlReport {
             "errors": self.errors,
             "duration_ms": self.duration.as_millis(),
             "duration_secs": self.duration.as_secs_f64(),
+            "pages_per_second": self.pages_per_second(),
+            "items_per_second": self.items_per_second(),
+            "bytes_per_second": self.bytes_per_second(),
             "bytes_downloaded": self.bytes_downloaded,
             "interrupted": self.interrupted,
             "error_kinds": self.error_kinds,
@@ -200,6 +233,9 @@ impl CrawlReport {
             "deduped": self.deduped,
             "retries": self.retries,
             "retry_exhausted": self.retry_exhausted,
+            "error_rate": self.error_rate(),
+            "success_rate": self.success_rate(),
+            "retry_exhaustion_rate": self.retry_exhaustion_rate(),
             "robots_blocked": self.robots_blocked,
             "domains": domains,
             "stop_reason": self.stop_reason.map(StopReason::as_str),
@@ -215,6 +251,19 @@ impl CrawlReport {
     pub fn to_json_string_pretty(&self) -> String {
         serde_json::to_string_pretty(&self.to_json_value())
             .expect("CrawlReport JSON value should always serialize")
+    }
+}
+
+fn per_second(count: u64, duration: Duration) -> f64 {
+    let secs = duration.as_secs_f64();
+    if secs > 0.0 { count as f64 / secs } else { 0.0 }
+}
+
+fn ratio(numerator: u64, denominator: u64) -> f64 {
+    if denominator > 0 {
+        numerator as f64 / denominator as f64
+    } else {
+        0.0
     }
 }
 

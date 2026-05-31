@@ -138,9 +138,21 @@ let report = CrawlReport::from(stats);
 std::fs::write("crawl-report.json", report.to_json_string_pretty())?;
 ```
 
+`CrawlReport` also exposes derived helpers for production dashboards and alerts:
+
+| Helper | Meaning |
+|--------|---------|
+| `pages_per_second()` | Successful pages divided by crawl duration |
+| `items_per_second()` | Scraped items divided by crawl duration |
+| `bytes_per_second()` | Downloaded response bytes divided by crawl duration |
+| `error_rate()` | Failed requests divided by completed and failed requests |
+| `success_rate()` | Completed requests divided by completed and failed requests |
+| `retry_exhaustion_rate()` | Retry-exhausted requests divided by retry attempts |
+
 Report JSON uses stable snake_case field names. `duration` is exported as
-`duration_ms` and `duration_secs`, and `stop_reason` is exported as a snake_case
-string such as `"frontier_exhausted"` or `"max_pages"`.
+`duration_ms` and `duration_secs`, derived helper values are exported as fields
+such as `pages_per_second` and `error_rate`, and `stop_reason` is exported as a
+snake_case string such as `"frontier_exhausted"` or `"max_pages"`.
 
 ## Error Handling
 
