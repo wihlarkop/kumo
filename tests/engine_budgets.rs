@@ -184,12 +184,14 @@ async fn max_duration_wakes_single_spider_before_scheduler_delay() {
         .with_response(&urls[0], 200, "<h1>one</h1>")
         .with_response(&urls[1], 200, "<h1>two</h1>");
 
+    let duration_budget = Duration::from_millis(500);
+    let scheduler_delay = Duration::from_secs(2);
     let started = std::time::Instant::now();
     let stats = CrawlEngine::builder()
         .concurrency(1)
-        .crawl_delay(Duration::from_secs(1))
+        .crawl_delay(scheduler_delay)
         .respect_robots_txt(false)
-        .max_duration(Duration::from_millis(100))
+        .max_duration(duration_budget)
         .fetcher(mock)
         .store(StdoutStore)
         .run(ChainSpider { urls })
@@ -199,7 +201,7 @@ async fn max_duration_wakes_single_spider_before_scheduler_delay() {
     assert_eq!(stats.pages_crawled, 1);
     assert_eq!(stats.stop_reason, Some(StopReason::MaxDuration));
     assert!(
-        started.elapsed() < Duration::from_millis(700),
+        started.elapsed() < scheduler_delay,
         "duration budget waited for scheduler delay: {:?}",
         started.elapsed()
     );
@@ -270,12 +272,14 @@ async fn max_duration_wakes_run_all_before_scheduler_delay() {
         .with_response(&urls[0], 200, "<h1>one</h1>")
         .with_response(&urls[1], 200, "<h1>two</h1>");
 
+    let duration_budget = Duration::from_millis(500);
+    let scheduler_delay = Duration::from_secs(2);
     let started = std::time::Instant::now();
     let stats = CrawlEngine::builder()
         .concurrency(1)
-        .crawl_delay(Duration::from_secs(1))
+        .crawl_delay(scheduler_delay)
         .respect_robots_txt(false)
-        .max_duration(Duration::from_millis(100))
+        .max_duration(duration_budget)
         .fetcher(mock)
         .store(StdoutStore)
         .add_spider(ChainSpider { urls })
@@ -286,7 +290,7 @@ async fn max_duration_wakes_run_all_before_scheduler_delay() {
     assert_eq!(stats[0].pages_crawled, 1);
     assert_eq!(stats[0].stop_reason, Some(StopReason::MaxDuration));
     assert!(
-        started.elapsed() < Duration::from_millis(700),
+        started.elapsed() < scheduler_delay,
         "duration budget waited for scheduler delay: {:?}",
         started.elapsed()
     );

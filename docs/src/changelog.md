@@ -14,6 +14,11 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### Unreleased
 
+### 0.3.8 - 2026-06-01
+
+- Hardened duration-budget integration tests so loaded CI runners do not expire
+  the crawl before the first mock response can complete.
+
 ### 0.3.7 - 2026-06-01
 
 - Added production report docs covering `CrawlReport` health signals, alert
