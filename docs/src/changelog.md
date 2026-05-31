@@ -14,6 +14,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### Unreleased
 
+### 0.3.6 - 2026-05-31
+
 - Added `CrawlReport` helper methods and JSON fields for pages/sec, items/sec,
   bytes/sec, error rate, success rate, and retry exhaustion rate.
 
