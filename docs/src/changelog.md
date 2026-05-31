@@ -14,6 +14,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### Unreleased
 
+- Added `CrawlReport` helper methods and JSON fields for pages/sec, items/sec,
+  bytes/sec, error rate, success rate, and retry exhaustion rate.
+
 ### 0.3.5 - 2026-05-24
 
 - Hardened logging with stable `tracing` event targets and event names for
