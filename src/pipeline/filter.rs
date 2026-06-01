@@ -1,6 +1,9 @@
 use async_trait::async_trait;
 
-use crate::error::KumoError;
+use crate::{
+    error::KumoError,
+    logging::{event, target},
+};
 
 use super::Pipeline;
 
@@ -31,7 +34,8 @@ impl Pipeline for RequireFields {
         for field in &self.fields {
             if item.get(field).is_none() {
                 tracing::debug!(
-                    target: "kumo::item",
+                    target: target::ITEM,
+                    event = event::ITEM_DROP,
                     missing_field = %field,
                     reason = "missing_field",
                     "item.drop"
@@ -80,7 +84,8 @@ where
             Ok(Some(item))
         } else {
             tracing::debug!(
-                target: "kumo::item",
+                target: target::ITEM,
+                event = event::ITEM_DROP,
                 reason = "filter",
                 "item.drop"
             );

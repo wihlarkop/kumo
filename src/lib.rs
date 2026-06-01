@@ -8,6 +8,7 @@ pub use frontier::FileFrontier;
 #[cfg(feature = "redis-frontier")]
 pub use frontier::RedisFrontier;
 pub mod llm;
+mod logging;
 pub mod middleware;
 #[cfg(feature = "otel")]
 pub mod otel;

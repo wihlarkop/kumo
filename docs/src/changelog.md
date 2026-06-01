@@ -12,6 +12,13 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.3.11 - 2026-06-01
+
+- Standardized structured tracing events with stable `event` fields across
+  crawl, request, item, cache, and stream logs.
+- Added more consistent production log context such as spider name, domain,
+  depth, attempt, retry limits, error kind, and multi-spider index.
+
 ### 0.3.10 - 2026-06-01
 
 - Refreshed direct dependencies including Rig, Reqwest, Tokio, scraper, Redis,
