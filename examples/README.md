@@ -1,90 +1,185 @@
 # Examples
 
-## quotes.rs - basic spider
+Runnable examples live in this directory. Run any example with:
 
-Scrapes all quotes from [quotes.toscrape.com](https://quotes.toscrape.com), following pagination. Demonstrates the minimal spider setup with CSS selectors and `JsonlStore`.
+```bash
+cargo run --example <name>
+```
+
+## Basic Spiders
+
+### `quotes.rs` - minimal spider
+
+Scrapes quotes from [quotes.toscrape.com](https://quotes.toscrape.com), follows
+pagination, and writes JSONL.
 
 ```bash
 cargo run --example quotes
 ```
 
-## books.rs - rate limiting + retry
+### `books.rs` - rate limiting + retry
 
-Scrapes all 1000 books from [books.toscrape.com](https://books.toscrape.com) across 50 pages. Demonstrates `RateLimiter`, exponential retry, `allowed_domains`, `max_depth`, and `JsonStore`.
+Scrapes [books.toscrape.com](https://books.toscrape.com) with rate limiting,
+retry, domain limits, depth limits, and JSON output.
 
 ```bash
 cargo run --example books
 ```
 
-## autothrottle.rs - adaptive throttling
+### `books_derive.rs` - derive-based extraction
 
-Shows `AutoThrottle` middleware which automatically adjusts request delay based on observed server latency and 429/503 responses.
+Uses `#[derive(Extract)]` instead of manual CSS selector code.
+
+```bash
+cargo run --example books_derive --features derive
+```
+
+### `multi_spider.rs` - multiple spiders
+
+Runs multiple spiders concurrently with `.add_spider()` and `.run_all()`.
+
+```bash
+cargo run --example multi_spider
+```
+
+## Selectors
+
+### `selectors.rs` - CSS, regex, and JSONPath
+
+Demonstrates selectors against local HTML and JSON.
+
+```bash
+cargo run --example selectors
+cargo run --example selectors --features jsonpath
+```
+
+### `xpath.rs` - XPath selectors
+
+Demonstrates XPath extraction.
+
+```bash
+cargo run --example xpath --features xpath
+```
+
+## Middleware
+
+### `autothrottle.rs` - adaptive throttling
+
+Adjusts request delay based on latency and backoff status codes.
 
 ```bash
 cargo run --example autothrottle
 ```
 
-## polite_crawling.rs - production crawl controls
+### `proxy_rotation.rs` - proxy rotation
 
-Shows `PolitenessPolicy`, per-domain concurrency, per-domain delay, request
-priority, metadata, fingerprint-based deduplication, and crawl stats.
+Cycles through proxy URLs with `ProxyRotator`.
+
+```bash
+cargo run --example proxy_rotation
+```
+
+### `polite_crawling.rs` - polite crawl scheduling
+
+Shows per-domain concurrency, per-domain delay, request priority, metadata,
+fingerprint deduplication, and crawl stats.
 
 ```bash
 cargo run --example polite_crawling
 ```
 
-## production_crawler.rs - production crawler template
+## Stores
 
-Combines production crawl controls in one runnable spider: robots.txt,
-per-domain concurrency and delay, jitter, retry status filtering,
-`Retry-After` handling, `StatusRetry`, persistent `FileFrontier` recovery
-state, metrics, and JSONL storage.
+### `sqlite.rs` - SQLite store
 
-```bash
-cargo run --example production_crawler --features persistence
-```
-
-## selectors.rs - CSS, regex, and JSONPath
-
-Demonstrates all three selector types against local HTML and JSON - no network required.
-
-```bash
-# CSS + regex only
-cargo run --example selectors
-
-# CSS + regex + JSONPath
-cargo run --example selectors --features jsonpath
-```
-
-## postgres.rs - PostgreSQL store
-
-Stores scraped items into PostgreSQL, with custom table name and promoted columns. Requires a running Postgres instance.
-
-```bash
-cargo run --example postgres --features postgres
-```
-
-## sqlite.rs - SQLite store
-
-Stores scraped items into a local SQLite file, with custom table name and promoted columns.
+Stores scraped items in SQLite.
 
 ```bash
 cargo run --example sqlite --features sqlite
 ```
 
-## llm_extract.rs - LLM extraction
+### `postgres.rs` - PostgreSQL store
 
-Scrapes [quotes.toscrape.com](https://quotes.toscrape.com) without any CSS selectors - the LLM reads the HTML and fills in the struct automatically. Requires an Anthropic API key.
+Stores scraped items in PostgreSQL. Requires a running Postgres instance.
+
+```bash
+cargo run --example postgres --features postgres
+```
+
+### `cloud.rs` - cloud storage
+
+Writes JSONL through the backend-agnostic `CloudStore`. The example uses local
+filesystem storage and can be adapted to S3, GCS, or Azure.
+
+```bash
+cargo run --example cloud --features cloud
+```
+
+## LLM Extraction
+
+### `llm_extract.rs` - LLM extraction
+
+Uses an LLM provider to fill a typed item from HTML.
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-... cargo run --example llm_extract --features claude
 ```
 
-To use a different provider, swap the feature flag and client:
+### `llm_fallback.rs` - CSS + LLM fallback
 
-| Provider | Feature flag | Client |
-|---|---|---|
-| Anthropic Claude | `claude` | `AnthropicClient` |
-| OpenAI | `openai` | `OpenAiClient` |
-| Google Gemini | `gemini` | `GeminiClient` |
-| Ollama (local) | `ollama` | `OllamaClient` |
+Tries CSS extraction first and falls back to the LLM when selectors miss.
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... cargo run --example llm_fallback --features claude,derive
+```
+
+## Advanced
+
+### `production_crawler.rs` - production crawl controls
+
+Combines robots.txt, per-domain politeness, retries, persistent frontier state,
+metrics, and JSONL output.
+
+```bash
+cargo run --example production_crawler --features persistence
+```
+
+### `http_cache.rs` - HTTP cache
+
+Demonstrates disk-backed response caching.
+
+```bash
+cargo run --example http_cache
+```
+
+### `link_extractor.rs` - filtered link extraction
+
+Demonstrates `LinkExtractor` allow/deny rules and canonicalization.
+
+```bash
+cargo run --example link_extractor
+```
+
+### `request_scheduling.rs` - request scheduling
+
+Demonstrates custom request method/body, headers, priority, and metadata.
+
+```bash
+cargo run --example request_scheduling
+```
+
+### `browser.rs` - headless browser
+
+Fetches a JavaScript-rendered page with Chromium.
+
+```bash
+cargo run --example browser --features browser
+```
+
+### `stealth.rs` - stealth mode
+
+Sends requests with a browser-like TLS fingerprint. Requires cmake and nasm.
+
+```bash
+cargo run --example stealth --features stealth
+```
