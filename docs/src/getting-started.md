@@ -6,7 +6,7 @@ description: Install kumo and write your first Rust web spider in minutes - step
 
 ## Prerequisites
 
-- Rust 1.88+ (stable toolchain)
+- Rust 1.94+ (stable toolchain)
 - `tokio` runtime
 - `async-trait` crate
 

@@ -151,13 +151,13 @@ jobs:
         run: cargo check --features stealth,browser
 
   msrv:
-    name: MSRV (1.88)
+    name: MSRV (1.94)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Rust 1.88
-        uses: dtolnay/rust-toolchain@1.88
+      - name: Install Rust 1.94
+        uses: dtolnay/rust-toolchain@1.94
 
       - name: Cache cargo registry & build
         uses: actions/cache@v5

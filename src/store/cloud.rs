@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use object_store::ObjectStoreExt;
 use object_store::path::Path as StorePath;
 
 use super::ItemStore;
