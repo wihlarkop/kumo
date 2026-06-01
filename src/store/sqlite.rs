@@ -1,7 +1,7 @@
 use super::ItemStore;
 use crate::error::KumoError;
 use async_trait::async_trait;
-use sqlx::SqlitePool;
+use sqlx::{AssertSqlSafe, SqlitePool};
 
 pub struct SqliteStore {
     pool: SqlitePool,
@@ -85,7 +85,7 @@ impl SqliteStoreBuilder {
                 )"#,
                 self.table, extra
             );
-            sqlx::query(&sql)
+            sqlx::query(AssertSqlSafe(sql))
                 .execute(&pool)
                 .await
                 .map_err(|e| KumoError::store("sqlite store", e))?;
@@ -112,7 +112,7 @@ impl ItemStore for SqliteStore {
             r#"INSERT INTO "{}" (data{}) VALUES (?{})"#,
             self.table, col_list, param_list
         );
-        let mut q = sqlx::query(&sql).bind(item.to_string());
+        let mut q = sqlx::query(AssertSqlSafe(sql)).bind(item.to_string());
         for name in &self.extra_columns {
             q = q.bind(super::json_val_to_sql_string(item.get(name)));
         }

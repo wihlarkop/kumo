@@ -12,6 +12,12 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.3.10 - 2026-06-01
+
+- Refreshed direct dependencies including Rig, Reqwest, Tokio, scraper, Redis,
+  OpenTelemetry, object_store, SQLx, and Criterion.
+- Raised the minimum supported Rust version to 1.94 for SQLx 0.9.
+
 ### 0.3.9 - 2026-06-01
 
 - Added a typed crawl events design document covering goals, candidate event

@@ -21,7 +21,12 @@
 //! }
 //! ```
 
+use std::sync::{Mutex, OnceLock};
+
 use crate::error::KumoError;
+
+static TRACER_PROVIDER: OnceLock<Mutex<Option<opentelemetry_sdk::trace::SdkTracerProvider>>> =
+    OnceLock::new();
 
 /// Initialise the OpenTelemetry OTLP pipeline and register it with the
 /// global `tracing` subscriber.
@@ -44,7 +49,7 @@ pub async fn init(
     use opentelemetry::KeyValue;
     use opentelemetry::trace::TracerProvider as _;
     use opentelemetry_otlp::WithExportConfig;
-    use opentelemetry_sdk::{Resource, runtime, trace::TracerProvider as SdkTracerProvider};
+    use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
     use tracing_subscriber::prelude::*;
 
     let service_name = service_name.into();
@@ -57,14 +62,19 @@ pub async fn init(
         .map_err(|e| KumoError::store_msg(format!("otel exporter: {e}")))?;
 
     let provider = SdkTracerProvider::builder()
-        .with_batch_exporter(exporter, runtime::Tokio)
-        .with_resource(Resource::new(vec![KeyValue::new(
-            "service.name",
-            service_name.clone(),
-        )]))
+        .with_batch_exporter(exporter)
+        .with_resource(
+            Resource::builder()
+                .with_attribute(KeyValue::new("service.name", service_name.clone()))
+                .build(),
+        )
         .build();
 
     opentelemetry::global::set_tracer_provider(provider.clone());
+    let provider_slot = TRACER_PROVIDER.get_or_init(|| Mutex::new(None));
+    if let Ok(mut current) = provider_slot.lock() {
+        *current = Some(provider.clone());
+    }
 
     let otel_layer = tracing_opentelemetry::layer().with_tracer(provider.tracer("kumo"));
 
@@ -88,5 +98,10 @@ pub async fn init(
 /// Call at the end of `main` to ensure all in-flight telemetry is exported
 /// before the process exits. Safe to call even if [`init`] was not called.
 pub fn shutdown() {
-    opentelemetry::global::shutdown_tracer_provider();
+    if let Some(provider_slot) = TRACER_PROVIDER.get()
+        && let Ok(mut provider) = provider_slot.lock()
+        && let Some(provider) = provider.take()
+    {
+        let _ = provider.shutdown();
+    }
 }

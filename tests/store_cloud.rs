@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use kumo::store::{CloudFormat, CloudStore, ItemStore};
-use object_store::{ObjectStore, memory::InMemory, path::Path as StorePath};
+use object_store::{ObjectStoreExt, memory::InMemory, path::Path as StorePath};
 use serde_json::json;
 
 fn mem_store() -> Arc<InMemory> {
