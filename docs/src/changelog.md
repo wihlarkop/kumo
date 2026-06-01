@@ -12,6 +12,12 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.3.12 - 2026-06-01
+
+- Added integration coverage for the structured logging contract so core crawl,
+  request, and item-drop events keep stable `event` fields and production
+  context.
+
 ### 0.3.11 - 2026-06-01
 
 - Standardized structured tracing events with stable `event` fields across
