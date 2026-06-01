@@ -1,6 +1,6 @@
 # Stealth Mode
 
-The `stealth` feature replaces the default `reqwest` HTTP client with `rquest`, which spoofs TLS fingerprints and HTTP/2 settings to mimic real browsers. Combined with `BrowserConfig::stealth()`, it also patches JavaScript APIs (navigator, plugins, webGL) that bot-detection systems probe.
+The `stealth` feature replaces the default `reqwest` HTTP client with `wreq`, which spoofs TLS fingerprints and HTTP/2 settings to mimic real browsers. Combined with `BrowserConfig::stealth()`, it also patches JavaScript APIs (navigator, plugins, webGL) that bot-detection systems probe.
 
 !!! warning "Build requirements"
     The `stealth` feature compiles BoringSSL from source. You need **cmake** and **nasm** on your build machine:
@@ -10,12 +10,16 @@ The `stealth` feature replaces the default `reqwest` HTTP client with `rquest`, 
     - Windows: install via [cmake.org](https://cmake.org/download/) and [nasm.us](https://www.nasm.us/)
 
 !!! warning "Experimental dependency status"
-    `stealth` depends on the upstream `rquest` crate for TLS/HTTP2 browser
-    emulation. The version currently locked by `kumo` (`rquest 5.1.0`) is
-    reported as yanked by crates.io, so fresh dependency resolution may warn or
-    fail until upstream publishes a healthy replacement. Keep `stealth` behind
-    an explicit feature flag and prefer the standard HTTP or browser fetchers
-    unless you specifically need TLS fingerprint emulation.
+    Kumo's `stealth` feature uses `wreq` for TLS/HTTP2 browser fingerprint
+    emulation and `wreq-util` for named browser profiles such as Chrome 131,
+    Firefox 128, Safari 18, and Edge 127. Keep `stealth` behind an explicit
+    feature flag and prefer the standard HTTP or browser fetchers unless you
+    specifically need TLS fingerprint emulation.
+
+!!! warning "Release gate"
+    The published `wreq-util` crate metadata is currently copyleft-licensed
+    (`GPL-3.0` on the 2.x line and `LGPL-3.0` on the 3.x release candidates).
+    Review that license before enabling `stealth` in redistributable binaries.
 
 ## Installation
 

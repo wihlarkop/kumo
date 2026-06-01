@@ -11,7 +11,7 @@ All optional capabilities in kumo are behind feature flags, so you only compile 
 | `jsonpath` | `jsonpath-rust` | JSONPath selector on `Response` |
 | `xpath` | `sxd-xpath` | XPath selector on `Response` |
 | `browser` | `chromiumoxide` | Headless Chromium fetcher for JS-rendered pages |
-| `stealth` | `rquest`, `rquest-util` | TLS/HTTP2 fingerprint spoofing + browser stealth patches¹ |
+| `stealth` | `wreq`, `wreq-util` | TLS/HTTP2 fingerprint spoofing + browser stealth patches¹ |
 | `claude` | `rig-core` | `AnthropicClient` for LLM extraction |
 | `openai` | `rig-core` | `OpenAiClient` for LLM extraction |
 | `gemini` | `rig-core` | `GeminiClient` for LLM extraction |
@@ -30,10 +30,9 @@ All optional capabilities in kumo are behind feature flags, so you only compile 
 
 > ¹ The `stealth` feature compiles BoringSSL from source. It requires **cmake** and **nasm** on the build machine. See [Stealth Mode](advanced/stealth.md) for setup instructions.
 >
-> `stealth` is also considered experimental while its upstream `rquest 5.1.0`
-> dependency is yanked on crates.io. Existing lockfiles can continue to build,
-> but fresh dependency resolution may warn or fail until upstream publishes a
-> healthy replacement.
+> `stealth` is experimental because it depends on native BoringSSL builds and
+> upstream browser fingerprint libraries can change quickly. For release work,
+> verify the published `wreq` and `wreq-util` license metadata before tagging.
 
 ## Common Combinations
 

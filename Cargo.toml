@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "kumo"
-version = "0.3.13"
+version = "0.3.14"
 edition = "2024"
 rust-version = "1.94"
 authors = ["wihlarkop"]
@@ -47,7 +47,7 @@ xpath    = ["dep:sxd-xpath", "dep:sxd-document", "dep:sxd_html"]
 
 # Fetchers
 browser = ["dep:chromiumoxide", "dep:futures"]
-stealth = ["dep:rquest", "dep:rquest-util"]   # TLS/HTTP2 fingerprint spoofing; requires cmake + nasm
+stealth = ["dep:wreq", "dep:wreq-util"]       # TLS/HTTP2 fingerprint spoofing; requires cmake + nasm
 
 # Frontiers
 persistence    = []                      # FileFrontier - survives restarts
@@ -147,8 +147,14 @@ chromiumoxide = { version = "0.9.1", optional = true }
 futures       = { version = "0.3.32", optional = true, default-features = false, features = ["std"] }
 
 # Optional - stealth fetcher (TLS/HTTP2 fingerprint spoofing via BoringSSL)
-rquest      = { version = "5.1.0", optional = true, features = ["cookies"] }
-rquest-util = { version = "2.2.1", optional = true }
+wreq = { version = "5.3.0", default-features = false, optional = true, features = [
+  "brotli",
+  "cookies",
+  "deflate",
+  "gzip",
+  "zstd",
+] }
+wreq-util = { version = "2.2.6", optional = true }
 
 # Optional - LLM extraction
 schemars = { version = "1.2.1", optional = true, features = ["derive"] }

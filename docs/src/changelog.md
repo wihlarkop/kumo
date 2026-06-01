@@ -12,6 +12,13 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.3.14 - 2026-06-01
+
+- Replaced the optional `rquest` stealth HTTP dependency with `wreq`, keeping
+  Kumo's public `StealthHttpFetcher` and `StealthProfile` API stable while
+  removing the yanked upstream `rquest` dependency from the planned stealth path.
+- Documented the `wreq-util` license metadata risk for stealth releases.
+
 ### 0.3.13 - 2026-06-01
 
 - Added dedicated CI coverage for compiling default and feature-gated examples.
