@@ -6,6 +6,7 @@ use tracing::{error, info};
 use crate::{
     error::{ErrorPolicy, KumoError},
     frontier::{Frontier, memory::MemoryFrontier},
+    logging::{event, target},
     middleware::Middleware,
     pipeline::Pipeline,
     request::{CrawlRequest, FrontierRequest},
@@ -88,8 +89,11 @@ impl CrawlEngine {
 
         for (idx, (spider, scheduler)) in spider_entries.iter().enumerate() {
             info!(
-                target: "kumo::crawl",
+                target: target::CRAWL,
+                event = event::CRAWL_START,
                 spider = spider.name(),
+                spider_index = idx,
+                start_urls = spider.start_urls().len(),
                 "crawl.start"
             );
             for url in spider.start_urls() {
@@ -115,7 +119,11 @@ impl CrawlEngine {
             #[cfg(not(target_arch = "wasm32"))]
             {
                 tokio::signal::ctrl_c().await.ok();
-                tracing::info!(target: "kumo::crawl", "crawl.interrupted");
+                tracing::info!(
+                    target: target::CRAWL,
+                    event = event::CRAWL_INTERRUPTED,
+                    "crawl.interrupted"
+                );
             }
             #[cfg(target_arch = "wasm32")]
             std::future::pending::<()>().await
@@ -149,8 +157,14 @@ impl CrawlEngine {
                                     && !cache.is_allowed(&client, queued.request.url()).await
                                 {
                                     tracing::debug!(
-                                        target: "kumo::request",
+                                        target: target::REQUEST,
+                                        event = event::REQUEST_ROBOTS_BLOCKED,
+                                        spider = spider.name(),
+                                        spider_index = idx,
                                         url = %queued.request.url(),
+                                        domain = %domain_key(queued.request.url()),
+                                        depth = queued.depth,
+                                        attempt = queued.retry_count,
                                         "request.robots_blocked"
                                     );
                                     stats_vec[idx]
@@ -301,13 +315,18 @@ impl CrawlEngine {
                                     .delay_for_with_hint(queued.retry_count, retry_delay_hint);
                                 stats_vec[spider_idx].record_retry(&domain);
                                 tracing::info!(
-                                    target: "kumo::request",
+                                    target: target::REQUEST,
+                                    event = event::REQUEST_RETRY,
                                     spider = spider.name(),
+                                    spider_index = spider_idx,
                                     url = %url,
+                                    domain = %domain,
+                                    depth = queued.depth,
                                     attempt = queued.retry_count + 1,
-                                    max = retry_policy.max_attempts,
+                                    max_attempts = retry_policy.max_attempts,
                                     retry_in_ms = delay.as_millis(),
                                     error = %e,
+                                    error_kind = e.kind().as_str(),
                                     "request.retry"
                                 );
                                 scheduler
@@ -333,21 +352,34 @@ impl CrawlEngine {
                             match spider.on_error(&url, &e) {
                                 ErrorPolicy::Abort => {
                                     error!(
-                                        target: "kumo::crawl",
+                                        target: target::CRAWL,
+                                        event = event::CRAWL_ABORT,
+                                        spider = spider.name(),
+                                        spider_index = spider_idx,
                                         url = %url,
+                                        domain = %domain,
+                                        depth = queued.depth,
+                                        attempt = queued.retry_count,
                                         error = %e,
+                                        error_kind = e.kind().as_str(),
                                         "crawl.abort"
                                     );
                                     return Err(e);
                                 }
                                 ErrorPolicy::Retry(max) if queued.retry_count < max => {
                                     tracing::info!(
-                                        target: "kumo::request",
+                                        target: target::REQUEST,
+                                        event = event::REQUEST_RETRY,
                                         spider = spider.name(),
+                                        spider_index = spider_idx,
                                         url = %url,
+                                        domain = %domain,
+                                        depth = queued.depth,
                                         attempt = queued.retry_count + 1,
-                                        max,
+                                        max_attempts = max,
+                                        retry_in_ms = 0u128,
                                         error = %e,
+                                        error_kind = e.kind().as_str(),
                                         "request.retry"
                                     );
                                     if !shutting_down
@@ -366,19 +398,32 @@ impl CrawlEngine {
                                         stats_vec[spider_idx].record_retry_exhausted(&domain);
                                     }
                                     tracing::warn!(
-                                        target: "kumo::request",
+                                        target: target::REQUEST,
+                                        event = event::REQUEST_RETRY_EXHAUSTED,
                                         spider = spider.name(),
+                                        spider_index = spider_idx,
                                         url = %url,
+                                        domain = %domain,
+                                        depth = queued.depth,
+                                        attempt = queued.retry_count,
+                                        max_attempts = retry_policy.max_attempts,
                                         error = %e,
+                                        error_kind = e.kind().as_str(),
                                         "request.retry_exhausted"
                                     );
                                 }
                                 ErrorPolicy::Skip => {
                                     tracing::warn!(
-                                        target: "kumo::request",
+                                        target: target::REQUEST,
+                                        event = event::REQUEST_SKIP,
                                         spider = spider.name(),
+                                        spider_index = spider_idx,
                                         url = %url,
+                                        domain = %domain,
+                                        depth = queued.depth,
+                                        attempt = queued.retry_count,
                                         error = %e,
+                                        error_kind = e.kind().as_str(),
                                         "request.skip"
                                     );
                                 }
@@ -392,7 +437,8 @@ impl CrawlEngine {
                                 budgets.mark_if_reached(&mut stats_vec[spider_idx], start);
                             }
                             error!(
-                                target: "kumo::crawl",
+                                target: target::CRAWL,
+                                event = event::CRAWL_TASK_PANIC,
                                 error = %join_err,
                                 "crawl.task_panic"
                             );
@@ -423,8 +469,10 @@ impl CrawlEngine {
             }
             if let Err(e) = spider.close(&stats_vec[i]).await {
                 tracing::error!(
-                    target: "kumo::crawl",
+                    target: target::CRAWL,
+                    event = event::SPIDER_CLOSE_FAILED,
                     spider = spider.name(),
+                    spider_index = i,
                     error = %e,
                     "spider.close_failed"
                 );
@@ -435,8 +483,10 @@ impl CrawlEngine {
                 0.0
             };
             info!(
-                target: "kumo::crawl",
+                target: target::CRAWL,
+                event = event::CRAWL_COMPLETE,
                 spider = spider.name(),
+                spider_index = i,
                 pages = stats_vec[i].pages_crawled,
                 items = stats_vec[i].items_scraped,
                 errors = stats_vec[i].errors,

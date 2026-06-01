@@ -4,6 +4,7 @@ use super::Fetcher;
 use crate::{
     error::KumoError,
     extract::{Response, response::ResponseBody},
+    logging::{event, target},
     middleware::FetchRequest,
 };
 use reqwest::Client;
@@ -98,11 +99,14 @@ impl Fetcher for HttpFetcher {
             ResponseBody::Bytes(b) => b.len() as u64,
         };
         tracing::debug!(
+            target: target::REQUEST,
+            event = event::REQUEST_FETCH,
             url = %request.url(),
+            method = %request.method,
             status,
             bytes = byte_count,
             elapsed_ms = elapsed.as_millis(),
-            "response"
+            "request.fetch"
         );
 
         Ok(Response::new(

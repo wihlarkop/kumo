@@ -14,6 +14,7 @@ use super::Fetcher;
 use crate::{
     error::KumoError,
     extract::{Response, response::ResponseBody},
+    logging::{event, target},
     middleware::FetchRequest,
 };
 
@@ -104,7 +105,8 @@ impl Fetcher for CachingFetcher {
     async fn fetch(&self, request: &FetchRequest) -> Result<Response, KumoError> {
         if !Self::is_cacheable(request) {
             tracing::debug!(
-                target: "kumo::cache",
+                target: target::CACHE,
+                event = event::CACHE_BYPASS,
                 url = request.url(),
                 method = %request.method,
                 "cache.bypass"
@@ -122,8 +124,10 @@ impl Fetcher for CachingFetcher {
             && self.is_fresh(&entry)
         {
             tracing::debug!(
-                target: "kumo::cache",
+                target: target::CACHE,
+                event = event::CACHE_HIT,
                 url = request.url(),
+                method = %request.method,
                 "cache.hit"
             );
             return Ok(Response::new(
@@ -137,8 +141,10 @@ impl Fetcher for CachingFetcher {
 
         // Cache miss — fetch live.
         tracing::debug!(
-            target: "kumo::cache",
+            target: target::CACHE,
+            event = event::CACHE_MISS,
             url = request.url(),
+            method = %request.method,
             "cache.miss"
         );
         let response = self.inner.fetch(request).await?;
@@ -155,7 +161,8 @@ impl Fetcher for CachingFetcher {
                 && std::fs::write(&path, json).is_err()
             {
                 tracing::debug!(
-                    target: "kumo::cache",
+                    target: target::CACHE,
+                    event = event::CACHE_STORE_SKIP,
                     url = response.url(),
                     path = %path.display(),
                     "cache.store_skip"

@@ -1,5 +1,9 @@
 use super::{FetchRequest, Middleware};
-use crate::{error::KumoError, extract::Response};
+use crate::{
+    error::KumoError,
+    extract::Response,
+    logging::{event, target},
+};
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -113,10 +117,13 @@ impl Middleware for AutoThrottle {
 
         st.current_delay = new_delay.clamp(self.min_delay, self.max_delay);
         tracing::debug!(
+            target: target::REQUEST,
+            event = event::REQUEST_AUTOTHROTTLE,
+            url = response.url(),
             delay_ms = st.current_delay.as_millis(),
             ewma_latency_ms = (st.ewma_latency_secs * 1000.0) as u64,
             status = response.status(),
-            "autothrottle adjusted delay"
+            "request.autothrottle"
         );
         Ok(())
     }

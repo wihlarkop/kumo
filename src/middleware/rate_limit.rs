@@ -1,5 +1,8 @@
 use super::{FetchRequest, Middleware};
-use crate::error::KumoError;
+use crate::{
+    error::KumoError,
+    logging::{event, target},
+};
 use governor::{
     Quota, RateLimiter as GovernorLimiter,
     clock::DefaultClock,
@@ -42,8 +45,10 @@ impl Middleware for RateLimiter {
         let delay_ms = start.elapsed().as_millis();
         if delay_ms > 0 {
             tracing::debug!(
-                target: "kumo::request",
+                target: target::REQUEST,
+                event = event::REQUEST_RATE_LIMIT,
                 url = %request.url(),
+                method = %request.method,
                 delay_ms,
                 "request.rate_limit"
             );

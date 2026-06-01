@@ -46,9 +46,31 @@ Kumo uses stable tracing targets for important runtime areas:
 | `kumo::item` | Item drops and pipeline drop errors |
 | `kumo::cache` | HTTP cache hits, misses, bypasses, and skipped cache writes |
 
-Common event names include `crawl.start`, `crawl.metrics`, `crawl.complete`,
+Every important runtime event also includes an `event` field matching the log
+message. Common event names include `crawl.start`, `crawl.metrics`,
+`crawl.complete`, `crawl.stream_error`, `request.fetch`, `request.ok`,
 `request.retry`, `request.retry_exhausted`, `request.skip`,
-`request.robots_blocked`, `item.drop`, `cache.hit`, and `cache.miss`.
+`request.robots_blocked`, `request.rate_limit`, `request.autothrottle`,
+`request.proxy_ignored`, `item.drop`, `cache.hit`, and `cache.miss`.
+
+## Common Fields
+
+Kumo keeps high-volume crawl logs machine-readable by using predictable field
+names:
+
+| Field | Meaning |
+|-------|---------|
+| `event` | Stable event name, such as `request.retry` |
+| `spider` | Spider name returned by `Spider::name()` |
+| `spider_index` | Index for `run_all()` multi-spider crawls |
+| `url` | Request or response URL |
+| `domain` | Normalized domain key used by crawl stats |
+| `depth` | Crawl depth for the request |
+| `attempt` | Current retry attempt count for request lifecycle events |
+| `max_attempts` | Retry ceiling for retry-related events |
+| `retry_in_ms` | Delay before a scheduled retry |
+| `error_kind` | Stable Kumo error category |
+| `stop_reason` | Final crawl stop reason |
 
 ## JSON Logs
 

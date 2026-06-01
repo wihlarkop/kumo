@@ -6,7 +6,11 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::{error::KumoError, spider::Spider};
+use crate::{
+    error::KumoError,
+    logging::{event, target},
+    spider::Spider,
+};
 
 use super::builder::CrawlEngine;
 
@@ -65,7 +69,13 @@ impl CrawlEngine {
         engine.stream_cancelled = Some(cancelled);
         tokio::spawn(async move {
             if let Err(e) = engine.run(spider).await {
-                tracing::error!(error = %e, "stream crawl error");
+                tracing::error!(
+                    target: target::CRAWL,
+                    event = event::CRAWL_STREAM_ERROR,
+                    error = %e,
+                    error_kind = e.kind().as_str(),
+                    "crawl.stream_error"
+                );
             }
         });
         Ok(ItemStream::new(rx))
