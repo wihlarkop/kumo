@@ -6,6 +6,7 @@ use tracing::{error, info};
 use crate::{
     error::{ErrorPolicy, KumoError},
     frontier::{Frontier, memory::MemoryFrontier},
+    logging::{event, target},
     middleware::Middleware,
     pipeline::Pipeline,
     request::{CrawlRequest, FrontierRequest},
@@ -15,6 +16,7 @@ use crate::{
 };
 
 use super::{
+    budget::CrawlBudgets,
     builder::CrawlEngine,
     erased::{ErasedSpider, SpiderErased},
     setup::{
@@ -23,6 +25,19 @@ use super::{
     task::{TaskContext, is_cancelled, process_request_once, should_enqueue},
 };
 
+async fn update_live_stats(
+    metrics_interval: Option<std::time::Duration>,
+    live_stats: &Arc<tokio::sync::Mutex<CrawlStats>>,
+    stats: &CrawlStats,
+    start: std::time::Instant,
+) {
+    if metrics_interval.is_some() {
+        let mut snap = live_stats.lock().await;
+        *snap = stats.clone();
+        snap.duration = start.elapsed();
+    }
+}
+
 impl CrawlEngine {
     /// Consume the engine, run the spider, and return crawl statistics.
     pub async fn run<S>(self, spider: S) -> Result<CrawlStats, KumoError>
@@ -30,6 +45,12 @@ impl CrawlEngine {
         S: Spider + 'static,
     {
         let start = std::time::Instant::now();
+        let budgets = CrawlBudgets {
+            max_pages: self.max_pages,
+            max_items: self.max_items,
+            max_duration: self.max_duration,
+            max_errors: self.max_errors,
+        };
         let metrics_interval = self.metrics_interval;
         let stream_cancelled = self.stream_cancelled.clone();
         let spider: Arc<dyn ErasedSpider> = Arc::new(SpiderErased(spider));
@@ -54,6 +75,10 @@ impl CrawlEngine {
                 .any(|mw| std::any::type_name_of_val(mw.as_ref()).contains("RateLimiter"));
             if has_throttle && has_limiter {
                 tracing::warn!(
+                    target: target::CRAWL,
+                    event = "crawl.middleware_conflict",
+                    middleware_a = "AutoThrottle",
+                    middleware_b = "RateLimiter",
                     "Both AutoThrottle and RateLimiter are registered. \
                      They apply delays independently and will compound. \
                      Consider using only one."
@@ -83,9 +108,11 @@ impl CrawlEngine {
 
         let start_urls = spider.start_urls();
         info!(
+            target: target::CRAWL,
+            event = event::CRAWL_START,
             spider = spider.name(),
             start_urls = start_urls.len(),
-            "spider.open"
+            "crawl.start"
         );
         for url in start_urls {
             let domain = domain_key(&url);
@@ -112,12 +139,16 @@ impl CrawlEngine {
                     tokio::time::sleep(interval).await;
                     let s = live.lock().await;
                     tracing::info!(
+                        target: target::CRAWL,
+                        event = event::CRAWL_METRICS,
                         pages = s.pages_crawled,
                         items = s.items_scraped,
                         errors = s.errors,
+                        retries = s.retries,
+                        retry_exhausted = s.retry_exhausted,
                         bytes = s.bytes_downloaded,
                         elapsed_secs = s.duration.as_secs_f64(),
-                        "[kumo metrics]"
+                        "crawl.metrics"
                     );
                 }
             })
@@ -127,7 +158,11 @@ impl CrawlEngine {
             #[cfg(not(target_arch = "wasm32"))]
             {
                 tokio::signal::ctrl_c().await.ok();
-                tracing::info!("ctrl-c received â€” finishing in-flight tasks then exiting");
+                tracing::info!(
+                    target: target::CRAWL,
+                    event = event::CRAWL_INTERRUPTED,
+                    "crawl.interrupted"
+                );
             }
             #[cfg(target_arch = "wasm32")]
             std::future::pending::<()>().await
@@ -139,6 +174,11 @@ impl CrawlEngine {
             if is_cancelled(&stream_cancelled) {
                 shutting_down = true;
                 stats.interrupted = true;
+                stats.stop_reason = Some(crate::stats::StopReason::Interrupted);
+            }
+
+            if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
+                shutting_down = true;
             }
 
             let mut next_scheduler_wait: Option<std::time::Duration> = None;
@@ -153,8 +193,19 @@ impl CrawlEngine {
                             if let Some(ref cache) = robots_cache
                                 && !cache.is_allowed(&client, queued.request.url()).await
                             {
-                                tracing::debug!(url = %queued.request.url(), "blocked by robots.txt, skipping");
+                                tracing::debug!(
+                                    target: target::REQUEST,
+                                    event = event::REQUEST_ROBOTS_BLOCKED,
+                                    spider = spider.name(),
+                                    url = %queued.request.url(),
+                                    domain = %domain_key(queued.request.url()),
+                                    depth = queued.depth,
+                                    attempt = queued.retry_count,
+                                    "request.robots_blocked"
+                                );
                                 stats.record_robots_blocked(&domain_key(queued.request.url()));
+                                update_live_stats(metrics_interval, &live_stats, &stats, start)
+                                    .await;
                                 scheduler.finish(&queued).await;
                                 continue;
                             }
@@ -197,29 +248,37 @@ impl CrawlEngine {
                 }
             }
 
+            let next_wake = match (next_scheduler_wait, budgets.remaining_duration(start)) {
+                (Some(scheduler_wait), Some(budget_wait)) => Some(scheduler_wait.min(budget_wait)),
+                (Some(scheduler_wait), None) => Some(scheduler_wait),
+                (None, Some(budget_wait)) => Some(budget_wait),
+                (None, None) => None,
+            };
+
             if join_set.is_empty() {
+                if shutting_down {
+                    break;
+                }
                 if scheduler.is_empty().await {
                     break;
                 }
-                tokio::time::sleep(
-                    next_scheduler_wait.unwrap_or(std::time::Duration::from_millis(10)),
-                )
-                .await;
+                tokio::time::sleep(next_wake.unwrap_or(std::time::Duration::from_millis(10))).await;
                 continue;
             }
 
             let scheduler_sleep = tokio::time::sleep(
-                next_scheduler_wait.unwrap_or(std::time::Duration::from_secs(24 * 60 * 60)),
+                next_wake.unwrap_or(std::time::Duration::from_secs(24 * 60 * 60)),
             );
             tokio::pin!(scheduler_sleep);
 
             tokio::select! {
-                _ = &mut scheduler_sleep, if next_scheduler_wait.is_some() => {
+                _ = &mut scheduler_sleep, if next_wake.is_some() => {
                     continue;
                 }
                 _ = &mut shutdown, if !shutting_down => {
                     shutting_down = true;
                     stats.interrupted = true;
+                    stats.stop_reason = Some(crate::stats::StopReason::Interrupted);
                 }
                 result = join_set.join_next_with_id() => {
                     match result {
@@ -233,12 +292,12 @@ impl CrawlEngine {
                             if is_cancelled(&stream_cancelled) {
                                 shutting_down = true;
                                 stats.interrupted = true;
+                                stats.stop_reason = Some(crate::stats::StopReason::Interrupted);
                             }
-                            // Keep live snapshot up to date for the metrics task.
-                            if metrics_interval.is_some() {
-                                let mut snap = live_stats.lock().await;
-                                *snap = stats.clone();
-                                snap.duration = start.elapsed();
+                            update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+
+                            if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
+                                shutting_down = true;
                             }
 
                             if !shutting_down {
@@ -250,6 +309,7 @@ impl CrawlEngine {
                                         } else {
                                             stats.record_deduped(&domain);
                                         }
+                                        update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                                     }
                                 }
                             }
@@ -262,6 +322,10 @@ impl CrawlEngine {
                             for mw in middleware.iter() {
                                 mw.on_error(&url, &e).await;
                             }
+                            let domain = domain_key(&url);
+                            let retry_policy_exhausted = retry_policy.max_attempts > 0
+                                && retry_policy.is_retriable(&e)
+                                && queued.retry_count >= retry_policy.max_attempts;
                             if !shutting_down
                                 && queued.retry_count < retry_policy.max_attempts
                                 && retry_policy.is_retriable(&e)
@@ -270,15 +334,21 @@ impl CrawlEngine {
                                     middleware.iter().find_map(|mw| mw.retry_delay(&url, &e));
                                 let delay = retry_policy
                                     .delay_for_with_hint(queued.retry_count, retry_delay_hint);
-                                stats.record_retry(&domain_key(&url));
-                                tracing::warn!(
+                                stats.record_retry(&domain);
+                                update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                                tracing::info!(
+                                    target: target::REQUEST,
+                                    event = event::REQUEST_RETRY,
                                     spider = spider.name(),
                                     url = %url,
+                                    domain = %domain,
+                                    depth = queued.depth,
                                     attempt = queued.retry_count + 1,
-                                    max = retry_policy.max_attempts,
+                                    max_attempts = retry_policy.max_attempts,
                                     retry_in_ms = delay.as_millis(),
                                     error = %e,
-                                    "scheduling retry"
+                                    error_kind = e.kind().as_str(),
+                                    "request.retry"
                                 );
                                 scheduler
                                     .push_request_force(
@@ -293,24 +363,50 @@ impl CrawlEngine {
                                 continue;
                             }
 
-                            stats.errors += 1;
-                            stats.record_failed(&domain_key(&url));
+                            let mut retry_exhausted_recorded = false;
+                            if retry_policy_exhausted {
+                                stats.record_retry_exhausted(&domain);
+                                retry_exhausted_recorded = true;
+                            }
+                            stats.record_error_kind(&domain, e.kind());
+                            update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                            if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
+                                shutting_down = true;
+                            }
                             match spider.on_error(&url, &e) {
                                 ErrorPolicy::Abort => {
-                                    error!(url = %url, error = %e, "aborting crawl");
+                                    error!(
+                                        target: target::CRAWL,
+                                        event = event::CRAWL_ABORT,
+                                        spider = spider.name(),
+                                        url = %url,
+                                        domain = %domain,
+                                        depth = queued.depth,
+                                        attempt = queued.retry_count,
+                                        error = %e,
+                                        error_kind = e.kind().as_str(),
+                                        "crawl.abort"
+                                    );
                                     return Err(e);
                                 }
                                 ErrorPolicy::Retry(max) if queued.retry_count < max => {
-                                    tracing::warn!(
+                                    tracing::info!(
+                                        target: target::REQUEST,
+                                        event = event::REQUEST_RETRY,
                                         spider = spider.name(),
                                         url = %url,
+                                        domain = %domain,
+                                        depth = queued.depth,
                                         attempt = queued.retry_count + 1,
-                                        max,
+                                        max_attempts = max,
+                                        retry_in_ms = 0u128,
                                         error = %e,
-                                        "re-queuing failed URL"
+                                        error_kind = e.kind().as_str(),
+                                        "request.retry"
                                     );
                                     if !shutting_down {
-                                        stats.record_retry(&domain_key(&url));
+                                        stats.record_retry(&domain);
+                                        update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                                         scheduler.push_request_force(FrontierRequest::new(
                                             queued.request,
                                             queued.depth,
@@ -319,20 +415,62 @@ impl CrawlEngine {
                                     }
                                 }
                                 ErrorPolicy::Retry(_) => {
-                                    tracing::warn!(spider = spider.name(), url = %url, error = %e, "fetch.skip.retry_exhausted");
+                                    if !retry_exhausted_recorded {
+                                        stats.record_retry_exhausted(&domain);
+                                        update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                                    }
+                                    tracing::warn!(
+                                        target: target::REQUEST,
+                                        event = event::REQUEST_RETRY_EXHAUSTED,
+                                        spider = spider.name(),
+                                        url = %url,
+                                        domain = %domain,
+                                        depth = queued.depth,
+                                        attempt = queued.retry_count,
+                                        max_attempts = retry_policy.max_attempts,
+                                        error = %e,
+                                        error_kind = e.kind().as_str(),
+                                        "request.retry_exhausted"
+                                    );
                                 }
                                 ErrorPolicy::Skip => {
-                                    tracing::warn!(spider = spider.name(), url = %url, error = %e, "fetch.skip");
+                                    tracing::warn!(
+                                        target: target::REQUEST,
+                                        event = event::REQUEST_SKIP,
+                                        spider = spider.name(),
+                                        url = %url,
+                                        domain = %domain,
+                                        depth = queued.depth,
+                                        attempt = queued.retry_count,
+                                        error = %e,
+                                        error_kind = e.kind().as_str(),
+                                        "request.skip"
+                                    );
                                 }
                             }
                         }
                         Some(Err(join_err)) => {
-                            stats.errors += 1;
                             if let Some(queued) = task_context.remove(&join_err.id()) {
                                 scheduler.finish(&queued).await;
-                                stats.record_failed(&domain_key(queued.request.url()));
+                                stats.record_error(&domain_key(queued.request.url()));
+                                update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                                if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
+                                    shutting_down = true;
+                                }
+                            } else {
+                                stats.errors += 1;
+                                update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                                if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
+                                    shutting_down = true;
+                                }
                             }
-                            error!(spider = spider.name(), error = %join_err, "crawl task panicked");
+                            error!(
+                                target: target::CRAWL,
+                                event = event::CRAWL_TASK_PANIC,
+                                spider = spider.name(),
+                                error = %join_err,
+                                "crawl.task_panic"
+                            );
                         }
                         None => break,
                     }
@@ -347,11 +485,24 @@ impl CrawlEngine {
         scheduler.flush().await?;
         store.flush().await?;
         stats.duration = start.elapsed();
+        if stats.stop_reason.is_none() {
+            stats.stop_reason = if stats.interrupted {
+                Some(crate::stats::StopReason::Interrupted)
+            } else {
+                Some(crate::stats::StopReason::FrontierExhausted)
+            };
+        }
 
         // close() errors are intentionally not propagated â€” the crawl and store
         // flush completed successfully. Cleanup failures are logged only.
         if let Err(e) = spider.close(&stats).await {
-            tracing::error!(error = %e, "spider::close failed");
+            tracing::error!(
+                target: target::CRAWL,
+                event = event::SPIDER_CLOSE_FAILED,
+                spider = spider.name(),
+                error = %e,
+                "spider.close_failed"
+            );
         }
 
         let rps = if stats.duration.as_secs_f64() > 0.0 {
@@ -360,14 +511,24 @@ impl CrawlEngine {
             0.0
         };
         info!(
+            target: target::CRAWL,
+            event = event::CRAWL_COMPLETE,
+            spider = spider.name(),
             pages = stats.pages_crawled,
             items = stats.items_scraped,
             errors = stats.errors,
+            scheduled = stats.scheduled,
+            deduped = stats.deduped,
+            retries = stats.retries,
+            retry_exhausted = stats.retry_exhausted,
+            robots_blocked = stats.robots_blocked,
             bytes = stats.bytes_downloaded,
             duration_secs = stats.duration.as_secs_f64(),
             pages_per_sec = format!("{rps:.1}"),
             interrupted = stats.interrupted,
-            "crawl complete"
+            stop_reason = stats.stop_reason.map(crate::stats::StopReason::as_str),
+            error_kinds = ?stats.error_kinds,
+            "crawl.complete"
         );
 
         Ok(stats)

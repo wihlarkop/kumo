@@ -8,7 +8,10 @@ use std::{
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 
-use crate::error::KumoError;
+use crate::{
+    error::KumoError,
+    logging::{event, target},
+};
 
 use super::Pipeline;
 
@@ -108,7 +111,14 @@ impl Pipeline for DropDuplicates {
 
         let mut inner = self.inner.lock().await;
         if inner.seen.contains(&key) {
-            tracing::debug!(field = %self.field, key = %key, "item.drop.duplicate");
+            tracing::debug!(
+                target: target::ITEM,
+                event = event::ITEM_DROP,
+                field = %self.field,
+                key = %key,
+                reason = "duplicate",
+                "item.drop"
+            );
             return Ok(None);
         }
 

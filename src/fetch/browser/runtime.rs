@@ -8,6 +8,7 @@ use crate::{
     error::KumoError,
     extract::{Response, response::ResponseBody},
     fetch::Fetcher,
+    logging::{event, target},
     middleware::FetchRequest,
 };
 
@@ -26,6 +27,10 @@ impl Fetcher for BrowserFetcher {
 
         if request.proxy.is_some() && self.config.proxy.is_none() {
             tracing::warn!(
+                target: target::REQUEST,
+                event = event::REQUEST_PROXY_IGNORED,
+                url = %request.url(),
+                method = %request.method,
                 "BrowserFetcher does not support per-request proxy rotation via ProxyRotator. \
                  Use BrowserConfig::proxy(url) to set a static proxy, or remove ProxyRotator \
                  when using the browser fetcher."

@@ -1,13 +1,14 @@
 use kumo::{
     CrawlRequest,
     engine::CrawlEngine,
-    error::KumoError,
+    error::{KumoError, KumoErrorKind},
     extract::Response,
     fetch::MockFetcher,
     spider::{Output, Spider},
-    stats::{CrawlReport, CrawlStats},
+    stats::{CrawlReport, CrawlStats, StopReason},
     store::StdoutStore,
 };
+use std::time::Duration;
 
 #[test]
 fn crawl_report_exposes_scheduler_counters() {
@@ -15,6 +16,7 @@ fn crawl_report_exposes_scheduler_counters() {
     stats.record_scheduled("example.com");
     stats.record_deduped("example.com");
     stats.record_retry("example.com");
+    stats.record_retry_exhausted("example.com");
     stats.record_robots_blocked("example.com");
 
     let report = CrawlReport::from(stats);
@@ -22,11 +24,170 @@ fn crawl_report_exposes_scheduler_counters() {
     assert_eq!(report.scheduled, 1);
     assert_eq!(report.deduped, 1);
     assert_eq!(report.retries, 1);
+    assert_eq!(report.retry_exhausted, 1);
     assert_eq!(report.robots_blocked, 1);
     assert_eq!(report.domains["example.com"].scheduled, 1);
     assert_eq!(report.domains["example.com"].deduped, 1);
     assert_eq!(report.domains["example.com"].retries, 1);
+    assert_eq!(report.domains["example.com"].retry_exhausted, 1);
     assert_eq!(report.domains["example.com"].robots_blocked, 1);
+}
+
+#[test]
+fn crawl_report_exposes_stop_reason() {
+    let stats = CrawlStats {
+        stop_reason: Some(StopReason::MaxPages),
+        ..CrawlStats::default()
+    };
+
+    let report = CrawlReport::from(stats);
+
+    assert_eq!(report.stop_reason, Some(StopReason::MaxPages));
+}
+
+#[test]
+fn stop_reason_exports_stable_labels() {
+    assert_eq!(StopReason::FrontierExhausted.as_str(), "frontier_exhausted");
+    assert_eq!(StopReason::Interrupted.as_str(), "interrupted");
+    assert_eq!(StopReason::MaxPages.as_str(), "max_pages");
+    assert_eq!(StopReason::MaxItems.as_str(), "max_items");
+    assert_eq!(StopReason::MaxDuration.as_str(), "max_duration");
+    assert_eq!(StopReason::MaxErrors.as_str(), "max_errors");
+}
+
+#[test]
+fn crawl_report_exports_stable_json() {
+    let mut stats = CrawlStats {
+        pages_crawled: 2,
+        items_scraped: 3,
+        errors: 1,
+        duration: Duration::from_millis(1_500),
+        bytes_downloaded: 42,
+        stop_reason: Some(StopReason::MaxErrors),
+        ..CrawlStats::default()
+    };
+    stats.record_scheduled("example.com");
+    stats.record_deduped("example.com");
+    stats.record_completed("example.com");
+    stats.record_error_kind("example.com", KumoErrorKind::HttpStatus);
+    stats.record_retry("example.com");
+    stats.record_retry_exhausted("example.com");
+    stats.record_robots_blocked("example.com");
+
+    let report = CrawlReport::from(stats);
+    let json = report.to_json_value();
+
+    assert_eq!(json["pages_crawled"], 2);
+    assert_eq!(json["items_scraped"], 3);
+    assert_eq!(json["errors"], 2);
+    assert_eq!(json["error_kinds"]["http_status"], 1);
+    assert_eq!(json["duration_ms"], 1_500);
+    assert_eq!(json["duration_secs"], 1.5);
+    assert_eq!(json["pages_per_second"], 2.0 / 1.5);
+    assert_eq!(json["items_per_second"], 2.0);
+    assert_eq!(json["bytes_per_second"], 28.0);
+    assert_eq!(json["bytes_downloaded"], 42);
+    assert_eq!(json["error_rate"], 0.5);
+    assert_eq!(json["success_rate"], 0.5);
+    assert_eq!(json["retry_exhaustion_rate"], 1.0);
+    assert_eq!(json["stop_reason"], "max_errors");
+    assert_eq!(json["domains"]["example.com"]["scheduled"], 1);
+    assert_eq!(json["domains"]["example.com"]["deduped"], 1);
+    assert_eq!(json["domains"]["example.com"]["completed"], 1);
+    assert_eq!(json["domains"]["example.com"]["failed"], 1);
+    assert_eq!(
+        json["domains"]["example.com"]["error_kinds"]["http_status"],
+        1
+    );
+    assert_eq!(json["domains"]["example.com"]["retries"], 1);
+    assert_eq!(json["retry_exhausted"], 1);
+    assert_eq!(json["domains"]["example.com"]["retry_exhausted"], 1);
+    assert_eq!(json["domains"]["example.com"]["robots_blocked"], 1);
+
+    let compact: serde_json::Value = serde_json::from_str(&report.to_json_string()).unwrap();
+    let pretty: serde_json::Value = serde_json::from_str(&report.to_json_string_pretty()).unwrap();
+    assert_eq!(compact, json);
+    assert_eq!(pretty, json);
+}
+
+#[test]
+fn crawl_report_exposes_production_rate_helpers() {
+    let report = CrawlReport::from(CrawlStats {
+        pages_crawled: 20,
+        items_scraped: 50,
+        errors: 5,
+        bytes_downloaded: 10_000,
+        retries: 4,
+        retry_exhausted: 2,
+        duration: Duration::from_secs(10),
+        ..CrawlStats::default()
+    });
+
+    assert_eq!(report.pages_per_second(), 2.0);
+    assert_eq!(report.items_per_second(), 5.0);
+    assert_eq!(report.bytes_per_second(), 1_000.0);
+    assert_eq!(report.error_rate(), 0.2);
+    assert_eq!(report.success_rate(), 0.8);
+    assert_eq!(report.retry_exhaustion_rate(), 0.5);
+}
+
+#[test]
+fn crawl_report_rate_helpers_return_zero_when_denominator_is_zero() {
+    let report = CrawlReport::from(CrawlStats {
+        pages_crawled: 0,
+        items_scraped: 10,
+        errors: 0,
+        bytes_downloaded: 10,
+        retries: 0,
+        retry_exhausted: 1,
+        duration: Duration::ZERO,
+        ..CrawlStats::default()
+    });
+
+    assert_eq!(report.pages_per_second(), 0.0);
+    assert_eq!(report.items_per_second(), 0.0);
+    assert_eq!(report.bytes_per_second(), 0.0);
+    assert_eq!(report.error_rate(), 0.0);
+    assert_eq!(report.success_rate(), 0.0);
+    assert_eq!(report.retry_exhaustion_rate(), 0.0);
+}
+
+#[test]
+fn record_error_keeps_global_and_domain_failures_in_sync() {
+    let mut stats = CrawlStats::default();
+    stats.record_scheduled("example.com");
+    stats.record_retry("example.com");
+    stats.record_error("example.com");
+
+    let report = CrawlReport::from(stats);
+
+    assert_eq!(report.scheduled, 1);
+    assert_eq!(report.retries, 1);
+    assert_eq!(report.errors, 1);
+    assert_eq!(report.domains["example.com"].scheduled, 1);
+    assert_eq!(report.domains["example.com"].retries, 1);
+    assert_eq!(report.domains["example.com"].failed, 1);
+}
+
+#[test]
+fn record_error_kind_tracks_global_and_domain_error_breakdown() {
+    let mut stats = CrawlStats::default();
+    stats.record_error_kind("example.com", KumoErrorKind::Parse);
+    stats.record_error_kind("example.com", KumoErrorKind::Parse);
+    stats.record_error_kind("api.example.com", KumoErrorKind::HttpStatus);
+
+    let report = CrawlReport::from(stats);
+
+    assert_eq!(report.errors, 3);
+    assert_eq!(report.error_kinds["parse"], 2);
+    assert_eq!(report.error_kinds["http_status"], 1);
+    assert_eq!(report.domains["example.com"].failed, 2);
+    assert_eq!(report.domains["example.com"].error_kinds["parse"], 2);
+    assert_eq!(report.domains["api.example.com"].failed, 1);
+    assert_eq!(
+        report.domains["api.example.com"].error_kinds["http_status"],
+        1
+    );
 }
 
 struct DuplicateSpider {

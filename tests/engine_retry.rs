@@ -2,7 +2,7 @@ mod support;
 
 use kumo::{
     engine::CrawlEngine,
-    error::KumoError,
+    error::{ErrorPolicy, KumoError},
     extract::Response,
     fetch::Fetcher,
     middleware::{FetchRequest, StatusRetry},
@@ -125,6 +125,11 @@ async fn retry_policy_exhausted_counts_as_single_error() {
         .unwrap();
 
     assert_eq!(stats.errors, 1, "all retries exhausted = one error");
+    assert_eq!(stats.error_kinds["http_status"], 1);
+    assert_eq!(stats.retries, 3);
+    assert_eq!(stats.retry_exhausted, 1);
+    assert_eq!(stats.domains["example.com"].retries, 3);
+    assert_eq!(stats.domains["example.com"].retry_exhausted, 1);
     assert_eq!(stats.pages_crawled, 0);
     assert_eq!(
         calls.load(Ordering::SeqCst),
@@ -177,6 +182,8 @@ async fn retry_policy_succeeds_on_later_attempt() {
         .unwrap();
 
     assert_eq!(stats.errors, 0, "succeeded after 2 failures");
+    assert_eq!(stats.retries, 2);
+    assert_eq!(stats.retry_exhausted, 0);
     assert_eq!(stats.pages_crawled, 1);
     assert_eq!(stats.items_scraped, 1);
     assert_eq!(
@@ -185,6 +192,50 @@ async fn retry_policy_succeeds_on_later_attempt() {
         "2 failures + 1 success = 3 fetches"
     );
     assert_eq!(store.collected()[0]["title"], "ok");
+}
+
+#[tokio::test]
+async fn error_policy_retry_exhaustion_is_observable() {
+    struct ParseRetrySpider(String);
+
+    #[async_trait::async_trait]
+    impl Spider for ParseRetrySpider {
+        type Item = serde_json::Value;
+
+        fn name(&self) -> &str {
+            "parse-retry-exhaust"
+        }
+
+        fn start_urls(&self) -> Vec<String> {
+            vec![self.0.clone()]
+        }
+
+        async fn parse(&self, _res: &Response) -> Result<Output<Self::Item>, KumoError> {
+            Err(KumoError::parse_msg("parse failed"))
+        }
+
+        fn on_error(&self, _url: &str, _err: &KumoError) -> ErrorPolicy {
+            ErrorPolicy::Retry(1)
+        }
+    }
+
+    let url = "https://example.com/parse";
+    let fetcher = kumo::fetch::MockFetcher::new().with_response(url, 200, "<h1>bad</h1>");
+
+    let stats = CrawlEngine::builder()
+        .fetcher(fetcher)
+        .respect_robots_txt(false)
+        .store(StdoutStore)
+        .run(ParseRetrySpider(url.to_string()))
+        .await
+        .unwrap();
+
+    assert_eq!(stats.pages_crawled, 0);
+    assert_eq!(stats.errors, 2);
+    assert_eq!(stats.error_kinds["parse"], 2);
+    assert_eq!(stats.retries, 1);
+    assert_eq!(stats.retry_exhausted, 1);
+    assert_eq!(stats.domains["example.com"].retry_exhausted, 1);
 }
 
 #[tokio::test]

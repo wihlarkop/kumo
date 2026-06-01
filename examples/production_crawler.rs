@@ -74,10 +74,9 @@ impl Spider for ProductionSpider {
 #[tokio::main]
 async fn main() -> Result<(), KumoError> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            std::env::var("RUST_LOG")
-                .unwrap_or_else(|_| "kumo=info,production_crawler=info".into()),
-        )
+        .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| {
+            "kumo::crawl=info,kumo::request=info,production_crawler=info".into()
+        }))
         .init();
 
     let frontier = FileFrontier::open("production-frontier")?.flush_every(25);
@@ -107,7 +106,7 @@ async fn main() -> Result<(), KumoError> {
                 .on_status(503)
                 .on_status(504),
         )
-        .middleware(DefaultHeaders::new().user_agent("kumo-production-example/0.2"))
+        .middleware(DefaultHeaders::new().user_agent("kumo-production-example/0.3"))
         .middleware(StatusRetry::new())
         .fingerprint_policy(FingerprintPolicy::default().strip_tracking_params(true))
         .frontier(frontier)
@@ -116,15 +115,28 @@ async fn main() -> Result<(), KumoError> {
         .run(ProductionSpider)
         .await?;
 
+    let report = CrawlReport::from(stats.clone());
+    std::fs::write(
+        "production-crawl-report.json",
+        report.to_json_string_pretty(),
+    )
+    .map_err(|e| KumoError::store("write production crawl report", e))?;
+
     println!(
-        "pages={} items={} scheduled={} errors={} retries={} deduped={} robots_blocked={}",
-        stats.pages_crawled,
-        stats.items_scraped,
-        stats.scheduled,
-        stats.errors,
-        stats.retries,
-        stats.deduped,
-        stats.robots_blocked
+        "pages={} items={} scheduled={} errors={} error_rate={:.3} pages_per_second={:.2} items_per_second={:.2} retries={} retry_exhausted={} retry_exhaustion_rate={:.3} deduped={} robots_blocked={} error_kinds={:?} report=production-crawl-report.json",
+        report.pages_crawled,
+        report.items_scraped,
+        report.scheduled,
+        report.errors,
+        report.error_rate(),
+        report.pages_per_second(),
+        report.items_per_second(),
+        report.retries,
+        report.retry_exhausted,
+        report.retry_exhaustion_rate(),
+        report.deduped,
+        report.robots_blocked,
+        report.error_kinds
     );
 
     Ok(())

@@ -14,6 +14,7 @@ use super::Fetcher;
 use crate::{
     error::KumoError,
     extract::{Response, response::ResponseBody},
+    logging::{event, target},
     middleware::FetchRequest,
 };
 
@@ -84,6 +85,10 @@ impl CachingFetcher {
             Some(ttl) => Self::now_secs().saturating_sub(entry.cached_at) < ttl.as_secs(),
         }
     }
+
+    fn is_cacheable(request: &FetchRequest) -> bool {
+        request.method == reqwest::Method::GET
+    }
 }
 
 impl std::fmt::Debug for CachingFetcher {
@@ -98,6 +103,17 @@ impl std::fmt::Debug for CachingFetcher {
 #[async_trait]
 impl Fetcher for CachingFetcher {
     async fn fetch(&self, request: &FetchRequest) -> Result<Response, KumoError> {
+        if !Self::is_cacheable(request) {
+            tracing::debug!(
+                target: target::CACHE,
+                event = event::CACHE_BYPASS,
+                url = request.url(),
+                method = %request.method,
+                "cache.bypass"
+            );
+            return self.inner.fetch(request).await;
+        }
+
         let path = self.cache_path(request.url());
 
         // Try cache hit.
@@ -107,7 +123,13 @@ impl Fetcher for CachingFetcher {
             && entry.url == request.url()
             && self.is_fresh(&entry)
         {
-            tracing::debug!(url = request.url(), "http cache hit");
+            tracing::debug!(
+                target: target::CACHE,
+                event = event::CACHE_HIT,
+                url = request.url(),
+                method = %request.method,
+                "cache.hit"
+            );
             return Ok(Response::new(
                 entry.url,
                 entry.status,
@@ -118,7 +140,13 @@ impl Fetcher for CachingFetcher {
         }
 
         // Cache miss — fetch live.
-        tracing::debug!(url = request.url(), "http cache miss");
+        tracing::debug!(
+            target: target::CACHE,
+            event = event::CACHE_MISS,
+            url = request.url(),
+            method = %request.method,
+            "cache.miss"
+        );
         let response = self.inner.fetch(request).await?;
 
         // Only cache text responses; skip binary.
@@ -129,8 +157,16 @@ impl Fetcher for CachingFetcher {
                 body: body_text.to_string(),
                 cached_at: Self::now_secs(),
             };
-            if let Ok(json) = serde_json::to_string(&entry) {
-                let _ = std::fs::write(&path, json); // best-effort write
+            if let Ok(json) = serde_json::to_string(&entry)
+                && std::fs::write(&path, json).is_err()
+            {
+                tracing::debug!(
+                    target: target::CACHE,
+                    event = event::CACHE_STORE_SKIP,
+                    url = response.url(),
+                    path = %path.display(),
+                    "cache.store_skip"
+                );
             }
         }
 

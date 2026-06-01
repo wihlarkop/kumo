@@ -6,7 +6,7 @@ description: Install kumo and write your first Rust web spider in minutes - step
 
 ## Prerequisites
 
-- Rust 1.88+ (stable toolchain)
+- Rust 1.94+ (stable toolchain)
 - `tokio` runtime
 - `async-trait` crate
 
@@ -103,6 +103,8 @@ use kumo::prelude::*;
 
 CrawlEngine::builder()
     .concurrency(16)
+    .max_pages(10_000)
+    .max_duration(Duration::from_secs(60 * 60))
     .politeness(
         PolitenessPolicy::new()
             .per_domain_concurrency(2)
@@ -114,7 +116,11 @@ CrawlEngine::builder()
 ```
 
 The scheduler handles request priority, per-domain delay, delayed retries,
-fingerprint-based deduplication, and crawl stats.
+fingerprint-based deduplication, crawl budgets, and crawl stats. Inspect
+`stats.stop_reason` after `run()` or `run_all()` to see whether a crawl ended
+because the frontier was exhausted, it was interrupted, or a configured budget
+was reached. Convert stats into `CrawlReport` and call `to_json_string_pretty()`
+when production jobs need to save a crawl summary.
 
 For a fuller production-style setup with `Retry-After` aware retries,
 `FileFrontier` resume state, metrics, robots.txt, and JSONL storage, see

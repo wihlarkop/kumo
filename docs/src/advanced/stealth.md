@@ -17,9 +17,9 @@ The `stealth` feature replaces the default `reqwest` HTTP client with `wreq`, wh
     specifically need TLS fingerprint emulation.
 
 !!! warning "Release gate"
-    Before releasing a Kumo version that includes the `wreq` stealth migration,
-    verify that the published `wreq-util` crate metadata and repository
-    `LICENSE` file both match the intended Apache-2.0 license.
+    The published `wreq-util` crate metadata is currently copyleft-licensed
+    (`GPL-3.0` on the 2.x line and `LGPL-3.0` on the 3.x release candidates).
+    Review that license before enabling `stealth` in redistributable binaries.
 
 ## Installation
 

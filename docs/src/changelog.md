@@ -12,12 +12,111 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
-### Unreleased
+### 0.3.14 - 2026-06-01
 
 - Replaced the optional `rquest` stealth HTTP dependency with `wreq`, keeping
   Kumo's public `StealthHttpFetcher` and `StealthProfile` API stable while
   removing the yanked upstream `rquest` dependency from the planned stealth path.
-- Documented the `wreq-util` license metadata release gate for stealth releases.
+- Documented the `wreq-util` license metadata risk for stealth releases.
+
+### 0.3.13 - 2026-06-01
+
+- Added dedicated CI coverage for compiling default and feature-gated examples.
+- Synced the repository examples README with the live examples documentation and
+  documented the `polite_crawling` example in the docs site.
+
+### 0.3.12 - 2026-06-01
+
+- Added integration coverage for the structured logging contract so core crawl,
+  request, and item-drop events keep stable `event` fields and production
+  context.
+
+### 0.3.11 - 2026-06-01
+
+- Standardized structured tracing events with stable `event` fields across
+  crawl, request, item, cache, and stream logs.
+- Added more consistent production log context such as spider name, domain,
+  depth, attempt, retry limits, error kind, and multi-spider index.
+
+### 0.3.10 - 2026-06-01
+
+- Refreshed direct dependencies including Rig, Reqwest, Tokio, scraper, Redis,
+  OpenTelemetry, object_store, SQLx, and Criterion.
+- Raised the minimum supported Rust version to 1.94 for SQLx 0.9.
+
+### 0.3.9 - 2026-06-01
+
+- Added a typed crawl events design document covering goals, candidate event
+  variants, subscription API shape, and the relationship between events,
+  logging, OpenTelemetry, and crawl reports.
+
+### 0.3.8 - 2026-06-01
+
+- Hardened duration-budget integration tests so loaded CI runners do not expire
+  the crawl before the first mock response can complete.
+
+### 0.3.7 - 2026-06-01
+
+- Added production report docs covering `CrawlReport` health signals, alert
+  examples, domain breakdowns, and operational report export patterns.
+
+### 0.3.6 - 2026-05-31
+
+- Added `CrawlReport` helper methods and JSON fields for pages/sec, items/sec,
+  bytes/sec, error rate, success rate, and retry exhaustion rate.
+
+### 0.3.5 - 2026-05-24
+
+- Hardened logging with stable `tracing` event targets and event names for
+  crawl lifecycle, request retry/skip, item drops, and HTTP cache activity.
+- Added production logging docs covering `RUST_LOG`, structured targets, and
+  JSON log setup.
+
+### 0.3.4 - 2026-05-24
+
+- Added `CrawlStats::error_kinds`, per-domain error-kind counters, stable
+  `KumoErrorKind::as_str()` labels, and JSON report export for failure
+  breakdowns.
+
+### 0.3.3 - 2026-05-24
+
+- Hardened `FileFrontier` flushes by syncing temporary state files before
+  replacing `queue.json` and `seen.json`, with best-effort directory sync on
+  Unix platforms.
+- Added `CrawlStats::retry_exhausted`, per-domain retry exhaustion counters,
+  and JSON report export for exhausted retries.
+
+### 0.3.2 - 2026-05-23
+
+- Added stable JSON export helpers for `CrawlReport`, including compact and
+  pretty-printed report strings.
+
+### 0.3.1 - 2026-05-23
+
+- Made `max_duration()` wake crawls promptly even when the scheduler is waiting
+  on longer politeness or retry delays.
+
+### 0.3.0 - 2026-05-23
+
+- Expanded `FileFrontier` resume coverage for `dont_filter` requests and
+  scheduler-normalized dedup fingerprints.
+- Made `CachingFetcher` bypass non-GET requests and expanded HTTP cache coverage
+  for TTL refetching, cached statuses, and binary-response bypass behavior.
+- Added crawl budget controls: `max_pages()`, `max_items()`, `max_duration()`,
+  `max_errors()`, and `CrawlStats::stop_reason`.
+
+### 0.2.12 - 2026-05-23
+
+- Added `CrawlStats::record_error()` so global error counts and per-domain
+  failure counts can be updated together.
+- Kept single-spider live metrics snapshots current after robots-blocked,
+  retry, permanent failure, and task-panic events, not only successful pages.
+- Documented the current `stealth` dependency risk: the optional upstream
+  `rquest 5.1.0` dependency is yanked on crates.io, so `stealth` remains
+  experimental until upstream publishes a healthy replacement.
+- Added a CI warning annotation for the locked yanked `rquest` dependency so
+  future releases keep the `stealth` risk visible without breaking unrelated
+  checks.
 
 ### 0.2.11 - 2026-05-20
 

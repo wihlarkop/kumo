@@ -42,6 +42,10 @@ pub struct CrawlEngine {
     pub(super) metrics_interval: Option<Duration>,
     pub(super) stream_buffer: usize,
     pub(super) request_timeout: Option<Duration>,
+    pub(super) max_pages: Option<u64>,
+    pub(super) max_items: Option<u64>,
+    pub(super) max_duration: Option<Duration>,
+    pub(super) max_errors: Option<u64>,
     pub(super) spiders: Vec<Arc<dyn ErasedSpider>>,
     pub(super) fetcher_override: Option<Arc<dyn Fetcher>>,
     pub(super) cache_dir: Option<std::path::PathBuf>,
@@ -72,6 +76,10 @@ impl Default for CrawlEngine {
             metrics_interval: None,
             stream_buffer: 100,
             request_timeout: None,
+            max_pages: None,
+            max_items: None,
+            max_duration: None,
+            max_errors: None,
             spiders: Vec::new(),
             fetcher_override: None,
             cache_dir: None,
@@ -188,6 +196,38 @@ impl CrawlEngine {
     /// crawls to save memory, higher for large crawls to reduce false-positive skips.
     pub fn max_urls(mut self, n: usize) -> Self {
         self.max_urls = n;
+        self
+    }
+
+    /// Stop after crawling at least `max_pages` pages.
+    ///
+    /// In-flight requests are allowed to finish before the engine returns.
+    pub fn max_pages(mut self, max_pages: u64) -> Self {
+        self.max_pages = Some(max_pages);
+        self
+    }
+
+    /// Stop after scraping at least `max_items` items.
+    ///
+    /// In-flight requests are allowed to finish before the engine returns.
+    pub fn max_items(mut self, max_items: u64) -> Self {
+        self.max_items = Some(max_items);
+        self
+    }
+
+    /// Stop after the crawl has run for at least `max_duration`.
+    ///
+    /// In-flight requests are allowed to finish before the engine returns.
+    pub fn max_duration(mut self, max_duration: Duration) -> Self {
+        self.max_duration = Some(max_duration);
+        self
+    }
+
+    /// Stop after at least `max_errors` permanent request failures.
+    ///
+    /// Retry attempts do not count as permanent errors until retries are exhausted.
+    pub fn max_errors(mut self, max_errors: u64) -> Self {
+        self.max_errors = Some(max_errors);
         self
     }
 

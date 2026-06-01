@@ -7,6 +7,7 @@ use crate::{
     engine::erased::ErasedSpider,
     error::KumoError,
     fetch::Fetcher,
+    logging::{event, target},
     middleware::{FetchRequest, Middleware},
     pipeline::Pipeline,
     request::{CrawlRequest, FrontierRequest},
@@ -54,11 +55,27 @@ async fn process_request(
             match pipeline.process(current).await {
                 Ok(Some(v)) => current = v,
                 Ok(None) => {
-                    tracing::debug!(spider = ctx.spider.name(), url, "item.drop");
+                    tracing::debug!(
+                        target: target::ITEM,
+                        event = event::ITEM_DROP,
+                        spider = ctx.spider.name(),
+                        url,
+                        depth,
+                        "item.drop"
+                    );
                     continue 'items;
                 }
                 Err(e) => {
-                    tracing::warn!(error = %e, "pipeline dropped item due to error");
+                    tracing::warn!(
+                        target: target::ITEM,
+                        event = event::ITEM_DROP_PIPELINE_ERROR,
+                        spider = ctx.spider.name(),
+                        url,
+                        depth,
+                        error = %e,
+                        error_kind = e.kind().as_str(),
+                        "item.drop.pipeline_error"
+                    );
                     continue 'items;
                 }
             }
@@ -71,13 +88,15 @@ async fn process_request(
     }
 
     tracing::debug!(
+        target: target::REQUEST,
+        event = event::REQUEST_OK,
         spider = ctx.spider.name(),
         url,
         status = response.status(),
         bytes = bytes_downloaded,
         depth,
         items = item_count,
-        "fetch.ok"
+        "request.ok"
     );
 
     let follows = output.follow.into_iter().map(|r| (r, depth + 1)).collect();

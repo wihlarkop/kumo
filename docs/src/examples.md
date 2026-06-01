@@ -80,6 +80,15 @@ Demonstrates `ProxyRotator` middleware cycling through a list of proxy URLs.
 cargo run --example proxy_rotation
 ```
 
+### `polite_crawling.rs` - polite crawl scheduling
+
+Shows `PolitenessPolicy`, per-domain concurrency, per-domain delay, request
+priority, metadata, fingerprint-based deduplication, and crawl stats.
+
+```bash
+cargo run --example polite_crawling
+```
+
 ## Stores
 
 ### `sqlite.rs` - SQLite store
