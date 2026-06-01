@@ -12,6 +12,12 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.3.13 - 2026-06-01
+
+- Added dedicated CI coverage for compiling default and feature-gated examples.
+- Synced the repository examples README with the live examples documentation and
+  documented the `polite_crawling` example in the docs site.
+
 ### 0.3.12 - 2026-06-01
 
 - Added integration coverage for the structured logging contract so core crawl,
