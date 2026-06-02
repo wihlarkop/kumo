@@ -171,3 +171,23 @@ impl Fetcher for StealthHttpFetcher {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::StealthProfile;
+    use wreq_util::Emulation;
+
+    #[test]
+    fn stealth_profiles_map_to_expected_wreq_emulations() {
+        let cases = [
+            (StealthProfile::Chrome131, Emulation::Chrome131),
+            (StealthProfile::Firefox128, Emulation::Firefox128),
+            (StealthProfile::Safari18, Emulation::Safari18),
+            (StealthProfile::Edge127, Emulation::Edge127),
+        ];
+
+        for (profile, expected) in cases {
+            assert_eq!(profile.to_emulation(), expected);
+        }
+    }
+}
