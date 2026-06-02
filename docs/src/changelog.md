@@ -12,6 +12,13 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.3.15 - 2026-06-02
+
+- Added a stealth contract test for `StealthProfile` to `wreq-util`
+  emulation mapping.
+- Added stealth migration notes documenting the `rquest` to `wreq` backend
+  change while keeping Kumo's public stealth API stable.
+
 ### 0.3.14 - 2026-06-01
 
 - Replaced the optional `rquest` stealth HTTP dependency with `wreq`, keeping

@@ -24,8 +24,17 @@ The `stealth` feature replaces the default `reqwest` HTTP client with `wreq`, wh
 ## Installation
 
 ```toml
-kumo = { version = "0.2", features = ["stealth"] }
+kumo = { version = "0.3", features = ["stealth"] }
 ```
+
+## Migration Notes
+
+Kumo 0.3.14 migrated the optional `stealth` fetcher from `rquest` to `wreq`
+because the previously locked `rquest` version was yanked. The public Kumo API
+is unchanged: keep using `StealthHttpFetcher`, `StealthProfile`, or
+`CrawlEngine::builder().stealth(...)` as before. Runtime TLS/HTTP2 fingerprints
+now come from `wreq` and `wreq-util`, so validate stealth behavior against your
+target sites after upgrading.
 
 ## HTTP-Level Stealth
 
@@ -54,7 +63,7 @@ Available profiles:
 When combined with the `browser` feature, `BrowserConfig::stealth()` also patches JavaScript APIs:
 
 ```toml
-kumo = { version = "0.2", features = ["stealth", "browser"] }
+kumo = { version = "0.3", features = ["stealth", "browser"] }
 ```
 
 ```rust

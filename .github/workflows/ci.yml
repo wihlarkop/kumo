@@ -168,6 +168,9 @@ jobs:
       - name: Check stealth feature
         run: cargo check --features stealth
 
+      - name: Test stealth contracts
+        run: cargo test --features stealth --lib stealth_profiles_map_to_expected_wreq_emulations
+
       - name: Check stealth examples
         run: cargo check --examples --features stealth
 
