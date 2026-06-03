@@ -141,6 +141,25 @@ pub enum CrawlEvent {
     },
 }
 
+impl CrawlEvent {
+    /// Stable snake_case label for dashboards, metrics, and event logs.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::CrawlStarted { .. } => "crawl_started",
+            Self::RequestScheduled { .. } => "request_scheduled",
+            Self::RequestSkipped { .. } => "request_skipped",
+            Self::RequestStarted { .. } => "request_started",
+            Self::RequestCompleted { .. } => "request_completed",
+            Self::RequestRetried { .. } => "request_retried",
+            Self::RequestFailed { .. } => "request_failed",
+            Self::TaskPanicked { .. } => "task_panicked",
+            Self::ItemScraped { .. } => "item_scraped",
+            Self::ItemDropped { .. } => "item_dropped",
+            Self::CrawlFinished { .. } => "crawl_finished",
+        }
+    }
+}
+
 /// Best-effort event emitter used internally by the crawl engine.
 #[derive(Debug, Clone)]
 pub(crate) struct EventEmitter {

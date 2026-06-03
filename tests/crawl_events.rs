@@ -10,6 +10,7 @@ use kumo::{
 };
 use serde_json::json;
 use tokio::sync::broadcast::error::TryRecvError;
+use tokio_stream::StreamExt;
 
 fn drain_events(rx: &mut tokio::sync::broadcast::Receiver<CrawlEvent>) -> Vec<CrawlEvent> {
     let mut events = Vec::new();
@@ -32,6 +33,140 @@ fn event_channel_capacity_is_clamped_to_one() {
 fn events_accepts_caller_owned_sender() {
     let (tx, _rx) = tokio::sync::broadcast::channel::<CrawlEvent>(8);
     let _engine = CrawlEngine::builder().events(tx);
+}
+
+#[test]
+fn crawl_event_names_are_stable() {
+    use kumo::stats::{CrawlReport, CrawlStats};
+
+    let report = CrawlReport::from(CrawlStats::default());
+    let events = [
+        (
+            CrawlEvent::CrawlStarted {
+                spider: "s".into(),
+                spider_index: None,
+                start_urls: 1,
+            },
+            "crawl_started",
+        ),
+        (
+            CrawlEvent::RequestScheduled {
+                spider: "s".into(),
+                spider_index: None,
+                url: "https://example.com".into(),
+                domain: "example.com".into(),
+                depth: 0,
+            },
+            "request_scheduled",
+        ),
+        (
+            CrawlEvent::RequestSkipped {
+                spider: "s".into(),
+                spider_index: None,
+                url: "https://example.com".into(),
+                domain: "example.com".into(),
+                depth: 0,
+                reason: RequestSkipReason::Duplicate,
+            },
+            "request_skipped",
+        ),
+        (
+            CrawlEvent::RequestStarted {
+                spider: "s".into(),
+                spider_index: None,
+                url: "https://example.com".into(),
+                domain: "example.com".into(),
+                depth: 0,
+                attempt: 0,
+            },
+            "request_started",
+        ),
+        (
+            CrawlEvent::RequestCompleted {
+                spider: "s".into(),
+                spider_index: None,
+                url: "https://example.com".into(),
+                domain: "example.com".into(),
+                depth: 0,
+                attempt: 0,
+                status: 200,
+                bytes: 0,
+                items: 0,
+                elapsed: std::time::Duration::ZERO,
+            },
+            "request_completed",
+        ),
+        (
+            CrawlEvent::RequestRetried {
+                spider: "s".into(),
+                spider_index: None,
+                url: "https://example.com".into(),
+                domain: "example.com".into(),
+                depth: 0,
+                attempt: 1,
+                max_attempts: 1,
+                delay: std::time::Duration::ZERO,
+                error_kind: kumo::error::KumoErrorKind::Parse,
+            },
+            "request_retried",
+        ),
+        (
+            CrawlEvent::RequestFailed {
+                spider: "s".into(),
+                spider_index: None,
+                url: "https://example.com".into(),
+                domain: "example.com".into(),
+                depth: 0,
+                attempt: 0,
+                error_kind: kumo::error::KumoErrorKind::Parse,
+                retry_exhausted: false,
+            },
+            "request_failed",
+        ),
+        (
+            CrawlEvent::TaskPanicked {
+                spider: "s".into(),
+                spider_index: None,
+                url: None,
+                domain: None,
+                depth: None,
+            },
+            "task_panicked",
+        ),
+        (
+            CrawlEvent::ItemScraped {
+                spider: "s".into(),
+                spider_index: None,
+                url: "https://example.com".into(),
+                depth: 0,
+            },
+            "item_scraped",
+        ),
+        (
+            CrawlEvent::ItemDropped {
+                spider: "s".into(),
+                spider_index: None,
+                url: "https://example.com".into(),
+                depth: 0,
+                reason: ItemDropReason::PipelineFiltered,
+                error_kind: None,
+            },
+            "item_dropped",
+        ),
+        (
+            CrawlEvent::CrawlFinished {
+                spider: "s".into(),
+                spider_index: None,
+                report,
+                stop_reason: None,
+            },
+            "crawl_finished",
+        ),
+    ];
+
+    for (event, expected) in events {
+        assert_eq!(event.name(), expected);
+    }
 }
 
 struct OnePageSpider {
@@ -362,6 +497,118 @@ async fn event_delivery_does_not_require_receiver() {
         .unwrap();
 
     assert_eq!(stats.pages_crawled, 1);
+}
+
+struct PanicSpider {
+    url: String,
+}
+
+#[async_trait]
+impl Spider for PanicSpider {
+    type Item = serde_json::Value;
+
+    fn name(&self) -> &str {
+        "panic-events"
+    }
+
+    fn start_urls(&self) -> Vec<String> {
+        vec![self.url.clone()]
+    }
+
+    async fn parse(&self, _response: &Response) -> Result<Output<Self::Item>, KumoError> {
+        panic!("intentional panic for event coverage");
+    }
+}
+
+#[tokio::test]
+async fn task_panic_emits_task_panicked_event() {
+    let url = "https://panic.example.com/start";
+    let fetcher = MockFetcher::new().with_response(url, 200, "<h1>panic</h1>");
+    let (engine, mut rx) = CrawlEngine::builder()
+        .respect_robots_txt(false)
+        .fetcher(fetcher)
+        .event_channel(64);
+
+    let stats = engine
+        .run(PanicSpider {
+            url: url.to_string(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(stats.errors, 1);
+    let events = drain_events(&mut rx);
+    assert!(events.iter().any(|event| matches!(
+        event,
+        CrawlEvent::TaskPanicked {
+            spider,
+            spider_index: None,
+            url: Some(event_url),
+            domain: Some(domain),
+            depth: Some(0),
+        } if spider == "panic-events" && event_url == url && domain == "panic.example.com"
+    )));
+}
+
+struct EndlessStreamSpider {
+    url: String,
+}
+
+#[async_trait]
+impl Spider for EndlessStreamSpider {
+    type Item = serde_json::Value;
+
+    fn name(&self) -> &str {
+        "event-stream"
+    }
+
+    fn start_urls(&self) -> Vec<String> {
+        vec![self.url.clone()]
+    }
+
+    async fn parse(&self, response: &Response) -> Result<Output<Self::Item>, KumoError> {
+        let current = response
+            .url()
+            .rsplit('/')
+            .next()
+            .and_then(|n| n.parse::<u32>().ok())
+            .unwrap_or_default();
+        Ok(Output::new()
+            .item(json!({ "page": current }))
+            .follow(format!("https://example.com/page/{}", current + 1)))
+    }
+}
+
+#[tokio::test]
+async fn stream_cancellation_emits_finished_event_with_interrupted_stop_reason() {
+    let (tx, mut rx) = tokio::sync::broadcast::channel::<CrawlEvent>(128);
+    let mut stream = CrawlEngine::builder()
+        .concurrency(1)
+        .stream_buffer(1)
+        .respect_robots_txt(false)
+        .fetcher(MockFetcher::new().with_default(200, "<h1>ok</h1>"))
+        .events(tx)
+        .stream(EndlessStreamSpider {
+            url: "https://example.com/page/0".to_string(),
+        })
+        .await
+        .unwrap();
+
+    let item = stream.next().await.expect("stream should yield first item");
+    assert_eq!(item["page"], 0);
+    drop(stream);
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let events = drain_events(&mut rx);
+    assert!(events.iter().any(|event| matches!(
+        event,
+        CrawlEvent::CrawlFinished {
+            spider,
+            stop_reason: Some(kumo::stats::StopReason::Interrupted),
+            report,
+            ..
+        } if spider == "event-stream" && report.interrupted
+    )));
 }
 
 #[tokio::test]

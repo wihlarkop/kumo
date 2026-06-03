@@ -90,6 +90,51 @@ Every event includes the spider name. Events emitted by `run_all()` also include
 `spider_index: Some(index)` so applications can separate multiple spiders in one
 engine run. Single-spider `run()` events use `spider_index: None`.
 
+## Stable Event Labels
+
+Use `CrawlEvent::name()` when you need a stable label for dashboards, counters,
+or metrics tags:
+
+```rust
+while let Ok(event) = events.recv().await {
+    tracing::debug!(event = event.name(), "crawl event");
+}
+```
+
+Current labels:
+
+| Event | Label |
+| --- | --- |
+| `CrawlStarted` | `crawl_started` |
+| `RequestScheduled` | `request_scheduled` |
+| `RequestSkipped` | `request_skipped` |
+| `RequestStarted` | `request_started` |
+| `RequestCompleted` | `request_completed` |
+| `RequestRetried` | `request_retried` |
+| `RequestFailed` | `request_failed` |
+| `TaskPanicked` | `task_panicked` |
+| `ItemScraped` | `item_scraped` |
+| `ItemDropped` | `item_dropped` |
+| `CrawlFinished` | `crawl_finished` |
+
+## Ordering Expectations
+
+Events are emitted from the same logical points as the engine's structured logs.
+For one successful request, consumers should generally see:
+
+1. `RequestScheduled`
+2. `RequestStarted`
+3. zero or more `ItemScraped` or `ItemDropped` events
+4. `RequestCompleted`
+
+Retries emit `RequestRetried` before the retry is requeued. Permanent failures
+emit `RequestFailed`. A crawl emits `CrawlFinished` after final stats and the
+stop reason are known.
+
+Concurrent crawls can interleave events from different requests or spiders. Use
+`spider`, `spider_index`, `url`, `depth`, and `attempt` fields to correlate
+events instead of assuming global ordering.
+
 ## Skip And Drop Reasons
 
 `RequestSkipped` carries a typed `RequestSkipReason`:
