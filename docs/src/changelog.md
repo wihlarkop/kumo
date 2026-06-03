@@ -12,6 +12,16 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.4.0 - 2026-06-03
+
+- Added typed crawl lifecycle events through `CrawlEvent`.
+- Added `CrawlEngine::events(...)` for caller-owned broadcast channels.
+- Added `CrawlEngine::event_channel(...)` for convenient event subscription.
+- Added event coverage for crawl start/finish, scheduling, skips, request
+  start/completion, retries, failures, task panics, scraped items, and dropped
+  items.
+- Added crawl events docs and a runnable `crawl_events` example.
+
 ### 0.3.16 - 2026-06-03
 
 - Automated GitHub Release creation in the tag-driven publish workflow after

@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "kumo"
-version = "0.3.16"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.94"
 authors = ["wihlarkop"]
@@ -226,6 +226,9 @@ required-features = ["stealth"]
 [[example]]
 name = "cloud"
 required-features = ["cloud"]
+
+[[example]]
+name = "crawl_events"
 
 [[bench]]
 name = "fingerprint"
