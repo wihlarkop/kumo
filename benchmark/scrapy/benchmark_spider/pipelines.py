@@ -1,6 +1,8 @@
 import json
+import os
 import platform
 import resource
+import sys
 import time
 
 import scrapy
@@ -22,8 +24,13 @@ class JsonlPipeline:
             "framework": "scrapy",
             "elapsed_s": round(elapsed, 3),
             "items": self.count,
+            "pages": spider.crawler.stats.get_value("response_received_count", 0),
+            "downloader_exceptions": spider.crawler.stats.get_value(
+                "downloader/exception_count",
+                0,
+            ),
             "peak_rss_kb": peak_rss_kb,
-            "concurrency": int(__import__("os").environ.get("CONCURRENCY", "16")),
+            "concurrency": int(os.environ.get("CONCURRENCY", "16")),
             "versions": {
                 "language": f"python {platform.python_version()}",
                 "framework": f"scrapy {scrapy.__version__}",
@@ -32,6 +39,13 @@ class JsonlPipeline:
         }
         with open("/results/scrapy_stats.json", "w") as f:
             json.dump(stats, f)
+
+        if self.count == 0:
+            print(
+                "scrapy benchmark produced zero items; treating run as failed",
+                file=sys.stderr,
+            )
+            os._exit(2)
 
     def process_item(self, item, spider):
         self.file.write(json.dumps(dict(item)) + "\n")

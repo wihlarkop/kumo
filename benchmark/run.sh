@@ -19,8 +19,23 @@ for arg in "$@"; do
 done
 
 mkdir -p results
+export KUMO_VERSION="$(python - <<'EOF'
+import re
+from pathlib import Path
+
+manifest = Path("..") / "Cargo.toml"
+for line in manifest.read_text().splitlines():
+    m = re.match(r'version\s*=\s*"([^"]+)"', line)
+    if m:
+        print(m.group(1))
+        break
+else:
+    print("unknown")
+EOF
+)"
 
 echo "==> Building images..."
+echo "    KUMO_VERSION=$KUMO_VERSION"
 docker compose build
 
 if $SCALE; then

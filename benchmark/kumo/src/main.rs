@@ -107,7 +107,11 @@ async fn main() -> Result<(), KumoError> {
                 "rust {}",
                 std::env::var("KUMO_BENCH_RUST_VERSION").unwrap_or_else(|_| "unknown".into())
             ),
-            "framework": format!("kumo {}", env!("CARGO_PKG_VERSION")),
+            "framework": format!(
+                "kumo {}",
+                std::env::var("KUMO_BENCH_KUMO_VERSION")
+                    .unwrap_or_else(|_| env!("CARGO_PKG_VERSION").into())
+            ),
         },
     });
     std::fs::write("/results/kumo_stats.json", result.to_string()).ok();

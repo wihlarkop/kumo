@@ -10,6 +10,14 @@ $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 New-Item -ItemType Directory -Force -Path "results" | Out-Null
 
+$manifest = Get-Content "..\Cargo.toml"
+$versionLine = $manifest | Where-Object { $_ -match '^version\s*=' } | Select-Object -First 1
+if ($versionLine -match '"([^"]+)"') {
+    $env:KUMO_VERSION = $Matches[1]
+} else {
+    $env:KUMO_VERSION = "unknown"
+}
+
 function Invoke-BenchmarkService {
     param(
         [string]$Service,
@@ -90,6 +98,7 @@ function Write-MedianResults {
 }
 
 Write-Host "==> Building images..."
+Write-Host "    KUMO_VERSION=$env:KUMO_VERSION"
 docker compose build
 
 $useLocal = $Local.IsPresent -or $Scale.IsPresent
