@@ -27,6 +27,7 @@ An async web crawling framework for Rust - Scrapy for Rust.
 | Distributed frontier (Redis) | Yes | Yes (scrapy-redis) | No |
 | Item stream API | Yes | No | No |
 | Typed crawl events | Yes | Signals | No |
+| Async crawl hooks | Yes | Signals / extensions | No |
 | OpenTelemetry export | Yes | No | No |
 | Pluggable stores (JSONL, CSV, Postgres, SQLite, MySQL) | Yes | Yes (pipelines) | No |
 | Single binary deploy | Yes | No | Yes |
@@ -54,7 +55,8 @@ On raw parsing throughput (local server, no network): **3.0x faster than Colly, 
 - **Auto-throttle** - adaptive delay based on EWMA latency and 429/503 back-off
 - **Retry with backoff** - exponential backoff, status filtering, jitter, and `Retry-After` support
 - **Item stream** - `CrawlEngine::stream()` returns an async `Stream` for real-time item consumption
-- **Typed crawl events** - `CrawlEvent` lifecycle hooks for dashboards, progress bars, alerts, and embedded runners
+- **Typed crawl events** - `CrawlEvent` signals for dashboards, progress bars, alerts, and embedded runners
+- **Async crawl hooks** - `CrawlHook` extension points for metrics, audit logging, persistence, and policy checks
 - **robots.txt** - per-domain fetch + cache, enabled by default, with `Crawl-delay` support
 - **Bloom filter dedup** - O(1) URL deduplication, 1M URLs at 0.1% false-positive rate
 - **Request scheduling** - `CrawlRequest` supports priority, headers, method/body, metadata, and `dont_filter`
@@ -76,7 +78,7 @@ On raw parsing throughput (local server, no network): **3.0x faster than Colly, 
 
 ```toml
 [dependencies]
-kumo = "0.4"
+kumo = "0.5"
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
@@ -85,7 +87,7 @@ tokio = { version = "1", features = ["full"] }
 For `#[derive(Extract)]`:
 
 ```toml
-kumo = { version = "0.4", features = ["derive"] }
+kumo = { version = "0.5", features = ["derive"] }
 ```
 
 ## Quick Start

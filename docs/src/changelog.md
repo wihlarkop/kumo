@@ -12,6 +12,16 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.5.0 - 2026-06-03
+
+- Added async crawl lifecycle hooks through the `CrawlHook` trait.
+- Added `HookErrorPolicy` for choosing whether hook failures are logged or
+  abort the crawl.
+- Added `CrawlEngine::hook(...)`, `CrawlEngine::hooks(...)`, and
+  `CrawlEngine::hook_error_policy(...)`.
+- Added `KumoErrorKind::Hook` and `KumoError::hook(...)` for hook failures.
+- Added crawl hooks documentation, tests, and a runnable `crawl_hooks` example.
+
 ### 0.4.1 - 2026-06-03
 
 - Added `CrawlEvent::name()` with stable snake_case event labels for

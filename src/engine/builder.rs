@@ -42,6 +42,8 @@ pub struct CrawlEngine {
     pub(super) metrics_interval: Option<Duration>,
     pub(super) stream_buffer: usize,
     pub(super) events: Option<crate::events::EventEmitter>,
+    pub(super) hooks: Vec<Arc<dyn crate::hooks::CrawlHook>>,
+    pub(super) hook_error_policy: crate::hooks::HookErrorPolicy,
     pub(super) request_timeout: Option<Duration>,
     pub(super) max_pages: Option<u64>,
     pub(super) max_items: Option<u64>,
@@ -77,6 +79,8 @@ impl Default for CrawlEngine {
             metrics_interval: None,
             stream_buffer: 100,
             events: None,
+            hooks: Vec::new(),
+            hook_error_policy: crate::hooks::HookErrorPolicy::default(),
             request_timeout: None,
             max_pages: None,
             max_items: None,
@@ -193,6 +197,37 @@ impl CrawlEngine {
     /// the crawl continues normally.
     pub fn events(mut self, tx: tokio::sync::broadcast::Sender<crate::events::CrawlEvent>) -> Self {
         self.events = Some(crate::events::EventEmitter::new(tx));
+        self
+    }
+
+    /// Register a crawl lifecycle hook.
+    ///
+    /// Hooks run in registration order. By default, hook failures are logged and
+    /// the crawl continues; use [`hook_error_policy`](Self::hook_error_policy)
+    /// to make hook failures abort the crawl.
+    pub fn hook<H>(mut self, hook: H) -> Self
+    where
+        H: crate::hooks::CrawlHook + 'static,
+    {
+        self.hooks.push(Arc::new(hook));
+        self
+    }
+
+    /// Register multiple crawl lifecycle hooks in iterator order.
+    pub fn hooks<I, H>(mut self, hooks: I) -> Self
+    where
+        I: IntoIterator<Item = H>,
+        H: crate::hooks::CrawlHook + 'static,
+    {
+        for hook in hooks {
+            self.hooks.push(Arc::new(hook));
+        }
+        self
+    }
+
+    /// Configure how hook failures affect the crawl.
+    pub fn hook_error_policy(mut self, policy: crate::hooks::HookErrorPolicy) -> Self {
+        self.hook_error_policy = policy;
         self
     }
 

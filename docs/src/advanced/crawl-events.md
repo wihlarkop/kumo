@@ -11,6 +11,10 @@ dashboards, progress bars, alerts, custom metrics, or embedded crawl runners.
 Events complement structured `tracing` logs, OpenTelemetry, `CrawlStats`, and
 `CrawlReport`. They do not replace logging.
 
+Use [Crawl Hooks](crawl-hooks.md) when you want to run in-process extension
+code for lifecycle events. Use crawl events when you want a best-effort
+broadcast stream for dashboards, progress bars, or embedded runners.
+
 ## Quick Start
 
 Use `.event_channel(capacity)` when you want Kumo to create the event channel:
