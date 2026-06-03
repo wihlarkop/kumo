@@ -26,6 +26,9 @@ function Invoke-BenchmarkService {
 
     Write-Host "    $Service run $Run/$Runs"
     docker compose run --rm $Service
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Service benchmark run $Run failed with exit code $LASTEXITCODE"
+    }
     Copy-Item -Force "results\$($Service)_stats.json" "results\$($Service)_run$($Run)_stats.json"
 }
 
@@ -123,6 +126,9 @@ if ($Scale) {
         foreach ($service in @("kumo", "scrapy", "colly")) {
             Write-Host "    $service @ concurrency=$level"
             docker compose run --rm $service
+            if ($LASTEXITCODE -ne 0) {
+                throw "$service benchmark failed at concurrency=$level with exit code $LASTEXITCODE"
+            }
             Copy-Item -Force "results\$($service)_stats.json" "results\scale\$($service)_c$($level)_stats.json"
         }
     }
