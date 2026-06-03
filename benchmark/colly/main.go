@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +26,26 @@ type Stats struct {
 	Pages       int     `json:"pages"`
 	PeakRSSKB   int64   `json:"peak_rss_kb"`
 	Concurrency int     `json:"concurrency"`
+	Framework   string  `json:"framework"`
+	Versions    Versions `json:"versions"`
+}
+
+type Versions struct {
+	Language  string `json:"language"`
+	Framework string `json:"framework"`
+}
+
+func collyVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "colly unknown"
+	}
+	for _, dep := range info.Deps {
+		if dep.Path == "github.com/gocolly/colly/v2" {
+			return "colly " + dep.Version
+		}
+	}
+	return "colly unknown"
 }
 
 func peakRSSKB() int64 {
@@ -110,6 +132,11 @@ func main() {
 		Pages:       pageCount,
 		PeakRSSKB:   rssKB,
 		Concurrency: concurrency,
+		Framework:   "colly",
+		Versions: Versions{
+			Language:  runtime.Version(),
+			Framework: collyVersion(),
+		},
 	}
 	statsData, _ := json.Marshal(stats)
 	os.WriteFile("/results/colly_stats.json", statsData, 0644)

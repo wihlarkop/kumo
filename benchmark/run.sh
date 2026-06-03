@@ -116,7 +116,9 @@ services = ["kumo", "scrapy", "colly"]
 rows = []
 
 for name in services:
-    elapsed_vals, rss_vals, item_vals = [], [], []
+    elapsed_vals, rss_vals, item_vals, page_vals = [], [], [], []
+    versions = {}
+    concurrency = None
     for i in range(1, RUNS + 1):
         path = f"results/{name}_run{i}_stats.json"
         if not os.path.exists(path):
@@ -126,6 +128,9 @@ for name in services:
         elapsed_vals.append(s.get("elapsed_s", 0))
         rss_vals.append(s.get("peak_rss_kb", 0))
         item_vals.append(int(s.get("items", 0)))
+        page_vals.append(int(s.get("pages", 0)))
+        versions = versions or s.get("versions", {})
+        concurrency = concurrency or s.get("concurrency")
 
     if not elapsed_vals:
         continue
@@ -133,19 +138,29 @@ for name in services:
     elapsed = statistics.median(elapsed_vals)
     rss_kb  = statistics.median(rss_vals)
     items   = statistics.median(item_vals)
+    pages   = statistics.median(page_vals) if page_vals else 0
     rps     = round(items / elapsed, 1) if elapsed > 0 else 0
     rss_mb  = round(rss_kb / 1024, 1)
-    rows.append((name, int(items), elapsed, rps, rss_mb))
+    rows.append((name, int(items), int(pages), elapsed, rps, rss_mb, concurrency, versions))
 
-print(f"{'Framework':<12} {'Items':>8} {'Time (s)':>10} {'Items/s':>10} {'RSS (MB)':>10}")
-print("-" * 54)
-for name, items, elapsed, rps, rss_mb in rows:
-    print(f"{name:<12} {items:>8} {elapsed:>10.2f} {rps:>10.1f} {rss_mb:>10.1f}")
+print(f"{'Framework':<12} {'Items':>8} {'Pages':>8} {'Time (s)':>10} {'Items/s':>10} {'RSS (MB)':>10}")
+print("-" * 64)
+for name, items, pages, elapsed, rps, rss_mb, concurrency, versions in rows:
+    print(f"{name:<12} {items:>8} {pages:>8} {elapsed:>10.2f} {rps:>10.1f} {rss_mb:>10.1f}")
 
 print()
 output = [
-    {"framework": n, "items": i, "elapsed_s": e, "items_per_s": r, "peak_rss_mb": m}
-    for n, i, e, r, m in rows
+    {
+        "framework": n,
+        "items": i,
+        "pages": p,
+        "elapsed_s": e,
+        "items_per_s": r,
+        "peak_rss_mb": m,
+        "concurrency": c,
+        "versions": v,
+    }
+    for n, i, p, e, r, m, c, v in rows
 ]
 suffix = "_local" if "$LOCAL" == "true" else ""
 out_path = f"results/latest{suffix}.json"

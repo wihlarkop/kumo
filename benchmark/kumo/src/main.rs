@@ -96,11 +96,19 @@ async fn main() -> Result<(), KumoError> {
     let rss_kb = peak_rss_kb();
 
     let result = serde_json::json!({
+        "framework": "kumo",
         "elapsed_s": (elapsed * 1000.0).round() / 1000.0,
         "items": stats.items_scraped,
         "pages": stats.pages_crawled,
         "peak_rss_kb": rss_kb,
         "concurrency": concurrency,
+        "versions": {
+            "language": format!(
+                "rust {}",
+                std::env::var("KUMO_BENCH_RUST_VERSION").unwrap_or_else(|_| "unknown".into())
+            ),
+            "framework": format!("kumo {}", env!("CARGO_PKG_VERSION")),
+        },
     });
     std::fs::write("/results/kumo_stats.json", result.to_string()).ok();
 

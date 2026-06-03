@@ -70,7 +70,7 @@ instant responses.
 
 ## Reproduce
 
-Requirements: Docker, Docker Compose, Python 3.
+Requirements: Docker and Docker Compose.
 
 ```bash
 cd benchmark
@@ -86,7 +86,25 @@ cd benchmark
 ./run.sh --local --runs=5
 ```
 
+On Windows, use the PowerShell runner instead of WSL bash:
+
+```powershell
+cd benchmark
+
+# Real site (3 runs, median)
+.\run.ps1
+
+# Local mock server (eliminates network noise)
+.\run.ps1 -Local
+
+# Custom number of runs
+.\run.ps1 -Runs 5
+.\run.ps1 -Local -Runs 5
+```
+
 Results are saved to `results/latest.json` (real) and `results/latest_local.json` (local).
+Each result includes the benchmarked framework, language runtime, library
+version, concurrency, elapsed time, item count, and peak RSS.
 
 ## Microbenchmarks
 
@@ -110,7 +128,7 @@ shared CI runners are too noisy for stable timing.
 
 | Directory | Language | Version |
 |-----------|----------|---------|
-| `kumo/` | Rust | latest stable |
-| `scrapy/` | Python | 3.12 / Scrapy 2.12 |
-| `colly/` | Go | 1.22 / Colly v2 |
+| `kumo/` | Rust | 1.96.0 / kumo from this repository |
+| `scrapy/` | Python | 3.14.5 / Scrapy 2.16.0 |
+| `colly/` | Go | 1.26.3 / Colly v2.3.0 |
 | `mockserver/` | nginx | alpine |
