@@ -24,6 +24,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: write
+
 jobs:
   publish:
     name: Publish to crates.io
@@ -147,3 +150,37 @@ jobs:
           fi
 
           exit "$status"
+
+      - name: Create GitHub Release
+        if: ${{ github.event_name == 'push' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          crate="${{ steps.release.outputs.crate }}"
+          version="${{ steps.release.outputs.version }}"
+          title="${crate} v${version}"
+
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "GitHub Release ${tag} already exists; skipping creation."
+            exit 0
+          fi
+
+          args=(
+            "$tag"
+            --repo "$GITHUB_REPOSITORY"
+            --title "$title"
+            --generate-notes
+            --verify-tag
+          )
+
+          if [[ "$crate" == "kumo" ]]; then
+            args+=(--latest)
+          else
+            args+=(--latest=false)
+          fi
+
+          gh release create "${args[@]}"

@@ -12,6 +12,13 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.3.16 - 2026-06-03
+
+- Automated GitHub Release creation in the tag-driven publish workflow after
+  crates.io publish steps complete.
+- Added maintainer release process notes covering version bumps, changelog
+  updates, tag formats, publish verification, and recovery rules.
+
 ### 0.3.15 - 2026-06-02
 
 - Added a stealth contract test for `StealthProfile` to `wreq-util`
