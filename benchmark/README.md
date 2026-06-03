@@ -129,6 +129,6 @@ shared CI runners are too noisy for stable timing.
 | Directory | Language | Version |
 |-----------|----------|---------|
 | `kumo/` | Rust | 1.96.0 / kumo from this repository |
-| `scrapy/` | Python | 3.14.5 / Scrapy 2.16.0 |
+| `scrapy/` | Python | 3.14.5 / uv 0.11.16 / Scrapy 2.16.0 installed with `uv sync` |
 | `colly/` | Go | 1.26.3 / Colly v2.3.0 |
 | `mockserver/` | nginx | alpine |
