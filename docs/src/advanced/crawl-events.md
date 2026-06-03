@@ -1,105 +1,30 @@
-# Crawl Events Design
+---
+description: Subscribe to typed kumo crawl lifecycle events for dashboards, progress bars, alerts, and embedded crawl runners.
+---
 
-Kumo already exposes operational visibility through structured `tracing` logs,
-OpenTelemetry, `CrawlStats`, and `CrawlReport`. The next observability layer is
-a typed event surface for applications that need programmatic hooks.
+# Crawl Events
 
-This page describes the planned design. It is not a stable public API yet.
+Kumo exposes typed crawl lifecycle events through `CrawlEvent`. Use events when
+your application needs programmatic visibility while a crawl is running, such as
+dashboards, progress bars, alerts, custom metrics, or embedded crawl runners.
 
-## Goals
+Events complement structured `tracing` logs, OpenTelemetry, `CrawlStats`, and
+`CrawlReport`. They do not replace logging.
 
-- Let applications subscribe to crawl lifecycle events without parsing logs.
-- Keep event payloads typed and Rust-native.
-- Support dashboards, progress bars, custom alerts, and embedded crawl runners.
-- Preserve `tracing` as the logging and telemetry surface.
-- Avoid a Scrapy-style dynamic signal system that hides type errors until
-  runtime.
+## Quick Start
 
-## Non-Goals
-
-- Do not replace `tracing`.
-- Do not add a custom logger trait.
-- Do not require all users to pay for event delivery when they do not subscribe.
-- Do not expose internal scheduler types as public API before they are stable.
-
-## Candidate Event Model
-
-A future `CrawlEvent` enum should describe user-meaningful events with stable
-fields:
+Use `.event_channel(capacity)` when you want Kumo to create the event channel:
 
 ```rust
-pub enum CrawlEvent {
-    CrawlStarted {
-        spider: String,
-    },
-    RequestScheduled {
-        spider: String,
-        url: String,
-        depth: usize,
-    },
-    RequestSkipped {
-        spider: String,
-        url: String,
-        reason: SkipReason,
-    },
-    RequestCompleted {
-        spider: String,
-        url: String,
-        status: u16,
-        bytes: u64,
-        elapsed_ms: u128,
-    },
-    RequestFailed {
-        spider: String,
-        url: String,
-        kind: KumoErrorKind,
-    },
-    RequestRetried {
-        spider: String,
-        url: String,
-        attempt: u32,
-        delay_ms: u128,
-    },
-    ItemScraped {
-        spider: String,
-    },
-    ItemDropped {
-        spider: String,
-        reason: DropReason,
-    },
-    CrawlFinished {
-        spider: String,
-        report: CrawlReport,
-    },
-}
-```
+use kumo::prelude::*;
 
-The exact names and payloads can change before implementation. The important
-constraint is that event variants should be stable enough for application code
-to match on without relying on display strings.
+let (engine, mut events) = CrawlEngine::builder().event_channel(1024);
 
-## Subscription API
-
-The preferred first API is a Tokio broadcast channel owned by the application:
-
-```rust
-let (tx, mut rx) = tokio::sync::broadcast::channel(1024);
-
-let stats = CrawlEngine::builder()
-    .events(tx)
-    .run(MySpider)
-    .await?;
-```
-
-This keeps the engine async-native and avoids callback lifetime complexity. A
-dashboard or progress task can receive events independently:
-
-```rust
-tokio::spawn(async move {
-    while let Ok(event) = rx.recv().await {
+let listener = tokio::spawn(async move {
+    while let Ok(event) = events.recv().await {
         match event {
-            CrawlEvent::RequestCompleted { url, status, .. } => {
-                tracing::debug!(%url, status, "request completed");
+            CrawlEvent::RequestCompleted { url, status, items, .. } => {
+                tracing::info!(%url, status, items, "page completed");
             }
             CrawlEvent::CrawlFinished { report, .. } => {
                 tracing::info!(
@@ -107,38 +32,103 @@ tokio::spawn(async move {
                     items = report.items_scraped,
                     "crawl finished"
                 );
+                break;
             }
             _ => {}
         }
     }
 });
+
+engine.run(MySpider).await?;
+listener.await?;
 ```
 
-If the channel has no receivers or is full, the engine should not fail the
-crawl. Event delivery is observability, not crawl correctness.
+Use `.events(tx)` when your application owns the broadcast channel:
 
-## Relationship To Logging
+```rust
+use kumo::{engine::CrawlEngine, events::CrawlEvent};
 
-Events and logs serve different purposes:
+let (tx, mut rx) = tokio::sync::broadcast::channel::<CrawlEvent>(1024);
+
+CrawlEngine::builder()
+    .events(tx)
+    .run(MySpider)
+    .await?;
+```
+
+## Delivery Guarantees
+
+Event delivery is best-effort:
+
+- If there are no receivers, the crawl continues.
+- If a receiver lags, the crawl continues.
+- Event send errors are ignored by the engine.
+- Events are for observability, not crawl correctness.
+
+Choose a channel capacity large enough for your listener. For high-throughput
+crawls, drain events in a dedicated task and aggregate them outside the engine.
+
+## Event Model
+
+`CrawlEvent` variants describe user-meaningful lifecycle points:
+
+| Event | Meaning |
+| --- | --- |
+| `CrawlStarted` | A spider started and its seed URL count is known. |
+| `RequestScheduled` | A request entered the scheduler/frontier. |
+| `RequestSkipped` | A request was not fetched because it was duplicate, blocked by robots.txt, over depth, or outside allowed domains. |
+| `RequestStarted` | A worker started processing a request. |
+| `RequestCompleted` | A request fetched, parsed, and stored its accepted items. |
+| `RequestRetried` | A request was scheduled for retry. |
+| `RequestFailed` | A request reached the spider error policy path. |
+| `TaskPanicked` | A worker task panicked before returning a normal request result. |
+| `ItemScraped` | An item passed pipelines and was handed to the store. |
+| `ItemDropped` | A pipeline filtered an item or returned an error. |
+| `CrawlFinished` | A spider finished and includes a final `CrawlReport`. |
+
+Every event includes the spider name. Events emitted by `run_all()` also include
+`spider_index: Some(index)` so applications can separate multiple spiders in one
+engine run. Single-spider `run()` events use `spider_index: None`.
+
+## Skip And Drop Reasons
+
+`RequestSkipped` carries a typed `RequestSkipReason`:
+
+| Reason | Meaning |
+| --- | --- |
+| `RobotsTxt` | `robots.txt` blocked the request. |
+| `Duplicate` | The fingerprint/frontier already saw the request. |
+| `DepthLimit` | The request exceeded `Spider::max_depth()`. |
+| `DomainDenied` | The request was outside `Spider::allowed_domains()`. |
+
+`ItemDropped` carries a typed `ItemDropReason`:
+
+| Reason | Meaning |
+| --- | --- |
+| `PipelineFiltered` | A pipeline returned `Ok(None)`. |
+| `PipelineError` | A pipeline returned `Err(_)`; `error_kind` is included. |
+
+Both reason enums expose `as_str()` for stable snake_case labels.
+
+## Relationship To Logs And Reports
 
 | Surface | Purpose |
-|---------|---------|
-| `tracing` | Human-readable logs, JSON logs, OpenTelemetry spans and metrics |
-| `CrawlReport` | Final durable crawl summary |
-| `CrawlEvent` | Programmatic lifecycle hooks while the crawl is running |
+| --- | --- |
+| `tracing` | Human-readable logs, JSON logs, OpenTelemetry spans and metrics. |
+| `CrawlEvent` | Programmatic lifecycle hooks while the crawl is running. |
+| `CrawlStats` | Final counters returned by the engine. |
+| `CrawlReport` | Cloneable final report with derived rates and JSON export helpers. |
 
-Kumo should emit both logs and events from the same logical points in the engine,
-but they should remain separate APIs. Applications should not need to install a
-custom logger to build a dashboard.
+Use events for live application behavior. Use `tracing` for logs and telemetry.
+Use `CrawlReport` when you need a durable final summary.
 
-## Implementation Notes
+## Example
 
-- Add a new `events` module with public event types.
-- Store an optional event sender in `CrawlEngineBuilder`.
-- Clone the sender into task contexts only when configured.
-- Use best-effort sends and ignore receiver lag as a subscriber concern.
-- Include tests that prove events are emitted for success, retry, failure, item
-  drop, and crawl finish.
-- Document event payload stability before release.
+Run the included no-network example:
 
-The event bus is large enough to deserve a minor release when implemented.
+```bash
+cargo run --example crawl_events
+```
+
+It uses `MockFetcher`, subscribes to events with `.event_channel(128)`, and
+prints request completion plus final crawl totals.

@@ -87,7 +87,7 @@ nav:
   - Advanced:
     - Logging: advanced/logging.md
     - Production Reports: advanced/production-reports.md
-    - Crawl Events Design: advanced/crawl-events.md
+    - Crawl Events: advanced/crawl-events.md
     - Performance: advanced/performance.md
     - Item Stream: advanced/stream.md
     - OpenTelemetry: advanced/otel.md

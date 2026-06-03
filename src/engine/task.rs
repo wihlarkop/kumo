@@ -6,6 +6,7 @@ use std::sync::{
 use crate::{
     engine::erased::ErasedSpider,
     error::KumoError,
+    events::{CrawlEvent, ItemDropReason, RequestSkipReason},
     fetch::Fetcher,
     logging::{event, target},
     middleware::{FetchRequest, Middleware},
@@ -16,19 +17,40 @@ use crate::{
 
 pub(super) struct TaskContext {
     pub(super) spider: Arc<dyn ErasedSpider>,
+    pub(super) spider_index: Option<usize>,
     pub(super) store: Arc<dyn ItemStore>,
     pub(super) middleware: Arc<Vec<Arc<dyn Middleware>>>,
     pub(super) pipelines: Arc<Vec<Arc<dyn Pipeline>>>,
     pub(super) fetcher: Arc<dyn Fetcher>,
+    pub(super) events: Option<crate::events::EventEmitter>,
     pub(super) stream_cancelled: Option<Arc<AtomicBool>>,
+}
+
+pub(super) struct RequestTaskOutput {
+    pub(super) item_count: u64,
+    pub(super) bytes_downloaded: u64,
+    pub(super) follows: Vec<(CrawlRequest, usize)>,
 }
 
 async fn process_request(
     queued: &FrontierRequest,
     ctx: &TaskContext,
-) -> Result<(u64, u64, Vec<(CrawlRequest, usize)>), KumoError> {
+) -> Result<RequestTaskOutput, KumoError> {
     let url = queued.request.url();
     let depth = queued.depth;
+    let domain = crate::stats::domain_key(url);
+    let started_at = std::time::Instant::now();
+
+    if let Some(events) = &ctx.events {
+        events.emit(CrawlEvent::RequestStarted {
+            spider: ctx.spider.name().to_string(),
+            spider_index: ctx.spider_index,
+            url: url.to_string(),
+            domain: domain.clone(),
+            depth,
+            attempt: queued.retry_count,
+        });
+    }
 
     let mut request = FetchRequest::from_crawl_request(&queued.request, depth);
     for mw in ctx.middleware.iter() {
@@ -55,6 +77,16 @@ async fn process_request(
             match pipeline.process(current).await {
                 Ok(Some(v)) => current = v,
                 Ok(None) => {
+                    if let Some(events) = &ctx.events {
+                        events.emit(CrawlEvent::ItemDropped {
+                            spider: ctx.spider.name().to_string(),
+                            spider_index: ctx.spider_index,
+                            url: url.to_string(),
+                            depth,
+                            reason: ItemDropReason::PipelineFiltered,
+                            error_kind: None,
+                        });
+                    }
                     tracing::debug!(
                         target: target::ITEM,
                         event = event::ITEM_DROP,
@@ -66,6 +98,16 @@ async fn process_request(
                     continue 'items;
                 }
                 Err(e) => {
+                    if let Some(events) = &ctx.events {
+                        events.emit(CrawlEvent::ItemDropped {
+                            spider: ctx.spider.name().to_string(),
+                            spider_index: ctx.spider_index,
+                            url: url.to_string(),
+                            depth,
+                            reason: ItemDropReason::PipelineError,
+                            error_kind: Some(e.kind()),
+                        });
+                    }
                     tracing::warn!(
                         target: target::ITEM,
                         event = event::ITEM_DROP_PIPELINE_ERROR,
@@ -81,8 +123,20 @@ async fn process_request(
             }
         }
         ctx.store.store(&current).await?;
+        if let Some(events) = &ctx.events {
+            events.emit(CrawlEvent::ItemScraped {
+                spider: ctx.spider.name().to_string(),
+                spider_index: ctx.spider_index,
+                url: url.to_string(),
+                depth,
+            });
+        }
         if is_cancelled(&ctx.stream_cancelled) {
-            return Ok((item_count, bytes_downloaded, Vec::new()));
+            return Ok(RequestTaskOutput {
+                item_count,
+                bytes_downloaded,
+                follows: Vec::new(),
+            });
         }
         item_count += 1;
     }
@@ -101,14 +155,57 @@ async fn process_request(
 
     let follows = output.follow.into_iter().map(|r| (r, depth + 1)).collect();
 
-    Ok((item_count, bytes_downloaded, follows))
+    if let Some(events) = &ctx.events {
+        events.emit(CrawlEvent::RequestCompleted {
+            spider: ctx.spider.name().to_string(),
+            spider_index: ctx.spider_index,
+            url: url.to_string(),
+            domain,
+            depth,
+            attempt: queued.retry_count,
+            status: response.status(),
+            bytes: bytes_downloaded,
+            items: item_count,
+            elapsed: started_at.elapsed(),
+        });
+    }
+
+    Ok(RequestTaskOutput {
+        item_count,
+        bytes_downloaded,
+        follows,
+    })
 }
 
 pub(super) async fn process_request_once(
     queued: FrontierRequest,
     ctx: TaskContext,
-) -> Result<(u64, u64, Vec<(CrawlRequest, usize)>), KumoError> {
+) -> Result<RequestTaskOutput, KumoError> {
     process_request(&queued, &ctx).await
+}
+
+pub(super) fn skip_reason(
+    request: &CrawlRequest,
+    depth: usize,
+    spider: &dyn ErasedSpider,
+) -> Option<RequestSkipReason> {
+    if spider.max_depth().is_some_and(|max| depth > max) {
+        return Some(RequestSkipReason::DepthLimit);
+    }
+    let allowed = spider.allowed_domains();
+    if allowed.is_empty() {
+        return None;
+    }
+    let allowed = url::Url::parse(request.url())
+        .ok()
+        .and_then(|u| u.host_str().map(String::from))
+        .map(|host| allowed.iter().any(|d| host.ends_with(*d)))
+        .unwrap_or(false);
+    if allowed {
+        None
+    } else {
+        Some(RequestSkipReason::DomainDenied)
+    }
 }
 
 pub(super) fn should_enqueue(
@@ -116,18 +213,7 @@ pub(super) fn should_enqueue(
     depth: usize,
     spider: &dyn ErasedSpider,
 ) -> bool {
-    if spider.max_depth().is_some_and(|max| depth > max) {
-        return false;
-    }
-    let allowed = spider.allowed_domains();
-    if allowed.is_empty() {
-        return true;
-    }
-    url::Url::parse(request.url())
-        .ok()
-        .and_then(|u| u.host_str().map(String::from))
-        .map(|host| allowed.iter().any(|d| host.ends_with(*d)))
-        .unwrap_or(false)
+    skip_reason(request, depth, spider).is_none()
 }
 
 pub(super) fn is_cancelled(cancelled: &Option<Arc<AtomicBool>>) -> bool {

@@ -41,6 +41,7 @@ pub struct CrawlEngine {
     pub(super) robots_ttl: Duration,
     pub(super) metrics_interval: Option<Duration>,
     pub(super) stream_buffer: usize,
+    pub(super) events: Option<crate::events::EventEmitter>,
     pub(super) request_timeout: Option<Duration>,
     pub(super) max_pages: Option<u64>,
     pub(super) max_items: Option<u64>,
@@ -75,6 +76,7 @@ impl Default for CrawlEngine {
             robots_ttl: Duration::from_secs(24 * 60 * 60),
             metrics_interval: None,
             stream_buffer: 100,
+            events: None,
             request_timeout: None,
             max_pages: None,
             max_items: None,
@@ -183,6 +185,31 @@ impl CrawlEngine {
     pub fn metrics_interval(mut self, interval: Duration) -> Self {
         self.metrics_interval = Some(interval);
         self
+    }
+
+    /// Send typed crawl lifecycle events to a caller-owned broadcast channel.
+    ///
+    /// Event delivery is best-effort. If there are no receivers or a receiver lags,
+    /// the crawl continues normally.
+    pub fn events(mut self, tx: tokio::sync::broadcast::Sender<crate::events::CrawlEvent>) -> Self {
+        self.events = Some(crate::events::EventEmitter::new(tx));
+        self
+    }
+
+    /// Create a typed crawl event channel and attach it to the engine.
+    ///
+    /// Returns the configured engine and the receiving side of the channel.
+    pub fn event_channel(
+        mut self,
+        capacity: usize,
+    ) -> (
+        Self,
+        tokio::sync::broadcast::Receiver<crate::events::CrawlEvent>,
+    ) {
+        let capacity = capacity.max(1);
+        let (tx, rx) = tokio::sync::broadcast::channel(capacity);
+        self.events = Some(crate::events::EventEmitter::new(tx));
+        (self, rx)
     }
 
     /// TTL for cached robots.txt entries (default: 24 hours).

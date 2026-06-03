@@ -1,5 +1,6 @@
 pub mod engine;
 pub mod error;
+pub mod events;
 pub mod extract;
 pub mod fetch;
 pub mod frontier;
@@ -32,6 +33,7 @@ pub mod store;
 pub mod prelude {
     pub use crate::engine::{CrawlEngine, CrawlStats, ItemStream};
     pub use crate::error::{ErrorPolicy, KumoError};
+    pub use crate::events::{CrawlEvent, ItemDropReason, RequestSkipReason};
     #[cfg(feature = "derive")]
     pub use crate::extract::Extract;
     #[cfg(feature = "jsonpath")]

@@ -155,6 +155,16 @@ storage.
 cargo run --example production_crawler --features persistence
 ```
 
+### `crawl_events.rs` - typed lifecycle events
+
+Subscribes to typed crawl lifecycle events with `.event_channel()` and prints
+request completion plus final crawl totals. Uses `MockFetcher`, so it runs
+without network access.
+
+```bash
+cargo run --example crawl_events
+```
+
 ### `http_cache.rs` - HTTP response cache
 
 Demonstrates disk-backed response caching. Run once to populate the cache, run again to see instant responses from disk.
