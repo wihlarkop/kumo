@@ -55,7 +55,10 @@ impl CrawlEngine {
             max_errors: self.max_errors,
         };
         let metrics_interval = self.metrics_interval;
-        let events = self.events.clone();
+        let observer = crate::hooks::CrawlObserver::new(
+            self.events.clone(),
+            crate::hooks::HookDispatcher::new(self.hooks, self.hook_error_policy),
+        );
         let stream_cancelled = self.stream_cancelled.clone();
         let spider: Arc<dyn ErasedSpider> = Arc::new(SpiderErased(spider));
         let frontier: Arc<dyn Frontier> = self
@@ -111,13 +114,13 @@ impl CrawlEngine {
         spider.open().await?;
 
         let start_urls = spider.start_urls();
-        if let Some(events) = &events {
-            events.emit(crate::events::CrawlEvent::CrawlStarted {
+        observer
+            .notify(crate::events::CrawlEvent::CrawlStarted {
                 spider: spider.name().to_string(),
                 spider_index: None,
                 start_urls: start_urls.len(),
-            });
-        }
+            })
+            .await?;
         info!(
             target: target::CRAWL,
             event = event::CRAWL_START,
@@ -132,27 +135,27 @@ impl CrawlEngine {
                 .await
             {
                 stats.record_scheduled(&domain);
-                if let Some(events) = &events {
-                    events.emit(crate::events::CrawlEvent::RequestScheduled {
+                observer
+                    .notify(crate::events::CrawlEvent::RequestScheduled {
                         spider: spider.name().to_string(),
                         spider_index: None,
                         url,
                         domain,
                         depth: 0,
-                    });
-                }
+                    })
+                    .await?;
             } else {
                 stats.record_deduped(&domain);
-                if let Some(events) = &events {
-                    events.emit(crate::events::CrawlEvent::RequestSkipped {
+                observer
+                    .notify(crate::events::CrawlEvent::RequestSkipped {
                         spider: spider.name().to_string(),
                         spider_index: None,
                         url,
                         domain,
                         depth: 0,
                         reason: crate::events::RequestSkipReason::Duplicate,
-                    });
-                }
+                    })
+                    .await?;
             }
         }
 
@@ -223,16 +226,18 @@ impl CrawlEngine {
                             if let Some(ref cache) = robots_cache
                                 && !cache.is_allowed(&client, queued.request.url()).await
                             {
-                                if let Some(events) = &events {
+                                {
                                     let url = queued.request.url().to_string();
-                                    events.emit(crate::events::CrawlEvent::RequestSkipped {
-                                        spider: spider.name().to_string(),
-                                        spider_index: None,
-                                        domain: domain_key(&url),
-                                        url,
-                                        depth: queued.depth,
-                                        reason: crate::events::RequestSkipReason::RobotsTxt,
-                                    });
+                                    observer
+                                        .notify(crate::events::CrawlEvent::RequestSkipped {
+                                            spider: spider.name().to_string(),
+                                            spider_index: None,
+                                            domain: domain_key(&url),
+                                            url,
+                                            depth: queued.depth,
+                                            reason: crate::events::RequestSkipReason::RobotsTxt,
+                                        })
+                                        .await?;
                                 }
                                 tracing::debug!(
                                     target: target::REQUEST,
@@ -266,7 +271,7 @@ impl CrawlEngine {
                                 middleware: middleware.clone(),
                                 pipelines: pipelines.clone(),
                                 fetcher: fetcher.clone(),
-                                events: events.clone(),
+                                observer: observer.clone(),
                                 stream_cancelled: stream_cancelled.clone(),
                             };
 
@@ -350,42 +355,43 @@ impl CrawlEngine {
                                         let url = follow_request.url().to_string();
                                         if scheduler.push_request(follow_request, follow_depth).await {
                                             stats.record_scheduled(&domain);
-                                            if let Some(events) = &events {
-                                                events.emit(crate::events::CrawlEvent::RequestScheduled {
+                                            observer
+                                                .notify(crate::events::CrawlEvent::RequestScheduled {
                                                     spider: spider.name().to_string(),
                                                     spider_index: None,
                                                     url,
                                                     domain,
                                                     depth: follow_depth,
-                                                });
-                                            }
+                                                })
+                                                .await?;
                                         } else {
                                             stats.record_deduped(&domain);
-                                            if let Some(events) = &events {
-                                                events.emit(crate::events::CrawlEvent::RequestSkipped {
+                                            observer
+                                                .notify(crate::events::CrawlEvent::RequestSkipped {
                                                     spider: spider.name().to_string(),
                                                     spider_index: None,
                                                     url,
                                                     domain,
                                                     depth: follow_depth,
                                                     reason: crate::events::RequestSkipReason::Duplicate,
-                                                });
-                                            }
+                                                })
+                                                .await?;
                                         }
                                         update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                                     } else if let Some(reason) =
                                         skip_reason(&follow_request, follow_depth, spider.as_ref())
-                                        && let Some(events) = &events
                                     {
                                         let url = follow_request.url().to_string();
-                                        events.emit(crate::events::CrawlEvent::RequestSkipped {
+                                        observer
+                                            .notify(crate::events::CrawlEvent::RequestSkipped {
                                             spider: spider.name().to_string(),
                                             spider_index: None,
                                             domain: domain_key(&url),
                                             url,
                                             depth: follow_depth,
                                             reason,
-                                        });
+                                        })
+                                            .await?;
                                     }
                                 }
                             }
@@ -394,6 +400,9 @@ impl CrawlEngine {
                             task_context.remove(&task_id);
                             scheduler.finish(&queued).await;
                             let url = queued.request.url().to_string();
+                            if e.kind() == crate::error::KumoErrorKind::Hook {
+                                return Err(e);
+                            }
                             // Notify all middleware of the permanent failure.
                             for mw in middleware.iter() {
                                 mw.on_error(&url, &e).await;
@@ -412,8 +421,8 @@ impl CrawlEngine {
                                     .delay_for_with_hint(queued.retry_count, retry_delay_hint);
                                 stats.record_retry(&domain);
                                 update_live_stats(metrics_interval, &live_stats, &stats, start).await;
-                                if let Some(events) = &events {
-                                    events.emit(crate::events::CrawlEvent::RequestRetried {
+                                observer
+                                    .notify(crate::events::CrawlEvent::RequestRetried {
                                         spider: spider.name().to_string(),
                                         spider_index: None,
                                         url: url.clone(),
@@ -423,8 +432,8 @@ impl CrawlEngine {
                                         max_attempts: retry_policy.max_attempts,
                                         delay,
                                         error_kind: e.kind(),
-                                    });
-                                }
+                                    })
+                                    .await?;
                                 tracing::info!(
                                     target: target::REQUEST,
                                     event = event::REQUEST_RETRY,
@@ -458,8 +467,8 @@ impl CrawlEngine {
                                 retry_exhausted_recorded = true;
                             }
                             stats.record_error_kind(&domain, e.kind());
-                            if let Some(events) = &events {
-                                events.emit(crate::events::CrawlEvent::RequestFailed {
+                            observer
+                                .notify(crate::events::CrawlEvent::RequestFailed {
                                     spider: spider.name().to_string(),
                                     spider_index: None,
                                     url: url.clone(),
@@ -468,8 +477,8 @@ impl CrawlEngine {
                                     attempt: queued.retry_count,
                                     error_kind: e.kind(),
                                     retry_exhausted: retry_policy_exhausted,
-                                });
-                            }
+                                })
+                                .await?;
                             update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                             if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
                                 shutting_down = true;
@@ -491,8 +500,8 @@ impl CrawlEngine {
                                     return Err(e);
                                 }
                                 ErrorPolicy::Retry(max) if queued.retry_count < max => {
-                                    if let Some(events) = &events {
-                                        events.emit(crate::events::CrawlEvent::RequestRetried {
+                                    observer
+                                        .notify(crate::events::CrawlEvent::RequestRetried {
                                             spider: spider.name().to_string(),
                                             spider_index: None,
                                             url: url.clone(),
@@ -502,8 +511,8 @@ impl CrawlEngine {
                                             max_attempts: max,
                                             delay: std::time::Duration::ZERO,
                                             error_kind: e.kind(),
-                                        });
-                                    }
+                                        })
+                                        .await?;
                                     tracing::info!(
                                         target: target::REQUEST,
                                         event = event::REQUEST_RETRY,
@@ -567,15 +576,17 @@ impl CrawlEngine {
                             if let Some(queued) = task_context.remove(&join_err.id()) {
                                 scheduler.finish(&queued).await;
                                 stats.record_error(&domain_key(queued.request.url()));
-                                if let Some(events) = &events {
+                                {
                                     let url = queued.request.url().to_string();
-                                    events.emit(crate::events::CrawlEvent::TaskPanicked {
+                                    observer
+                                        .notify(crate::events::CrawlEvent::TaskPanicked {
                                         spider: spider.name().to_string(),
                                         spider_index: None,
                                         domain: Some(domain_key(&url)),
                                         url: Some(url),
                                         depth: Some(queued.depth),
-                                    });
+                                    })
+                                        .await?;
                                 }
                                 update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                                 if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
@@ -583,15 +594,15 @@ impl CrawlEngine {
                                 }
                             } else {
                                 stats.errors += 1;
-                                if let Some(events) = &events {
-                                    events.emit(crate::events::CrawlEvent::TaskPanicked {
+                                observer
+                                    .notify(crate::events::CrawlEvent::TaskPanicked {
                                         spider: spider.name().to_string(),
                                         spider_index: None,
                                         domain: None,
                                         url: None,
                                         depth: None,
-                                    });
-                                }
+                                    })
+                                    .await?;
                                 update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                                 if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
                                     shutting_down = true;
@@ -664,14 +675,14 @@ impl CrawlEngine {
             "crawl.complete"
         );
 
-        if let Some(events) = &events {
-            events.emit(crate::events::CrawlEvent::CrawlFinished {
+        observer
+            .notify(crate::events::CrawlEvent::CrawlFinished {
                 spider: spider.name().to_string(),
                 spider_index: None,
                 stop_reason: stats.stop_reason,
                 report: crate::stats::CrawlReport::from(stats.clone()),
-            });
-        }
+            })
+            .await?;
 
         Ok(stats)
     }

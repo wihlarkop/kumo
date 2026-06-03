@@ -8,6 +8,8 @@ pub mod frontier;
 pub use frontier::FileFrontier;
 #[cfg(feature = "redis-frontier")]
 pub use frontier::RedisFrontier;
+pub mod hooks;
+pub use hooks::{CrawlHook, HookErrorPolicy};
 pub mod llm;
 mod logging;
 pub mod middleware;
@@ -47,6 +49,7 @@ pub mod prelude {
     pub use crate::fetch::{CachingFetcher, MockFetcher};
     #[cfg(feature = "stealth")]
     pub use crate::fetch::{StealthHttpFetcher, StealthProfile};
+    pub use crate::hooks::{CrawlHook, HookErrorPolicy};
     #[cfg(feature = "claude")]
     pub use crate::llm::AnthropicClient;
     #[cfg(feature = "gemini")]

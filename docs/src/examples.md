@@ -165,6 +165,15 @@ without network access.
 cargo run --example crawl_events
 ```
 
+### `crawl_hooks.rs` - crawl lifecycle hooks
+
+Registers an async `CrawlHook` that counts completed requests and scraped items.
+Uses `MockFetcher`, so it runs without network access.
+
+```bash
+cargo run --example crawl_hooks
+```
+
 ### `http_cache.rs` - HTTP response cache
 
 Demonstrates disk-backed response caching. Run once to populate the cache, run again to see instant responses from disk.

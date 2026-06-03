@@ -8,6 +8,7 @@ use crate::{
     error::KumoError,
     events::{CrawlEvent, ItemDropReason, RequestSkipReason},
     fetch::Fetcher,
+    hooks::CrawlObserver,
     logging::{event, target},
     middleware::{FetchRequest, Middleware},
     pipeline::Pipeline,
@@ -22,7 +23,7 @@ pub(super) struct TaskContext {
     pub(super) middleware: Arc<Vec<Arc<dyn Middleware>>>,
     pub(super) pipelines: Arc<Vec<Arc<dyn Pipeline>>>,
     pub(super) fetcher: Arc<dyn Fetcher>,
-    pub(super) events: Option<crate::events::EventEmitter>,
+    pub(super) observer: CrawlObserver,
     pub(super) stream_cancelled: Option<Arc<AtomicBool>>,
 }
 
@@ -41,16 +42,16 @@ async fn process_request(
     let domain = crate::stats::domain_key(url);
     let started_at = std::time::Instant::now();
 
-    if let Some(events) = &ctx.events {
-        events.emit(CrawlEvent::RequestStarted {
+    ctx.observer
+        .notify(CrawlEvent::RequestStarted {
             spider: ctx.spider.name().to_string(),
             spider_index: ctx.spider_index,
             url: url.to_string(),
             domain: domain.clone(),
             depth,
             attempt: queued.retry_count,
-        });
-    }
+        })
+        .await?;
 
     let mut request = FetchRequest::from_crawl_request(&queued.request, depth);
     for mw in ctx.middleware.iter() {
@@ -77,16 +78,16 @@ async fn process_request(
             match pipeline.process(current).await {
                 Ok(Some(v)) => current = v,
                 Ok(None) => {
-                    if let Some(events) = &ctx.events {
-                        events.emit(CrawlEvent::ItemDropped {
+                    ctx.observer
+                        .notify(CrawlEvent::ItemDropped {
                             spider: ctx.spider.name().to_string(),
                             spider_index: ctx.spider_index,
                             url: url.to_string(),
                             depth,
                             reason: ItemDropReason::PipelineFiltered,
                             error_kind: None,
-                        });
-                    }
+                        })
+                        .await?;
                     tracing::debug!(
                         target: target::ITEM,
                         event = event::ITEM_DROP,
@@ -98,16 +99,16 @@ async fn process_request(
                     continue 'items;
                 }
                 Err(e) => {
-                    if let Some(events) = &ctx.events {
-                        events.emit(CrawlEvent::ItemDropped {
+                    ctx.observer
+                        .notify(CrawlEvent::ItemDropped {
                             spider: ctx.spider.name().to_string(),
                             spider_index: ctx.spider_index,
                             url: url.to_string(),
                             depth,
                             reason: ItemDropReason::PipelineError,
                             error_kind: Some(e.kind()),
-                        });
-                    }
+                        })
+                        .await?;
                     tracing::warn!(
                         target: target::ITEM,
                         event = event::ITEM_DROP_PIPELINE_ERROR,
@@ -123,14 +124,14 @@ async fn process_request(
             }
         }
         ctx.store.store(&current).await?;
-        if let Some(events) = &ctx.events {
-            events.emit(CrawlEvent::ItemScraped {
+        ctx.observer
+            .notify(CrawlEvent::ItemScraped {
                 spider: ctx.spider.name().to_string(),
                 spider_index: ctx.spider_index,
                 url: url.to_string(),
                 depth,
-            });
-        }
+            })
+            .await?;
         if is_cancelled(&ctx.stream_cancelled) {
             return Ok(RequestTaskOutput {
                 item_count,
@@ -155,8 +156,8 @@ async fn process_request(
 
     let follows = output.follow.into_iter().map(|r| (r, depth + 1)).collect();
 
-    if let Some(events) = &ctx.events {
-        events.emit(CrawlEvent::RequestCompleted {
+    ctx.observer
+        .notify(CrawlEvent::RequestCompleted {
             spider: ctx.spider.name().to_string(),
             spider_index: ctx.spider_index,
             url: url.to_string(),
@@ -167,8 +168,8 @@ async fn process_request(
             bytes: bytes_downloaded,
             items: item_count,
             elapsed: started_at.elapsed(),
-        });
-    }
+        })
+        .await?;
 
     Ok(RequestTaskOutput {
         item_count,

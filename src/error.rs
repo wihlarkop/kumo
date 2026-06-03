@@ -11,6 +11,7 @@ pub enum KumoErrorKind {
     Llm,
     Browser,
     HttpStatus,
+    Hook,
 }
 
 #[derive(Debug, Error)]
@@ -51,6 +52,9 @@ pub enum KumoError {
     /// the retry set. Triggers the engine's exponential-backoff retry loop.
     #[error("HTTP {status} from {url}")]
     HttpStatus { status: u16, url: String },
+
+    #[error("hook error: {0}")]
+    Hook(String),
 }
 
 /// Thin wrapper so plain `String` messages can be boxed as `dyn Error`.
@@ -79,6 +83,7 @@ impl KumoError {
             Self::Llm(_) => KumoErrorKind::Llm,
             Self::Browser(_) => KumoErrorKind::Browser,
             Self::HttpStatus { .. } => KumoErrorKind::HttpStatus,
+            Self::Hook(_) => KumoErrorKind::Hook,
         }
     }
 
@@ -99,6 +104,10 @@ impl KumoError {
             status,
             url: url.into(),
         }
+    }
+
+    pub fn hook(message: impl Into<String>) -> Self {
+        Self::Hook(message.into())
     }
 
     pub fn status_code(&self) -> Option<u16> {
@@ -171,6 +180,7 @@ impl KumoErrorKind {
             Self::Llm => "llm",
             Self::Browser => "browser",
             Self::HttpStatus => "http_status",
+            Self::Hook => "hook",
         }
     }
 }
