@@ -12,6 +12,13 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.4.1 - 2026-06-03
+
+- Added `CrawlEvent::name()` with stable snake_case event labels for
+  dashboards, metrics, and event logs.
+- Added crawl event coverage for stream cancellation and task panic paths.
+- Documented event labels and ordering expectations for event consumers.
+
 ### 0.4.0 - 2026-06-03
 
 - Added typed crawl lifecycle events through `CrawlEvent`.
