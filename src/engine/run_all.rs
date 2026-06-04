@@ -101,7 +101,7 @@ impl CrawlEngine {
                 "crawl.start"
             );
             observer
-                .notify(crate::events::CrawlEvent::CrawlStarted {
+                .notify_with(|| crate::events::CrawlEvent::CrawlStarted {
                     spider: spider.name().to_string(),
                     spider_index: Some(idx),
                     start_urls: spider.start_urls().len(),
@@ -116,7 +116,7 @@ impl CrawlEngine {
                 {
                     stats.record_scheduled(&domain);
                     observer
-                        .notify(crate::events::CrawlEvent::RequestScheduled {
+                        .notify_with(|| crate::events::CrawlEvent::RequestScheduled {
                             spider: spider.name().to_string(),
                             spider_index: Some(idx),
                             url,
@@ -127,7 +127,7 @@ impl CrawlEngine {
                 } else {
                     stats.record_deduped(&domain);
                     observer
-                        .notify(crate::events::CrawlEvent::RequestSkipped {
+                        .notify_with(|| crate::events::CrawlEvent::RequestSkipped {
                             spider: spider.name().to_string(),
                             spider_index: Some(idx),
                             url,
@@ -185,32 +185,30 @@ impl CrawlEngine {
                                 if let Some(ref cache) = robots_cache
                                     && !cache.is_allowed(&client, queued.request.url()).await
                                 {
-                                    {
-                                        let url = queued.request.url().to_string();
-                                        observer
-                                            .notify(crate::events::CrawlEvent::RequestSkipped {
-                                                spider: spider.name().to_string(),
-                                                spider_index: Some(idx),
-                                                domain: domain_key(&url),
-                                                url,
-                                                depth: queued.depth,
-                                                reason: crate::events::RequestSkipReason::RobotsTxt,
-                                            })
-                                            .await?;
-                                    }
+                                    let url = queued.request.url().to_string();
+                                    let domain = domain_key(&url);
+                                    observer
+                                        .notify_with(|| crate::events::CrawlEvent::RequestSkipped {
+                                            spider: spider.name().to_string(),
+                                            spider_index: Some(idx),
+                                            domain: domain.clone(),
+                                            url: url.clone(),
+                                            depth: queued.depth,
+                                            reason: crate::events::RequestSkipReason::RobotsTxt,
+                                        })
+                                        .await?;
                                     tracing::debug!(
                                         target: target::REQUEST,
                                         event = event::REQUEST_ROBOTS_BLOCKED,
                                         spider = spider.name(),
                                         spider_index = idx,
-                                        url = %queued.request.url(),
-                                        domain = %domain_key(queued.request.url()),
+                                        url = %url,
+                                        domain = %domain,
                                         depth = queued.depth,
                                         attempt = queued.retry_count,
                                         "request.robots_blocked"
                                     );
-                                    stats_vec[idx]
-                                        .record_robots_blocked(&domain_key(queued.request.url()));
+                                    stats_vec[idx].record_robots_blocked(&domain);
                                     scheduler.finish(&queued).await;
                                     continue;
                                 }
@@ -315,7 +313,8 @@ impl CrawlEngine {
                             let (_, scheduler) = &spider_entries[spider_idx];
                             scheduler.finish(&queued).await;
                             let stats = &mut stats_vec[spider_idx];
-                            stats.record_completed(&domain_key(queued.request.url()));
+                            let completed_domain = domain_key(queued.request.url());
+                            stats.record_completed(&completed_domain);
                             stats.pages_crawled += 1;
                             stats.items_scraped += output.item_count;
                             stats.bytes_downloaded += output.bytes_downloaded;
@@ -330,7 +329,7 @@ impl CrawlEngine {
                                             if scheduler.push_request(follow_request, follow_depth).await {
                                                 stats.record_scheduled(&domain);
                                                 observer
-                                                    .notify(crate::events::CrawlEvent::RequestScheduled {
+                                                    .notify_with(|| crate::events::CrawlEvent::RequestScheduled {
                                                         spider: spider.name().to_string(),
                                                         spider_index: Some(spider_idx),
                                                         url,
@@ -341,7 +340,7 @@ impl CrawlEngine {
                                             } else {
                                                 stats.record_deduped(&domain);
                                                 observer
-                                                    .notify(crate::events::CrawlEvent::RequestSkipped {
+                                                    .notify_with(|| crate::events::CrawlEvent::RequestSkipped {
                                                         spider: spider.name().to_string(),
                                                         spider_index: Some(spider_idx),
                                                         url,
@@ -356,7 +355,7 @@ impl CrawlEngine {
                                         {
                                             let url = follow_request.url().to_string();
                                             observer
-                                                .notify(crate::events::CrawlEvent::RequestSkipped {
+                                                .notify_with(|| crate::events::CrawlEvent::RequestSkipped {
                                                 spider: spider.name().to_string(),
                                                 spider_index: Some(spider_idx),
                                                 domain: domain_key(&url),
@@ -396,7 +395,7 @@ impl CrawlEngine {
                                     .delay_for_with_hint(queued.retry_count, retry_delay_hint);
                                 stats_vec[spider_idx].record_retry(&domain);
                                 observer
-                                    .notify(crate::events::CrawlEvent::RequestRetried {
+                                    .notify_with(|| crate::events::CrawlEvent::RequestRetried {
                                         spider: spider.name().to_string(),
                                         spider_index: Some(spider_idx),
                                         url: url.clone(),
@@ -443,7 +442,7 @@ impl CrawlEngine {
                             }
                             stats_vec[spider_idx].record_error_kind(&domain, e.kind());
                             observer
-                                .notify(crate::events::CrawlEvent::RequestFailed {
+                                .notify_with(|| crate::events::CrawlEvent::RequestFailed {
                                     spider: spider.name().to_string(),
                                     spider_index: Some(spider_idx),
                                     url: url.clone(),
@@ -474,7 +473,7 @@ impl CrawlEngine {
                                 }
                                 ErrorPolicy::Retry(max) if queued.retry_count < max => {
                                     observer
-                                        .notify(crate::events::CrawlEvent::RequestRetried {
+                                        .notify_with(|| crate::events::CrawlEvent::RequestRetried {
                                             spider: spider.name().to_string(),
                                             spider_index: Some(spider_idx),
                                             url: url.clone(),
@@ -552,15 +551,16 @@ impl CrawlEngine {
                             if let Some((spider_idx, queued)) = task_context.remove(&join_err.id()) {
                                 let (_, scheduler) = &spider_entries[spider_idx];
                                 scheduler.finish(&queued).await;
-                                stats_vec[spider_idx].record_error(&domain_key(queued.request.url()));
+                                let url = queued.request.url().to_string();
+                                let domain = domain_key(&url);
+                                stats_vec[spider_idx].record_error(&domain);
                                 {
                                     let (spider, _) = &spider_entries[spider_idx];
-                                    let url = queued.request.url().to_string();
                                     observer
-                                        .notify(crate::events::CrawlEvent::TaskPanicked {
+                                        .notify_with(|| crate::events::CrawlEvent::TaskPanicked {
                                         spider: spider.name().to_string(),
                                         spider_index: Some(spider_idx),
-                                        domain: Some(domain_key(&url)),
+                                        domain: Some(domain),
                                         url: Some(url),
                                         depth: Some(queued.depth),
                                     })
@@ -634,7 +634,7 @@ impl CrawlEngine {
                 "crawl.complete"
             );
             observer
-                .notify(crate::events::CrawlEvent::CrawlFinished {
+                .notify_with(|| crate::events::CrawlEvent::CrawlFinished {
                     spider: spider.name().to_string(),
                     spider_index: Some(i),
                     stop_reason: stats_vec[i].stop_reason,

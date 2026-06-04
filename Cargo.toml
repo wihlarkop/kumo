@@ -241,3 +241,7 @@ harness = false
 name = "frontier"
 harness = false
 
+[[bench]]
+name = "hot_path"
+harness = false
+

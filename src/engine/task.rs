@@ -43,7 +43,7 @@ async fn process_request(
     let started_at = std::time::Instant::now();
 
     ctx.observer
-        .notify(CrawlEvent::RequestStarted {
+        .notify_with(|| CrawlEvent::RequestStarted {
             spider: ctx.spider.name().to_string(),
             spider_index: ctx.spider_index,
             url: url.to_string(),
@@ -79,7 +79,7 @@ async fn process_request(
                 Ok(Some(v)) => current = v,
                 Ok(None) => {
                     ctx.observer
-                        .notify(CrawlEvent::ItemDropped {
+                        .notify_with(|| CrawlEvent::ItemDropped {
                             spider: ctx.spider.name().to_string(),
                             spider_index: ctx.spider_index,
                             url: url.to_string(),
@@ -100,7 +100,7 @@ async fn process_request(
                 }
                 Err(e) => {
                     ctx.observer
-                        .notify(CrawlEvent::ItemDropped {
+                        .notify_with(|| CrawlEvent::ItemDropped {
                             spider: ctx.spider.name().to_string(),
                             spider_index: ctx.spider_index,
                             url: url.to_string(),
@@ -125,7 +125,7 @@ async fn process_request(
         }
         ctx.store.store(&current).await?;
         ctx.observer
-            .notify(CrawlEvent::ItemScraped {
+            .notify_with(|| CrawlEvent::ItemScraped {
                 spider: ctx.spider.name().to_string(),
                 spider_index: ctx.spider_index,
                 url: url.to_string(),
@@ -157,7 +157,7 @@ async fn process_request(
     let follows = output.follow.into_iter().map(|r| (r, depth + 1)).collect();
 
     ctx.observer
-        .notify(CrawlEvent::RequestCompleted {
+        .notify_with(|| CrawlEvent::RequestCompleted {
             spider: ctx.spider.name().to_string(),
             spider_index: ctx.spider_index,
             url: url.to_string(),
