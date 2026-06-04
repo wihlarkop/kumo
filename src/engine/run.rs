@@ -337,6 +337,7 @@ impl CrawlEngine {
                             stats.pages_crawled += 1;
                             stats.items_scraped += output.item_count;
                             stats.bytes_downloaded += output.bytes_downloaded;
+                            stats.timings += output.timings;
                             if is_cancelled(&stream_cancelled) {
                                 shutting_down = true;
                                 stats.interrupted = true;

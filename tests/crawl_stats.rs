@@ -4,8 +4,9 @@ use kumo::{
     error::{KumoError, KumoErrorKind},
     extract::Response,
     fetch::MockFetcher,
+    middleware::{FetchRequest, Middleware},
     spider::{Output, Spider},
-    stats::{CrawlReport, CrawlStats, StopReason},
+    stats::{CrawlReport, CrawlStats, CrawlTimingStats, StopReason},
     store::StdoutStore,
 };
 use std::time::Duration;
@@ -63,6 +64,14 @@ fn crawl_report_exports_stable_json() {
         errors: 1,
         duration: Duration::from_millis(1_500),
         bytes_downloaded: 42,
+        timings: CrawlTimingStats {
+            middleware_request: Duration::from_millis(11),
+            fetch: Duration::from_millis(22),
+            middleware_response: Duration::from_millis(33),
+            parse: Duration::from_millis(44),
+            pipeline: Duration::from_millis(55),
+            store: Duration::from_millis(66),
+        },
         stop_reason: Some(StopReason::MaxErrors),
         ..CrawlStats::default()
     };
@@ -83,6 +92,18 @@ fn crawl_report_exports_stable_json() {
     assert_eq!(json["error_kinds"]["http_status"], 1);
     assert_eq!(json["duration_ms"], 1_500);
     assert_eq!(json["duration_secs"], 1.5);
+    assert_eq!(json["timings"]["middleware_request_ms"], 11);
+    assert_eq!(json["timings"]["middleware_request_secs"], 0.011);
+    assert_eq!(json["timings"]["fetch_ms"], 22);
+    assert_eq!(json["timings"]["fetch_secs"], 0.022);
+    assert_eq!(json["timings"]["middleware_response_ms"], 33);
+    assert_eq!(json["timings"]["middleware_response_secs"], 0.033);
+    assert_eq!(json["timings"]["parse_ms"], 44);
+    assert_eq!(json["timings"]["parse_secs"], 0.044);
+    assert_eq!(json["timings"]["pipeline_ms"], 55);
+    assert_eq!(json["timings"]["pipeline_secs"], 0.055);
+    assert_eq!(json["timings"]["store_ms"], 66);
+    assert_eq!(json["timings"]["store_secs"], 0.066);
     assert_eq!(json["pages_per_second"], 2.0 / 1.5);
     assert_eq!(json["items_per_second"], 2.0);
     assert_eq!(json["bytes_per_second"], 28.0);
@@ -108,6 +129,30 @@ fn crawl_report_exports_stable_json() {
     let pretty: serde_json::Value = serde_json::from_str(&report.to_json_string_pretty()).unwrap();
     assert_eq!(compact, json);
     assert_eq!(pretty, json);
+}
+
+#[test]
+fn crawl_report_exposes_timing_breakdown() {
+    let stats = CrawlStats {
+        timings: CrawlTimingStats {
+            middleware_request: Duration::from_millis(1),
+            fetch: Duration::from_millis(2),
+            middleware_response: Duration::from_millis(3),
+            parse: Duration::from_millis(4),
+            pipeline: Duration::from_millis(5),
+            store: Duration::from_millis(6),
+        },
+        ..CrawlStats::default()
+    };
+
+    let report = CrawlReport::from(stats);
+
+    assert_eq!(report.timings.middleware_request, Duration::from_millis(1));
+    assert_eq!(report.timings.fetch, Duration::from_millis(2));
+    assert_eq!(report.timings.middleware_response, Duration::from_millis(3));
+    assert_eq!(report.timings.parse, Duration::from_millis(4));
+    assert_eq!(report.timings.pipeline, Duration::from_millis(5));
+    assert_eq!(report.timings.store, Duration::from_millis(6));
 }
 
 #[test]
@@ -200,6 +245,12 @@ struct PanicSpider {
     name: &'static str,
 }
 
+struct SlowRequestMiddleware;
+
+struct TimingSpider {
+    start: String,
+}
+
 #[async_trait::async_trait]
 impl Spider for DuplicateSpider {
     type Item = serde_json::Value;
@@ -239,6 +290,31 @@ impl Spider for PanicSpider {
     }
 }
 
+#[async_trait::async_trait]
+impl Middleware for SlowRequestMiddleware {
+    async fn before_request(&self, _request: &mut FetchRequest) -> Result<(), KumoError> {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl Spider for TimingSpider {
+    type Item = serde_json::Value;
+
+    fn name(&self) -> &str {
+        "timing-stats"
+    }
+
+    fn start_urls(&self) -> Vec<String> {
+        vec![self.start.clone()]
+    }
+
+    async fn parse(&self, _res: &Response) -> Result<Output<Self::Item>, KumoError> {
+        Ok(Output::new())
+    }
+}
+
 #[tokio::test]
 async fn engine_stats_count_scheduled_completed_and_deduped_requests() {
     let start = "https://example.com/start";
@@ -265,6 +341,27 @@ async fn engine_stats_count_scheduled_completed_and_deduped_requests() {
     assert_eq!(stats.domains["example.com"].scheduled, 2);
     assert_eq!(stats.domains["example.com"].deduped, 1);
     assert_eq!(stats.domains["example.com"].completed, 2);
+}
+
+#[tokio::test]
+async fn engine_stats_accumulate_successful_request_timings() {
+    let start = "https://timing.example.com/start";
+    let mock = MockFetcher::new().with_response(start, 200, "<h1>ok</h1>");
+
+    let stats = CrawlEngine::builder()
+        .concurrency(1)
+        .respect_robots_txt(false)
+        .fetcher(mock)
+        .middleware(SlowRequestMiddleware)
+        .store(StdoutStore)
+        .run(TimingSpider {
+            start: start.to_string(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(stats.pages_crawled, 1);
+    assert!(stats.timings.middleware_request >= Duration::from_millis(10));
 }
 
 #[tokio::test]

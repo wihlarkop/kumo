@@ -106,6 +106,12 @@ Results are saved to `results/latest.json` (real) and `results/latest_local.json
 Each result includes the benchmarked framework, language runtime, library
 version, concurrency, elapsed time, item count, and peak RSS.
 
+Kumo results also include a `timings` object from `CrawlReport`, with cumulative
+successful-request phase timings for request middleware, fetching, response
+middleware, parsing, item pipelines, and storage. These values are diagnostic
+signals, not wall-clock percentages: concurrent request phases can overlap, so
+their sum can exceed the process elapsed time.
+
 ## Microbenchmarks
 
 Use Criterion for local microbenchmarks of hot internal paths:
