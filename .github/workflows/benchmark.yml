@@ -1,0 +1,66 @@
+name: Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Benchmark mode to run.
+        required: true
+        default: local
+        type: choice
+        options:
+          - local
+          - real
+          - scale
+      runs:
+        description: Number of runs for local or real benchmarks.
+        required: true
+        default: "3"
+      concurrency:
+        description: Crawl concurrency for local or real benchmarks.
+        required: true
+        default: "16"
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Run benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Show Docker versions
+        run: |
+          docker version
+          docker compose version
+
+      - name: Run local mock benchmark
+        if: inputs.mode == 'local'
+        working-directory: benchmark
+        run: ./run.sh --local --runs=${{ inputs.runs }} --concurrency=${{ inputs.concurrency }}
+
+      - name: Run real-site benchmark
+        if: inputs.mode == 'real'
+        working-directory: benchmark
+        run: ./run.sh --runs=${{ inputs.runs }} --concurrency=${{ inputs.concurrency }}
+
+      - name: Run scaling benchmark
+        if: inputs.mode == 'scale'
+        working-directory: benchmark
+        run: ./run.sh --scale
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: benchmark-${{ inputs.mode }}-${{ github.run_number }}
+          path: |
+            benchmark/results/*.json
+            benchmark/results/scale/*.json
+          if-no-files-found: warn
+          retention-days: 7

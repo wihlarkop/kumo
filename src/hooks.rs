@@ -124,6 +124,10 @@ impl HookDispatcher {
 
         Ok(())
     }
+
+    pub(crate) fn is_enabled(&self) -> bool {
+        !self.hooks.is_empty()
+    }
 }
 
 #[derive(Clone)]
@@ -143,5 +147,20 @@ impl CrawlObserver {
         }
 
         self.hooks.dispatch(&event).await
+    }
+
+    pub(crate) async fn notify_with<F>(&self, build: F) -> Result<(), KumoError>
+    where
+        F: FnOnce() -> CrawlEvent,
+    {
+        if !self.is_enabled() {
+            return Ok(());
+        }
+
+        self.notify(build()).await
+    }
+
+    pub(crate) fn is_enabled(&self) -> bool {
+        self.events.is_some() || self.hooks.is_enabled()
     }
 }
