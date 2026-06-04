@@ -42,17 +42,17 @@ jobs:
       - name: Run local mock benchmark
         if: inputs.mode == 'local'
         working-directory: benchmark
-        run: ./run.sh --local --runs=${{ inputs.runs }} --concurrency=${{ inputs.concurrency }}
+        run: bash run.sh --local --runs=${{ inputs.runs }} --concurrency=${{ inputs.concurrency }}
 
       - name: Run real-site benchmark
         if: inputs.mode == 'real'
         working-directory: benchmark
-        run: ./run.sh --runs=${{ inputs.runs }} --concurrency=${{ inputs.concurrency }}
+        run: bash run.sh --runs=${{ inputs.runs }} --concurrency=${{ inputs.concurrency }}
 
       - name: Run scaling benchmark
         if: inputs.mode == 'scale'
         working-directory: benchmark
-        run: ./run.sh --scale
+        run: bash run.sh --scale
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v5
