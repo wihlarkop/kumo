@@ -5,12 +5,17 @@ import scrapy
 class BooksSpider(scrapy.Spider):
     name = "books"
 
-    def start_requests(self):
-        url = os.environ.get(
+    def start_url(self):
+        return os.environ.get(
             "TARGET_URL",
             "https://books.toscrape.com/catalogue/page-1.html",
         )
-        yield scrapy.Request(url, callback=self.parse)
+
+    async def start(self):
+        yield scrapy.Request(self.start_url(), callback=self.parse)
+
+    def start_requests(self):
+        yield scrapy.Request(self.start_url(), callback=self.parse)
 
     def parse(self, response):
         for article in response.css("article.product_pod"):

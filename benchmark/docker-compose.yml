@@ -3,6 +3,8 @@ services:
     build:
       context: ..
       dockerfile: benchmark/kumo/Dockerfile
+      args:
+        KUMO_VERSION: ${KUMO_VERSION:-unknown}
     environment:
       - TARGET_URL=${TARGET_URL:-https://books.toscrape.com/catalogue/page-1.html}
       - CONCURRENCY=${CONCURRENCY:-16}
