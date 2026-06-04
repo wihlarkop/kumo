@@ -94,6 +94,8 @@ async fn main() -> Result<(), KumoError> {
 
     let elapsed = start.elapsed().as_secs_f64();
     let rss_kb = peak_rss_kb();
+    let report = CrawlReport::from(stats.clone());
+    let report_json = report.to_json_value();
 
     let result = serde_json::json!({
         "framework": "kumo",
@@ -102,6 +104,7 @@ async fn main() -> Result<(), KumoError> {
         "pages": stats.pages_crawled,
         "peak_rss_kb": rss_kb,
         "concurrency": concurrency,
+        "timings": report_json["timings"].clone(),
         "versions": {
             "language": format!(
                 "rust {}",

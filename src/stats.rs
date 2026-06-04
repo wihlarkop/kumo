@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{collections::BTreeMap, ops::AddAssign, time::Duration};
 
 use crate::error::KumoErrorKind;
 
@@ -13,6 +13,51 @@ pub struct DomainStats {
     pub retries: u64,
     pub retry_exhausted: u64,
     pub robots_blocked: u64,
+}
+
+/// Cumulative wall-clock time spent in major successful request phases.
+///
+/// These timings are intended for bottleneck diagnosis. They are accumulated
+/// across successful request tasks, so concurrent phase totals can be larger
+/// than the crawl's elapsed wall-clock duration.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct CrawlTimingStats {
+    pub middleware_request: Duration,
+    pub fetch: Duration,
+    pub middleware_response: Duration,
+    pub parse: Duration,
+    pub pipeline: Duration,
+    pub store: Duration,
+}
+
+impl CrawlTimingStats {
+    pub(crate) fn to_json_value(self) -> serde_json::Value {
+        serde_json::json!({
+            "middleware_request_ms": self.middleware_request.as_millis(),
+            "middleware_request_secs": self.middleware_request.as_secs_f64(),
+            "fetch_ms": self.fetch.as_millis(),
+            "fetch_secs": self.fetch.as_secs_f64(),
+            "middleware_response_ms": self.middleware_response.as_millis(),
+            "middleware_response_secs": self.middleware_response.as_secs_f64(),
+            "parse_ms": self.parse.as_millis(),
+            "parse_secs": self.parse.as_secs_f64(),
+            "pipeline_ms": self.pipeline.as_millis(),
+            "pipeline_secs": self.pipeline.as_secs_f64(),
+            "store_ms": self.store.as_millis(),
+            "store_secs": self.store.as_secs_f64(),
+        })
+    }
+}
+
+impl AddAssign for CrawlTimingStats {
+    fn add_assign(&mut self, rhs: Self) {
+        self.middleware_request += rhs.middleware_request;
+        self.fetch += rhs.fetch;
+        self.middleware_response += rhs.middleware_response;
+        self.parse += rhs.parse;
+        self.pipeline += rhs.pipeline;
+        self.store += rhs.store;
+    }
 }
 
 /// Why a crawl stopped.
@@ -40,6 +85,7 @@ pub struct CrawlStats {
     pub errors: u64,
     pub duration: Duration,
     pub bytes_downloaded: u64,
+    pub timings: CrawlTimingStats,
     /// `true` when the crawl was stopped early by Ctrl+C.
     pub interrupted: bool,
     pub error_kinds: BTreeMap<String, u64>,
@@ -129,6 +175,7 @@ pub struct CrawlReport {
     pub errors: u64,
     pub duration: Duration,
     pub bytes_downloaded: u64,
+    pub timings: CrawlTimingStats,
     pub interrupted: bool,
     pub error_kinds: BTreeMap<String, u64>,
     pub scheduled: u64,
@@ -148,6 +195,7 @@ impl From<CrawlStats> for CrawlReport {
             errors: stats.errors,
             duration: stats.duration,
             bytes_downloaded: stats.bytes_downloaded,
+            timings: stats.timings,
             interrupted: stats.interrupted,
             error_kinds: stats.error_kinds,
             scheduled: stats.scheduled,
@@ -227,6 +275,7 @@ impl CrawlReport {
             "items_per_second": self.items_per_second(),
             "bytes_per_second": self.bytes_per_second(),
             "bytes_downloaded": self.bytes_downloaded,
+            "timings": self.timings.to_json_value(),
             "interrupted": self.interrupted,
             "error_kinds": self.error_kinds,
             "scheduled": self.scheduled,

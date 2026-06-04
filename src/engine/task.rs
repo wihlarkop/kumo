@@ -13,6 +13,7 @@ use crate::{
     middleware::{FetchRequest, Middleware},
     pipeline::Pipeline,
     request::{CrawlRequest, FrontierRequest},
+    stats::CrawlTimingStats,
     store::ItemStore,
 };
 
@@ -30,6 +31,7 @@ pub(super) struct TaskContext {
 pub(super) struct RequestTaskOutput {
     pub(super) item_count: u64,
     pub(super) bytes_downloaded: u64,
+    pub(super) timings: CrawlTimingStats,
     pub(super) follows: Vec<(CrawlRequest, usize)>,
 }
 
@@ -41,6 +43,7 @@ async fn process_request(
     let depth = queued.depth;
     let domain = crate::stats::domain_key(url);
     let started_at = std::time::Instant::now();
+    let mut timings = CrawlTimingStats::default();
 
     ctx.observer
         .notify_with(|| CrawlEvent::RequestStarted {
@@ -54,18 +57,26 @@ async fn process_request(
         .await?;
 
     let mut request = FetchRequest::from_crawl_request(&queued.request, depth);
+    let phase_start = std::time::Instant::now();
     for mw in ctx.middleware.iter() {
         mw.before_request(&mut request).await?;
     }
+    timings.middleware_request += phase_start.elapsed();
 
+    let phase_start = std::time::Instant::now();
     let mut response = ctx.fetcher.fetch(&request).await?;
+    timings.fetch += phase_start.elapsed();
     let bytes_downloaded = response.bytes().len() as u64;
 
+    let phase_start = std::time::Instant::now();
     for mw in ctx.middleware.iter() {
         mw.after_response(&mut response).await?;
     }
+    timings.middleware_response += phase_start.elapsed();
 
+    let phase_start = std::time::Instant::now();
     let output = ctx.spider.parse_erased(&response).await?;
+    timings.parse += phase_start.elapsed();
 
     let mut item_count = 0u64;
     'items: for item in output.items {
@@ -74,10 +85,12 @@ async fn process_request(
         }
 
         let mut current = item;
+        let phase_start = std::time::Instant::now();
         for pipeline in ctx.pipelines.iter() {
             match pipeline.process(current).await {
                 Ok(Some(v)) => current = v,
                 Ok(None) => {
+                    timings.pipeline += phase_start.elapsed();
                     ctx.observer
                         .notify_with(|| CrawlEvent::ItemDropped {
                             spider: ctx.spider.name().to_string(),
@@ -99,6 +112,7 @@ async fn process_request(
                     continue 'items;
                 }
                 Err(e) => {
+                    timings.pipeline += phase_start.elapsed();
                     ctx.observer
                         .notify_with(|| CrawlEvent::ItemDropped {
                             spider: ctx.spider.name().to_string(),
@@ -123,7 +137,10 @@ async fn process_request(
                 }
             }
         }
+        timings.pipeline += phase_start.elapsed();
+        let phase_start = std::time::Instant::now();
         ctx.store.store(&current).await?;
+        timings.store += phase_start.elapsed();
         ctx.observer
             .notify_with(|| CrawlEvent::ItemScraped {
                 spider: ctx.spider.name().to_string(),
@@ -136,6 +153,7 @@ async fn process_request(
             return Ok(RequestTaskOutput {
                 item_count,
                 bytes_downloaded,
+                timings,
                 follows: Vec::new(),
             });
         }
@@ -174,6 +192,7 @@ async fn process_request(
     Ok(RequestTaskOutput {
         item_count,
         bytes_downloaded,
+        timings,
         follows,
     })
 }

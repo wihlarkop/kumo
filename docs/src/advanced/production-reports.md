@@ -36,9 +36,29 @@ write without duplicating rate math in every crawler.
 | `error_rate()` | Permanent failures divided by completed and failed requests |
 | `success_rate()` | Completed requests divided by completed and failed requests |
 | `retry_exhaustion_rate()` | Retry-exhausted requests divided by retry attempts |
+| `timings` | Cumulative successful-request phase timings for bottleneck diagnosis |
 
 The JSON export uses the same names in snake_case, including derived fields such
-as `pages_per_second`, `error_rate`, and `retry_exhaustion_rate`.
+as `pages_per_second`, `error_rate`, `retry_exhaustion_rate`, and `timings`.
+
+## Timing Breakdown
+
+`CrawlReport::timings` splits successful request work into broad phases:
+
+| Field | Measures |
+|-------|----------|
+| `middleware_request` | Time spent in `Middleware::before_request` |
+| `fetch` | Time spent waiting for the configured fetcher |
+| `middleware_response` | Time spent in `Middleware::after_response` |
+| `parse` | Time spent in the spider `parse` method |
+| `pipeline` | Time spent in item pipelines |
+| `store` | Time spent writing accepted items to the item store |
+
+These are cumulative task timings, not exclusive wall-clock percentages. In a
+concurrent crawl, the sum can be higher than `duration` because many requests
+run at the same time. Use the largest phase as a direction signal: high `fetch`
+usually points to target latency or politeness limits, high `parse` points to
+selector/extraction work, and high `store` points to output backpressure.
 
 ## Alert Examples
 
@@ -110,6 +130,9 @@ tracing::info!(
     error_rate = report.error_rate(),
     pages_per_second = report.pages_per_second(),
     retry_exhaustion_rate = report.retry_exhaustion_rate(),
+    fetch_secs = report.timings.fetch.as_secs_f64(),
+    parse_secs = report.timings.parse.as_secs_f64(),
+    store_secs = report.timings.store.as_secs_f64(),
     stop_reason = report.stop_reason.map(StopReason::as_str),
     "crawl report"
 );

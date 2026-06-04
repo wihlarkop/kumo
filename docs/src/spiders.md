@@ -91,6 +91,7 @@ impl Spider for MySpider {
 | `errors` | `u64` | Failed requests |
 | `duration` | `Duration` | Wall-clock crawl time |
 | `bytes_downloaded` | `u64` | Total response body bytes |
+| `timings` | `CrawlTimingStats` | Cumulative successful-request phase timings for middleware, fetch, parse, pipeline, and store work |
 | `interrupted` | `bool` | `true` if stopped by Ctrl+C |
 | `error_kinds` | `BTreeMap<String, u64>` | Permanent failures grouped by stable `KumoErrorKind` label |
 | `stop_reason` | `Option<StopReason>` | Why the crawl stopped |
@@ -109,6 +110,8 @@ Use `retry_exhausted` when alerts need to distinguish "we retried and still
 failed" from one-off permanent failures.
 Use `error_kinds` when alerts or dashboards need to separate parse failures,
 HTTP status failures, fetch failures, and other `KumoErrorKind` categories.
+Use `timings` to identify the largest successful-request phase. Timing totals
+are cumulative across concurrent tasks, so they can be larger than `duration`.
 
 When updating stats manually, use `record_error(domain)` to increment both the
 global error count and the matching per-domain failure count together. Use
@@ -151,8 +154,9 @@ std::fs::write("crawl-report.json", report.to_json_string_pretty())?;
 
 Report JSON uses stable snake_case field names. `duration` is exported as
 `duration_ms` and `duration_secs`, derived helper values are exported as fields
-such as `pages_per_second` and `error_rate`, and `stop_reason` is exported as a
-snake_case string such as `"frontier_exhausted"` or `"max_pages"`.
+such as `pages_per_second` and `error_rate`, timing breakdowns are exported
+under `timings`, and `stop_reason` is exported as a snake_case string such as
+`"frontier_exhausted"` or `"max_pages"`.
 
 ## Error Handling
 

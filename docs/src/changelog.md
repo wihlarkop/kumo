@@ -12,6 +12,15 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### 0.5.1 - 2026-06-04
+
+- Added `CrawlTimingStats` and `CrawlReport::timings` for cumulative
+  successful-request phase timings across request middleware, fetch, response
+  middleware, parse, pipeline, and store work.
+- Added timing breakdown fields to production report JSON exports and Kumo
+  benchmark output.
+- Documented how to interpret crawl timing totals under concurrent workloads.
+
 ### 0.5.0 - 2026-06-03
 
 - Added async crawl lifecycle hooks through the `CrawlHook` trait.
