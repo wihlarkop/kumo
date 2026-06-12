@@ -1,4 +1,4 @@
-use kumo::extract::Response;
+use kumo::extract::{CssSelector, Response};
 
 fn first_element(html: &str, selector: &str) -> kumo::extract::Element {
     Response::from_parts("https://example.com", 200, html)
@@ -160,4 +160,67 @@ fn element_list_re_first_returns_first_across_elements() {
     );
     let list = response.css("span");
     assert_eq!(list.re_first(r"\$(\d+)"), Some("10".to_string()));
+}
+
+#[test]
+fn compiled_selector_can_be_reused_across_responses() {
+    let selector = CssSelector::parse("article > h2").unwrap();
+    let first = Response::from_parts(
+        "https://example.com/first",
+        200,
+        "<article><h2>First</h2></article>",
+    );
+    let second = Response::from_parts(
+        "https://example.com/second",
+        200,
+        "<article><h2>Second</h2></article>",
+    );
+
+    assert_eq!(first.css_with(&selector).first().unwrap().text(), "First");
+    assert_eq!(second.css_with(&selector).first().unwrap().text(), "Second");
+}
+
+#[test]
+fn compiled_selector_supports_nested_queries() {
+    let article = first_element(
+        "<article><a href=\"/one\">One</a><a href=\"/two\">Two</a></article>",
+        "article",
+    );
+    let links = CssSelector::parse(":scope > a").unwrap();
+
+    let matches = article.css_with(&links);
+
+    assert_eq!(matches.len(), 2);
+    assert_eq!(
+        matches.first().unwrap().attr("href").as_deref(),
+        Some("/one")
+    );
+}
+
+#[test]
+fn compiled_selector_rejects_invalid_css() {
+    let error = CssSelector::parse("!!!bad").unwrap_err();
+
+    assert_eq!(error.kind_label(), "parse");
+    assert!(error.to_string().contains("CSS selector"));
+}
+
+#[test]
+fn compiled_selector_is_cloneable_and_thread_safe() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<CssSelector>();
+
+    let selector = CssSelector::parse("p").unwrap();
+    let cloned = selector.clone();
+    let selected = std::thread::spawn(move || {
+        Response::from_parts("https://example.com", 200, "<p>threaded</p>")
+            .css_with(&cloned)
+            .first()
+            .unwrap()
+            .text()
+    })
+    .join()
+    .unwrap();
+
+    assert_eq!(selected, "threaded");
 }

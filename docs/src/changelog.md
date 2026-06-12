@@ -25,6 +25,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   elements, text extraction, and attribute access.
 - Made `Element::outer_html()` serialize lazily while preserving the existing
   owned, cloneable element API.
+- Added reusable `CssSelector` values plus `Response::css_with(...)` and
+  `Element::css_with(...)` for hot loops that need to bypass repeated global
+  selector-cache lookups while preserving the existing `css(&str)` API.
 
 ### 0.5.0 - 2026-06-03
 

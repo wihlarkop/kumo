@@ -3,7 +3,7 @@ use std::sync::{Arc, OnceLock};
 use ego_tree::NodeId;
 use scraper::ElementRef;
 
-use super::{ElementList, SharedDocument, get_selector, re_matches};
+use super::{CssSelector, ElementList, SharedDocument, get_selector, re_matches};
 
 /// A single CSS-matched HTML element.
 ///
@@ -61,9 +61,14 @@ impl Element {
         let Some(sel) = get_selector(selector) else {
             return ElementList { elements: vec![] };
         };
+        self.css_with(&sel)
+    }
+
+    /// Select child elements using a reusable, precompiled CSS selector.
+    pub fn css_with(&self, selector: &CssSelector) -> ElementList {
         let node_ids = self.with_element(|element| {
             element
-                .select(&sel)
+                .select(selector.as_scraper())
                 .map(|child| child.id())
                 .collect::<Vec<_>>()
         });

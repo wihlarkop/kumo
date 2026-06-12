@@ -1,22 +1,27 @@
 use crate::extract::{
     response::Response,
-    selector::{Element, ElementList},
+    selector::{CssSelector, Element, ElementList},
 };
 
 impl Response {
     /// Select elements in this page via a CSS selector.
     /// Returns an empty list if the body is binary.
     pub fn css(&self, selector: &str) -> ElementList {
-        let Some(document) = self.document() else {
+        let Some(sel) = crate::extract::selector::get_selector(selector) else {
             return ElementList { elements: vec![] };
         };
-        let Some(sel) = crate::extract::selector::get_selector(selector) else {
+        self.css_with(&sel)
+    }
+
+    /// Select elements using a reusable, precompiled CSS selector.
+    pub fn css_with(&self, selector: &CssSelector) -> ElementList {
+        let Some(document) = self.document() else {
             return ElementList { elements: vec![] };
         };
         let node_ids = document
             .lock()
             .expect("parsed document lock should not be poisoned")
-            .select(&sel)
+            .select(selector.as_scraper())
             .map(|element| element.id())
             .collect::<Vec<_>>();
         let elements = node_ids

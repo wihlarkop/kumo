@@ -24,6 +24,20 @@ let inner = el.css(".body").first()
     .map(|e| e.inner_html());
 ```
 
+For selectors used thousands of times in a hot extraction loop, compile once
+and reuse the value to bypass the global string-selector cache lookup:
+
+```rust
+let links = CssSelector::parse("article > h2 > a")?;
+
+let matches = res.css_with(&links);
+let nested = element.css_with(&links);
+```
+
+`CssSelector` is cloneable and safe to share across threads. Invalid selector
+syntax returns `KumoError::Parse`. The existing `css(&str)` API remains the
+recommended default unless profiling shows selector lookup overhead matters.
+
 ## XPath Selectors
 
 Requires `features = ["xpath"]`.
