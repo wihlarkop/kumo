@@ -2,7 +2,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use kumo::{
-    extract::Response,
+    extract::{CssSelector, Response},
     frontier::{Frontier, MemoryFrontier},
     request::{CrawlRequest, FrontierRequest},
 };
@@ -77,11 +77,20 @@ fn bench_document_backed_selectors(c: &mut Criterion) {
     c.bench_function("response_root_css_cached", |b| {
         b.iter(|| black_box(response.css("article.product_pod")))
     });
+    let product_selector =
+        CssSelector::parse("article.product_pod").expect("valid product selector");
+    c.bench_function("response_root_css_compiled", |b| {
+        b.iter(|| black_box(response.css_with(&product_selector)))
+    });
 
     let products = response.css("article.product_pod");
     let product = products.first().expect("fixture must contain a product");
     c.bench_function("element_nested_css_cached", |b| {
         b.iter(|| black_box(product.css("h3 a")))
+    });
+    let title_selector = CssSelector::parse("h3 a").expect("valid title selector");
+    c.bench_function("element_nested_css_compiled", |b| {
+        b.iter(|| black_box(product.css_with(&title_selector)))
     });
 
     let title_elements = product.css("h3 a");
@@ -106,6 +115,18 @@ fn bench_document_backed_selectors(c: &mut Criterion) {
                 let title = product.css("h3 a");
                 black_box(title.first().and_then(|element| element.attr("title")));
                 let price = product.css(".price_color");
+                black_box(price.first().map(|element| element.text()));
+            }
+        })
+    });
+
+    let price_selector = CssSelector::parse(".price_color").expect("valid price selector");
+    c.bench_function("page_extraction_workload_compiled", |b| {
+        b.iter(|| {
+            for product in products.iter() {
+                let title = product.css_with(&title_selector);
+                black_box(title.first().and_then(|element| element.attr("title")));
+                let price = product.css_with(&price_selector);
                 black_box(price.first().map(|element| element.text()));
             }
         })

@@ -17,6 +17,10 @@ struct Book {
 struct BooksSpider {
     start_url: String,
     extraction_operations: Arc<ExtractionOperations>,
+    products: CssSelector,
+    titles: CssSelector,
+    prices: CssSelector,
+    next_page: CssSelector,
 }
 
 #[derive(Default)]
@@ -52,6 +56,10 @@ impl BooksSpider {
             start_url: std::env::var("TARGET_URL")
                 .unwrap_or_else(|_| "https://books.toscrape.com/catalogue/page-1.html".into()),
             extraction_operations: Arc::new(ExtractionOperations::default()),
+            products: CssSelector::parse("article.product_pod").expect("valid product selector"),
+            titles: CssSelector::parse("h3 a").expect("valid title selector"),
+            prices: CssSelector::parse(".price_color").expect("valid price selector"),
+            next_page: CssSelector::parse("li.next a").expect("valid next-page selector"),
         }
     }
 }
@@ -73,14 +81,14 @@ impl Spider for BooksSpider {
             .root_css
             .fetch_add(1, Ordering::Relaxed);
         let books: Vec<Book> = res
-            .css("article.product_pod")
+            .css_with(&self.products)
             .iter()
             .map(|el| {
                 self.extraction_operations
                     .nested_css
                     .fetch_add(2, Ordering::Relaxed);
-                let title_element = el.css("h3 a");
-                let price_element = el.css(".price_color");
+                let title_element = el.css_with(&self.titles);
+                let price_element = el.css_with(&self.prices);
 
                 self.extraction_operations
                     .attr
@@ -106,7 +114,7 @@ impl Spider for BooksSpider {
             .attr
             .fetch_add(1, Ordering::Relaxed);
         let next = res
-            .css("li.next a")
+            .css_with(&self.next_page)
             .first()
             .and_then(|el| el.attr("href"))
             .map(|href| res.urljoin(&href));

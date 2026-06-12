@@ -41,7 +41,7 @@ pub mod prelude {
     #[cfg(feature = "jsonpath")]
     pub use crate::extract::JsonPathExtractor;
     pub use crate::extract::{
-        CssExtractor, Element, ElementList, ExtractedNode, Extractor, LinkExtractor,
+        CssExtractor, CssSelector, Element, ElementList, ExtractedNode, Extractor, LinkExtractor,
         RegexExtractor, Response, ValueExtractor,
     };
     #[cfg(feature = "browser")]

@@ -13,4 +13,4 @@ pub use extract_trait::Extract;
 pub use extractor::JsonPathExtractor;
 pub use extractor::{CssExtractor, ExtractedNode, Extractor, RegexExtractor, ValueExtractor};
 pub use response::Response;
-pub use selector::{Element, ElementList};
+pub use selector::{CssSelector, Element, ElementList};

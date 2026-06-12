@@ -16,6 +16,24 @@ nested selection, text collection, and attribute copying independently. Use
 those focused measurements to identify the next bottleneck; do not infer a
 specific extraction cost from the end-to-end crawl time alone.
 
+## Reuse Compiled Selectors
+
+The regular `css(&str)` API uses a global compiled-selector cache, which avoids
+reparsing selector syntax. Very hot loops still pay for a cache lock and hash
+lookup on every call. Use `CssSelector` to compile once and bypass that lookup:
+
+```rust
+let products = CssSelector::parse("article.product_pod")?;
+let titles = CssSelector::parse("h3 a")?;
+
+for product in response.css_with(&products).iter() {
+    let title = product.css_with(&titles).first().map(|element| element.text());
+}
+```
+
+Keep selectors on the spider or another long-lived configuration value rather
+than compiling them inside `Spider::parse`.
+
 ## Reuse Parsed Responses
 
 Kumo parses each text `Response` into an HTML document lazily on the first CSS
