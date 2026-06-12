@@ -1,5 +1,8 @@
+use std::hint::black_box;
+
 use criterion::{Criterion, criterion_group, criterion_main};
 use kumo::{
+    extract::Response,
     frontier::{Frontier, MemoryFrontier},
     request::{CrawlRequest, FrontierRequest},
 };
@@ -48,6 +51,42 @@ fn bench_memory_frontier_batch(c: &mut Criterion) {
     });
 }
 
+fn selector_fixture() -> String {
+    let mut html = String::from("<html><body>");
+    for index in 0..20 {
+        html.push_str(&format!(
+            r#"<article class="product_pod"><h3><a title="Book {index}">Book {index}</a></h3><p class="price_color">${index}.00</p></article>"#
+        ));
+    }
+    html.push_str(r#"<li class="next"><a href="page-2.html">next</a></li></body></html>"#);
+    html
+}
+
+fn bench_document_backed_selectors(c: &mut Criterion) {
+    let html = selector_fixture();
+
+    c.bench_function("response_css_repeated_queries", |b| {
+        b.iter(|| {
+            let response = Response::from_parts("https://example.com", 200, html.clone());
+            black_box(response.css("article.product_pod"));
+            black_box(response.css("li.next a"));
+        })
+    });
+
+    let response = Response::from_parts("https://example.com", 200, html);
+    let products = response.css("article.product_pod");
+    c.bench_function("element_nested_css_text_attr", |b| {
+        b.iter(|| {
+            for product in products.iter() {
+                let title = product.css("h3 a");
+                black_box(title.first().and_then(|element| element.attr("title")));
+                let price = product.css(".price_color");
+                black_box(price.first().map(|element| element.text()));
+            }
+        })
+    });
+}
+
 fn domain_key(url: &str) -> String {
     url::Url::parse(url)
         .ok()
@@ -59,6 +98,7 @@ criterion_group!(
     benches,
     bench_domain_key,
     bench_frontier_request_clone,
-    bench_memory_frontier_batch
+    bench_memory_frontier_batch,
+    bench_document_backed_selectors
 );
 criterion_main!(benches);

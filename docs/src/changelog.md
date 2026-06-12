@@ -20,6 +20,11 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - Added timing breakdown fields to production report JSON exports and Kumo
   benchmark output.
 - Documented how to interpret crawl timing totals under concurrent workloads.
+- Reworked CSS extraction to parse each text response lazily once and share the
+  parsed document across response selectors, nested element selectors, cloned
+  elements, text extraction, and attribute access.
+- Made `Element::outer_html()` serialize lazily while preserving the existing
+  owned, cloneable element API.
 
 ### 0.5.0 - 2026-06-03
 

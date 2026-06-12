@@ -4,6 +4,18 @@ description: Tips for squeezing maximum throughput and minimum memory out of kum
 
 # Performance
 
+## Reuse Parsed Responses
+
+Kumo parses each text `Response` into an HTML document lazily on the first CSS
+query and reuses that document for later response and nested element queries.
+Cloned `Element` values keep the shared document alive, so they remain usable
+after the original `Response` is dropped.
+
+Prefer several selectors against the same response or element instead of
+creating new `Response` values from serialized HTML. `text()`, `attr()`, and
+nested `css()` operate directly on the shared document. `outer_html()` performs
+serialization only when requested and caches the result for that element.
+
 ## Allocator: jemalloc
 
 For long-running crawls (minutes or longer), replacing the system allocator with [jemalloc](https://github.com/tikv/jemallocator) can improve throughput by reducing allocator fragmentation and contention under concurrent workloads.
