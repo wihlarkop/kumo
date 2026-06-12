@@ -1,6 +1,12 @@
 use kumo::prelude::*;
 use serde::Serialize;
-use std::time::Instant;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Instant,
+};
 
 #[derive(Debug, Serialize)]
 struct Book {
@@ -10,6 +16,34 @@ struct Book {
 
 struct BooksSpider {
     start_url: String,
+    extraction_operations: Arc<ExtractionOperations>,
+}
+
+#[derive(Default)]
+struct ExtractionOperations {
+    root_css: AtomicU64,
+    nested_css: AtomicU64,
+    text: AtomicU64,
+    attr: AtomicU64,
+}
+
+#[derive(Serialize)]
+struct ExtractionOperationCounts {
+    root_css: u64,
+    nested_css: u64,
+    text: u64,
+    attr: u64,
+}
+
+impl ExtractionOperations {
+    fn snapshot(&self) -> ExtractionOperationCounts {
+        ExtractionOperationCounts {
+            root_css: self.root_css.load(Ordering::Relaxed),
+            nested_css: self.nested_css.load(Ordering::Relaxed),
+            text: self.text.load(Ordering::Relaxed),
+            attr: self.attr.load(Ordering::Relaxed),
+        }
+    }
 }
 
 impl BooksSpider {
@@ -17,6 +51,7 @@ impl BooksSpider {
         Self {
             start_url: std::env::var("TARGET_URL")
                 .unwrap_or_else(|_| "https://books.toscrape.com/catalogue/page-1.html".into()),
+            extraction_operations: Arc::new(ExtractionOperations::default()),
         }
     }
 }
@@ -34,23 +69,42 @@ impl Spider for BooksSpider {
     }
 
     async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
+        self.extraction_operations
+            .root_css
+            .fetch_add(1, Ordering::Relaxed);
         let books: Vec<Book> = res
             .css("article.product_pod")
             .iter()
-            .map(|el| Book {
-                title: el
-                    .css("h3 a")
+            .map(|el| {
+                self.extraction_operations
+                    .nested_css
+                    .fetch_add(2, Ordering::Relaxed);
+                let title_element = el.css("h3 a");
+                let price_element = el.css(".price_color");
+
+                self.extraction_operations
+                    .attr
+                    .fetch_add(1, Ordering::Relaxed);
+                let title = title_element
                     .first()
                     .and_then(|a| a.attr("title"))
-                    .unwrap_or_default(),
-                price: el
-                    .css(".price_color")
-                    .first()
-                    .map(|e| e.text())
-                    .unwrap_or_default(),
+                    .unwrap_or_default();
+
+                self.extraction_operations
+                    .text
+                    .fetch_add(1, Ordering::Relaxed);
+                let price = price_element.first().map(|e| e.text()).unwrap_or_default();
+
+                Book { title, price }
             })
             .collect();
 
+        self.extraction_operations
+            .root_css
+            .fetch_add(1, Ordering::Relaxed);
+        self.extraction_operations
+            .attr
+            .fetch_add(1, Ordering::Relaxed);
         let next = res
             .css("li.next a")
             .first()
@@ -85,11 +139,13 @@ async fn main() -> Result<(), KumoError> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(16);
 
+    let spider = BooksSpider::new();
+    let extraction_operations = Arc::clone(&spider.extraction_operations);
     let stats = CrawlEngine::builder()
         .concurrency(concurrency)
         .respect_robots_txt(false)
         .store(JsonlStore::new("/results/kumo.jsonl")?)
-        .run(BooksSpider::new())
+        .run(spider)
         .await?;
 
     let elapsed = start.elapsed().as_secs_f64();
@@ -105,6 +161,7 @@ async fn main() -> Result<(), KumoError> {
         "peak_rss_kb": rss_kb,
         "concurrency": concurrency,
         "timings": report_json["timings"].clone(),
+        "extraction_operations": extraction_operations.snapshot(),
         "versions": {
             "language": format!(
                 "rust {}",

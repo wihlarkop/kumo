@@ -65,17 +65,42 @@ fn selector_fixture() -> String {
 fn bench_document_backed_selectors(c: &mut Criterion) {
     let html = selector_fixture();
 
-    c.bench_function("response_css_repeated_queries", |b| {
+    c.bench_function("response_document_parse", |b| {
         b.iter(|| {
             let response = Response::from_parts("https://example.com", 200, html.clone());
             black_box(response.css("article.product_pod"));
-            black_box(response.css("li.next a"));
         })
     });
 
     let response = Response::from_parts("https://example.com", 200, html);
+    black_box(response.css("article.product_pod"));
+    c.bench_function("response_root_css_cached", |b| {
+        b.iter(|| black_box(response.css("article.product_pod")))
+    });
+
     let products = response.css("article.product_pod");
-    c.bench_function("element_nested_css_text_attr", |b| {
+    let product = products.first().expect("fixture must contain a product");
+    c.bench_function("element_nested_css_cached", |b| {
+        b.iter(|| black_box(product.css("h3 a")))
+    });
+
+    let title_elements = product.css("h3 a");
+    let title = title_elements
+        .first()
+        .expect("fixture product must contain a title");
+    c.bench_function("element_attr_copy", |b| {
+        b.iter(|| black_box(title.attr("title")))
+    });
+
+    let price_elements = product.css(".price_color");
+    let price = price_elements
+        .first()
+        .expect("fixture product must contain a price");
+    c.bench_function("element_text_collect", |b| {
+        b.iter(|| black_box(price.text()))
+    });
+
+    c.bench_function("page_extraction_workload", |b| {
         b.iter(|| {
             for product in products.iter() {
                 let title = product.css("h3 a");

@@ -4,6 +4,18 @@ description: Tips for squeezing maximum throughput and minimum memory out of kum
 
 # Performance
 
+## Measure Extraction Work
+
+Kumo's benchmark results record root CSS queries, nested CSS queries, text
+collections, and attribute reads. These operation counts verify that two
+performance runs completed the same extraction work before their throughput is
+compared.
+
+The Criterion hot-path suite measures document parsing, cached root selection,
+nested selection, text collection, and attribute copying independently. Use
+those focused measurements to identify the next bottleneck; do not infer a
+specific extraction cost from the end-to-end crawl time alone.
+
 ## Reuse Parsed Responses
 
 Kumo parses each text `Response` into an HTML document lazily on the first CSS
