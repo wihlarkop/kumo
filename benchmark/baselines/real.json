@@ -1,0 +1,29 @@
+[
+  {
+    "framework": "kumo",
+    "items": 1000,
+    "pages": 50,
+    "elapsed_s": 13.0,
+    "items_per_s": 76.7,
+    "peak_rss_mb": 12.5,
+    "concurrency": 16
+  },
+  {
+    "framework": "scrapy",
+    "items": 1000,
+    "pages": 50,
+    "elapsed_s": 18.7,
+    "items_per_s": 53.3,
+    "peak_rss_mb": 77.2,
+    "concurrency": 16
+  },
+  {
+    "framework": "colly",
+    "items": 1000,
+    "pages": 50,
+    "elapsed_s": 13.6,
+    "items_per_s": 73.5,
+    "peak_rss_mb": 31.4,
+    "concurrency": 16
+  }
+]

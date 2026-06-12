@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "kumo-derive", "benchmark/kumo"]
+members = [".", "kumo-derive", "benchmark/compare", "benchmark/kumo"]
 resolver = "2"
 
 [package]

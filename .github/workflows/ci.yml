@@ -39,6 +39,9 @@ jobs:
       - name: Run integration tests
         run: cargo test --tests
 
+      - name: Test benchmark comparison tool
+        run: cargo test -p kumo-benchmark-compare
+
       - name: Run derive macro tests
         run: cargo test --features derive --test derive_macro
 

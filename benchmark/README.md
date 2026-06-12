@@ -112,6 +112,41 @@ middleware, parsing, item pipelines, and storage. These values are diagnostic
 signals, not wall-clock percentages: concurrent request phases can overlap, so
 their sum can exceed the process elapsed time.
 
+## Compare Results
+
+Use the typed Rust comparison tool to compare a trusted baseline with a new
+summary:
+
+```bash
+cargo run -p kumo-benchmark-compare -- \
+  benchmark/baselines/local.json \
+  benchmark/results/latest_local.json \
+  --output benchmark/results/comparison.md \
+  --json-output benchmark/results/comparison.json
+```
+
+The report shows percentage changes in elapsed time, throughput, and peak RSS.
+When both inputs contain Kumo timing data, it also compares request phase
+timings. Lower elapsed time, memory, and phase duration are improvements; higher
+throughput is an improvement.
+
+GitHub's manual `Benchmark` workflow runs this comparison after local or
+real-site benchmarks, adds the Markdown report to the workflow summary, and
+uploads both report formats with the raw results. Comparisons are informational:
+shared CI runner noise must not automatically block a merge or release.
+
+### Baseline Policy
+
+Committed baselines live in `benchmark/baselines/` and are never overwritten by
+the workflow. Update one only after reviewing a successful benchmark artifact
+that used the documented toolchain, workload, run count, and concurrency.
+Include the baseline update in its own reviewed commit so performance reference
+changes remain visible in Git history.
+
+The initial local baseline comes from successful GitHub Actions run
+`26966198174`. The initial real-site baseline matches the documented real-site
+results above.
+
 ## Microbenchmarks
 
 Use Criterion for local microbenchmarks of hot internal paths:

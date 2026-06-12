@@ -80,8 +80,21 @@ function Write-MedianResults {
         })))
         $itemsPerSecond = if ($elapsed -gt 0) { [math]::Round($items / $elapsed, 1) } else { 0 }
         $versions = $stats[0].versions
+        $timings = [ordered]@{}
+        $timingNames = $stats |
+            Where-Object { $null -ne $_.timings } |
+            ForEach-Object { $_.timings.PSObject.Properties.Name } |
+            Sort-Object -Unique
+        foreach ($timingName in $timingNames) {
+            $values = [double[]]($stats |
+                Where-Object { $null -ne $_.timings.$timingName } |
+                ForEach-Object { [double]$_.timings.$timingName })
+            if ($values.Count -gt 0) {
+                $timings[$timingName] = Get-Median $values
+            }
+        }
 
-        $rows += [pscustomobject]@{
+        $row = [ordered]@{
             framework = $service
             items = $items
             pages = $pages
@@ -91,6 +104,10 @@ function Write-MedianResults {
             concurrency = $Concurrency
             versions = $versions
         }
+        if ($timings.Count -gt 0) {
+            $row.timings = $timings
+        }
+        $rows += [pscustomobject]$row
     }
 
     Write-Host ""

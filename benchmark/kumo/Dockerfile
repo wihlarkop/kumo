@@ -11,6 +11,7 @@ COPY kumo-derive/ kumo-derive/
 COPY benches/ benches/
 COPY examples/ examples/
 COPY tests/ tests/
+COPY benchmark/compare/ benchmark/compare/
 COPY benchmark/kumo/ benchmark/kumo/
 RUN cargo chef prepare --recipe-path recipe.json
 
@@ -26,6 +27,7 @@ COPY kumo-derive/ kumo-derive/
 COPY benches/ benches/
 COPY examples/ examples/
 COPY tests/ tests/
+COPY benchmark/compare/ benchmark/compare/
 COPY benchmark/kumo/ benchmark/kumo/
 RUN cargo build --release -p kumo-benchmark
 
