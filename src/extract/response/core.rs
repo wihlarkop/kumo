@@ -1,6 +1,11 @@
 use bytes::Bytes;
 use reqwest::header::HeaderMap;
-use std::time::Duration;
+use std::{
+    sync::{Arc, Mutex, OnceLock},
+    time::Duration,
+};
+
+use crate::extract::selector::SharedDocument;
 
 pub(crate) enum ResponseBody {
     Text(String),
@@ -15,6 +20,7 @@ pub struct Response {
     /// Wall-clock time from sending the request to reading the full body.
     pub(super) elapsed: Duration,
     pub(crate) body: ResponseBody,
+    pub(super) document: OnceLock<SharedDocument>,
 }
 
 impl Response {
@@ -26,6 +32,7 @@ impl Response {
             headers: HeaderMap::new(),
             elapsed: Duration::ZERO,
             body: ResponseBody::Text(body.into()),
+            document: OnceLock::new(),
         }
     }
 
@@ -42,6 +49,7 @@ impl Response {
             headers,
             elapsed: Duration::ZERO,
             body: ResponseBody::Text(body.into()),
+            document: OnceLock::new(),
         }
     }
 
@@ -65,6 +73,7 @@ impl Response {
             headers,
             elapsed,
             body,
+            document: OnceLock::new(),
         }
     }
 
@@ -87,6 +96,7 @@ impl Response {
             headers: HeaderMap::new(),
             elapsed: Duration::ZERO,
             body: ResponseBody::Bytes(bytes),
+            document: OnceLock::new(),
         }
     }
 
@@ -124,5 +134,14 @@ impl Response {
             ResponseBody::Text(s) => s.as_bytes(),
             ResponseBody::Bytes(b) => b.as_ref(),
         }
+    }
+
+    pub(super) fn document(&self) -> Option<SharedDocument> {
+        let text = self.text()?;
+        Some(
+            self.document
+                .get_or_init(|| Arc::new(Mutex::new(scraper::Html::parse_document(text))))
+                .clone(),
+        )
     }
 }

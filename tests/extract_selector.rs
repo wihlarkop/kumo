@@ -39,11 +39,41 @@ fn element_inner_html_excludes_outer_tag() {
 }
 
 #[test]
+fn element_outer_html_includes_element_and_is_stable() {
+    let el = first_element(r#"<a href="/next"><strong>Next</strong></a>"#, "a");
+
+    assert_eq!(
+        el.outer_html(),
+        r#"<a href="/next"><strong>Next</strong></a>"#
+    );
+    assert_eq!(
+        el.outer_html(),
+        r#"<a href="/next"><strong>Next</strong></a>"#
+    );
+}
+
+#[test]
 fn element_css_selects_children() {
     let el = first_element("<ul><li>a</li><li>b</li></ul>", "ul");
     let items = el.css("li");
     assert_eq!(items.len(), 2);
     assert_eq!(items.first().unwrap().text(), "a");
+}
+
+#[test]
+fn cloned_element_remains_queryable_after_response_is_dropped() {
+    let element = {
+        let response = Response::from_parts(
+            "https://example.com",
+            200,
+            r#"<article><a href="/book">Book</a></article>"#,
+        );
+        response.css("article").first().cloned().unwrap()
+    };
+
+    let link = element.css(":scope > a").first().cloned().unwrap();
+    assert_eq!(link.text(), "Book");
+    assert_eq!(link.attr("href"), Some("/book".to_string()));
 }
 
 #[test]
