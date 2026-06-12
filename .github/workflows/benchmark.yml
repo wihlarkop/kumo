@@ -32,12 +32,24 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Show Docker versions
         run: |
           docker version
           docker compose version
+
+      - name: Preserve checked-in benchmark baseline
+        if: inputs.mode != 'scale'
+        run: |
+          if [ "${{ inputs.mode }}" = "local" ]; then
+            cp benchmark/baselines/local.json "$RUNNER_TEMP/benchmark-baseline.json"
+          else
+            cp benchmark/baselines/real.json "$RUNNER_TEMP/benchmark-baseline.json"
+          fi
 
       - name: Run local mock benchmark
         if: inputs.mode == 'local'
@@ -54,6 +66,21 @@ jobs:
         working-directory: benchmark
         run: bash run.sh --scale
 
+      - name: Compare benchmark results
+        if: inputs.mode != 'scale'
+        run: |
+          if [ "${{ inputs.mode }}" = "local" ]; then
+            current="benchmark/results/latest_local.json"
+          else
+            current="benchmark/results/latest.json"
+          fi
+          cargo run -p kumo-benchmark-compare -- \
+            "$RUNNER_TEMP/benchmark-baseline.json" \
+            "$current" \
+            --output benchmark/results/comparison.md \
+            --json-output benchmark/results/comparison.json
+          cat benchmark/results/comparison.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload benchmark results
         uses: actions/upload-artifact@v5
         if: always()
@@ -61,6 +88,7 @@ jobs:
           name: benchmark-${{ inputs.mode }}-${{ github.run_number }}
           path: |
             benchmark/results/*.json
+            benchmark/results/*.md
             benchmark/results/scale/*.json
           if-no-files-found: warn
           retention-days: 7

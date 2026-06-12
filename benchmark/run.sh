@@ -132,6 +132,7 @@ rows = []
 
 for name in services:
     elapsed_vals, rss_vals, item_vals, page_vals = [], [], [], []
+    timing_vals = {}
     versions = {}
     concurrency = None
     for i in range(1, RUNS + 1):
@@ -144,6 +145,9 @@ for name in services:
         rss_vals.append(s.get("peak_rss_kb", 0))
         item_vals.append(int(s.get("items", 0)))
         page_vals.append(int(s.get("pages", 0)))
+        for key, value in s.get("timings", {}).items():
+            if isinstance(value, (int, float)):
+                timing_vals.setdefault(key, []).append(value)
         versions = versions or s.get("versions", {})
         concurrency = concurrency or s.get("concurrency")
 
@@ -156,11 +160,16 @@ for name in services:
     pages   = statistics.median(page_vals) if page_vals else 0
     rps     = round(items / elapsed, 1) if elapsed > 0 else 0
     rss_mb  = round(rss_kb / 1024, 1)
-    rows.append((name, int(items), int(pages), elapsed, rps, rss_mb, concurrency, versions))
+    timings = {
+        key: statistics.median(values)
+        for key, values in timing_vals.items()
+        if values
+    }
+    rows.append((name, int(items), int(pages), elapsed, rps, rss_mb, concurrency, versions, timings))
 
 print(f"{'Framework':<12} {'Items':>8} {'Pages':>8} {'Time (s)':>10} {'Items/s':>10} {'RSS (MB)':>10}")
 print("-" * 64)
-for name, items, pages, elapsed, rps, rss_mb, concurrency, versions in rows:
+for name, items, pages, elapsed, rps, rss_mb, concurrency, versions, timings in rows:
     print(f"{name:<12} {items:>8} {pages:>8} {elapsed:>10.2f} {rps:>10.1f} {rss_mb:>10.1f}")
 
 print()
@@ -174,8 +183,9 @@ output = [
         "peak_rss_mb": m,
         "concurrency": c,
         "versions": v,
+        **({"timings": t} if t else {}),
     }
-    for n, i, p, e, r, m, c, v in rows
+    for n, i, p, e, r, m, c, v, t in rows
 ]
 suffix = "_local" if "$LOCAL" == "true" else ""
 out_path = f"results/latest{suffix}.json"
