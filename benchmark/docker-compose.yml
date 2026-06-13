@@ -11,6 +11,7 @@ services:
       - SCALE_MODE=${SCALE_MODE:-false}
       - SOAK_MODE=${SOAK_MODE:-false}
       - REALISTIC_MODE=${REALISTIC_MODE:-false}
+      - STORE_MODE=${STORE_MODE:-jsonl}
       - CONCURRENCY=${CONCURRENCY:-16}
     volumes:
       - ./results:/results

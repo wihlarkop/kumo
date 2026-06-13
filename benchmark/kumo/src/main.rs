@@ -1,4 +1,5 @@
 use kumo::prelude::*;
+use kumo::store::ItemStore;
 use serde::Serialize;
 use std::{
     sync::{
@@ -7,6 +8,43 @@ use std::{
     },
     time::{Duration, Instant},
 };
+
+#[derive(Clone, Copy)]
+enum StoreMode {
+    Jsonl,
+    Noop,
+}
+
+impl StoreMode {
+    fn from_env() -> Result<Self, KumoError> {
+        match std::env::var("STORE_MODE").as_deref() {
+            Ok("noop") => Ok(Self::Noop),
+            Ok("jsonl") | Err(std::env::VarError::NotPresent) => Ok(Self::Jsonl),
+            Ok(value) => Err(KumoError::store_msg(format!(
+                "unsupported benchmark STORE_MODE '{value}'; expected 'jsonl' or 'noop'"
+            ))),
+            Err(error) => Err(KumoError::store_msg(format!(
+                "read benchmark STORE_MODE: {error}"
+            ))),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Jsonl => "jsonl",
+            Self::Noop => "noop",
+        }
+    }
+}
+
+struct NoopStore;
+
+#[async_trait::async_trait]
+impl ItemStore for NoopStore {
+    async fn store(&self, _item: &serde_json::Value) -> Result<(), KumoError> {
+        Ok(())
+    }
+}
 
 #[derive(Debug, Serialize)]
 struct Book {
@@ -219,6 +257,7 @@ async fn main() -> Result<(), KumoError> {
     let scale_mode = std::env::var("SCALE_MODE").is_ok_and(|value| value == "true");
     let soak_mode = std::env::var("SOAK_MODE").is_ok_and(|value| value == "true");
     let realistic_mode = std::env::var("REALISTIC_MODE").is_ok_and(|value| value == "true");
+    let store_mode = StoreMode::from_env()?;
 
     let spider = BooksSpider::new();
     let extraction_operations = Arc::clone(&spider.extraction_operations);
@@ -226,8 +265,11 @@ async fn main() -> Result<(), KumoError> {
     let concurrency_probe = ConcurrencyProbe::default();
     let mut engine = CrawlEngine::builder()
         .concurrency(concurrency)
-        .respect_robots_txt(false)
-        .store(JsonlStore::new("/results/kumo.jsonl")?);
+        .respect_robots_txt(false);
+    engine = match store_mode {
+        StoreMode::Jsonl => engine.store(JsonlStore::new("/results/kumo.jsonl")?),
+        StoreMode::Noop => engine.store(NoopStore),
+    };
     if scale_mode || soak_mode || realistic_mode {
         engine = engine
             .politeness(PolitenessPolicy::new().per_domain_concurrency(concurrency))
@@ -263,6 +305,7 @@ async fn main() -> Result<(), KumoError> {
         "bytes_downloaded": stats.bytes_downloaded,
         "peak_rss_kb": rss_kb,
         "concurrency": concurrency,
+        "store_mode": store_mode.as_str(),
         "peak_in_flight": (scale_mode || realistic_mode).then(|| concurrency_probe.peak()),
         "first_10k_elapsed_s": first_10k_elapsed_s,
         "timings": report_json["timings"].clone(),

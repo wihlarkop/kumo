@@ -10,6 +10,7 @@ mod realistic;
 mod realistic_compare;
 mod scale;
 mod soak;
+mod store;
 
 const METRICS: [(&str, MetricDirection); 3] = [
     ("elapsed_s", MetricDirection::LowerIsBetter),
@@ -321,6 +322,9 @@ fn main() {
     } else if args.first().is_some_and(|arg| arg == "soak") {
         args.remove(0);
         soak::run(args)
+    } else if args.first().is_some_and(|arg| arg == "store") {
+        args.remove(0);
+        store::run(args)
     } else {
         run(args)
     };

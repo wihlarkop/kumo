@@ -43,6 +43,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - Hardened the realistic framework comparison with seeded, position-balanced
   repeated runs, per-sample correctness gates, and median throughput and memory
   reports with min-max ranges.
+- Added a correctness-gated, balanced CI benchmark that isolates JSONL output
+  overhead from fetching, parsing, scheduling, and other crawl work.
 
 ### 0.5.0 - 2026-06-03
 

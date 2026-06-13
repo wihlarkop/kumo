@@ -99,6 +99,23 @@ The report records the seed, execution order, median throughput and RSS, and
 their minimum-to-maximum spread. A seed of zero derives a reproducible value
 from the GitHub workflow run ID.
 
+## Output-Store Overhead Benchmark
+
+The manual `store` workflow mode isolates the cost of Kumo's production
+`JsonlStore`. It runs the same 100,000-item local workload with JSONL output
+and with a benchmark-only no-op store. Each variant runs three times, and the
+execution order alternates to reduce shared-runner position bias.
+
+Every sample must report exactly 100,000 items and 5,000 pages with zero crawl
+errors and zero exhausted retries. JSONL samples must also contain exactly
+100,000 output rows. The report includes median and min-max throughput, elapsed
+time, peak RSS, and cumulative store time.
+
+This benchmark is Kumo-only because it diagnoses an internal hot path rather
+than comparing framework features. A no-op throughput gain of at least 10%
+marks JSONL storage as a material bottleneck. A smaller difference does not
+justify adding asynchronous batching and shutdown complexity.
+
 ## Hardware
 
 - **CPU:** Intel Core i7-9750H @ 2.60 GHz (6 cores / 12 threads)
@@ -144,6 +161,9 @@ cd benchmark
 
 # Correctness-gated, balanced Kumo/Scrapy/Colly comparison
 ./run.sh --realistic-compare --runs=3 --seed=20260614 --concurrency=8
+
+# Kumo-only JSONL versus no-op output-store comparison
+./run.sh --store --concurrency=16
 
 # Custom number of runs
 ./run.sh --runs=5
@@ -213,6 +233,10 @@ mode is manual and has a dedicated 45-minute step timeout. A public 100k-item
 claim requires three consecutive successful large runs with exact counts, zero
 duplicates, bounded RSS growth, and no sustained throughput collapse after the
 first 10,000 items.
+
+For output-store diagnosis, dispatch `store`. The workflow runs all six
+samples, validates their correctness, appends the typed report to the workflow
+summary, and retains raw stats plus JSONL row-count evidence as an artifact.
 
 ### Baseline Policy
 
