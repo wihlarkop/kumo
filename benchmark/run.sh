@@ -10,6 +10,7 @@ SCALE=false
 WORKLOAD=""
 REALISTIC=false
 REALISTIC_COMPARE=false
+STORE_BENCHMARK=false
 CONCURRENCY=16
 SEED=0
 PAGES_OVERRIDE=0
@@ -28,6 +29,7 @@ for arg in "$@"; do
         --large) WORKLOAD="large"; LOCAL=true ;;
         --realistic) REALISTIC=true ;;
         --realistic-compare) REALISTIC_COMPARE=true ;;
+        --store) STORE_BENCHMARK=true; LOCAL=true ;;
     esac
 done
 
@@ -60,6 +62,10 @@ if [[ "$WORKLOAD" == "soak" ]]; then
     ITEMS_PER_PAGE=20
     WORKLOAD_CHAINS=100
 elif [[ "$WORKLOAD" == "large" ]]; then
+    TOTAL_PAGES=5000
+    ITEMS_PER_PAGE=20
+    WORKLOAD_CHAINS=100
+elif $STORE_BENCHMARK; then
     TOTAL_PAGES=5000
     ITEMS_PER_PAGE=20
     WORKLOAD_CHAINS=100
@@ -203,6 +209,68 @@ if $REALISTIC_COMPARE; then
         --output "$result_dir/summary.md" \
         --json-output "$result_dir/summary.json"
     stop_realistic_server
+    exit 0
+fi
+
+if $STORE_BENCHMARK; then
+    echo ""
+    echo "==> Kumo output-store overhead benchmark..."
+    docker compose up -d mockserver
+    trap 'docker compose stop mockserver >/dev/null 2>&1 || true' EXIT
+    sleep 1
+
+    TARGET_URLS=""
+    for chain in $(seq 1 "$WORKLOAD_CHAINS"); do
+        url="http://mockserver/workload/chain-${chain}/page-1.html"
+        TARGET_URLS="${TARGET_URLS:+${TARGET_URLS},}${url}"
+    done
+    export TARGET_URLS
+    export SOAK_MODE=true
+    export CONCURRENCY=$CONCURRENCY
+
+    result_dir="results/store"
+    rm -rf "$result_dir"
+    mkdir -p "$result_dir"
+    expected_items=$((TOTAL_PAGES * ITEMS_PER_PAGE))
+
+    for run in 1 2 3; do
+        if (( run % 2 == 0 )); then
+            variants=(noop jsonl)
+        else
+            variants=(jsonl noop)
+        fi
+        echo ""
+        echo "    run $run/3: ${variants[0]} -> ${variants[1]}"
+
+        for variant in "${variants[@]}"; do
+            export STORE_MODE=$variant
+            rm -f results/kumo.jsonl results/kumo_stats.json
+            docker compose run --rm kumo
+            cp results/kumo_stats.json "$result_dir/${variant}_run${run}_stats.json"
+
+            if [[ "$variant" == "jsonl" ]]; then
+                if [[ ! -f results/kumo.jsonl ]]; then
+                    echo "error: JSONL benchmark did not create results/kumo.jsonl" >&2
+                    exit 1
+                fi
+                wc -l < results/kumo.jsonl | tr -d ' ' \
+                    > "$result_dir/${variant}_run${run}_rows.txt"
+            elif [[ -f results/kumo.jsonl ]]; then
+                echo "error: no-op benchmark unexpectedly created results/kumo.jsonl" >&2
+                exit 1
+            fi
+        done
+    done
+
+    unset STORE_MODE
+    cargo run -p kumo-benchmark-compare -- store \
+        "$result_dir" \
+        "$expected_items" \
+        "$TOTAL_PAGES" \
+        --output "$result_dir/summary.md" \
+        --json-output "$result_dir/summary.json"
+    docker compose stop mockserver
+    trap - EXIT
     exit 0
 fi
 

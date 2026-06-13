@@ -16,6 +16,7 @@ on:
           - large
           - realistic
           - realistic-compare
+          - store
       runs:
         description: Number of runs for local, real, or realistic comparison benchmarks.
         required: true
@@ -120,6 +121,14 @@ jobs:
             --concurrency=${{ inputs.concurrency }}
           cat results/realistic-compare/summary.md >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Run output-store overhead benchmark
+        if: inputs.mode == 'store'
+        working-directory: benchmark
+        timeout-minutes: 45
+        run: |
+          bash run.sh --store --concurrency=${{ inputs.concurrency }}
+          cat results/store/summary.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Compare benchmark results
         if: inputs.mode == 'local' || inputs.mode == 'real'
         run: |
@@ -152,5 +161,6 @@ jobs:
             benchmark/results/realistic/*.json
             benchmark/results/realistic/*.md
             benchmark/results/realistic-compare/
+            benchmark/results/store/
           if-no-files-found: warn
           retention-days: 7
