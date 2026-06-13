@@ -86,13 +86,18 @@ Throughput on shared GitHub runners is informational. Exact crawl, retry, and
 server counters are hard correctness gates.
 
 The `realistic-compare` workflow mode applies the same workload to Kumo,
-Scrapy, and Colly. The server is reset before each framework, and every
-framework must independently produce 4,000 unique items, 200 successful pages,
-24 retries, zero exhausted retries, zero final errors, and exact server status
-counters before timing and memory are compared.
+Scrapy, and Colly three times by default. A seeded framework order is rotated
+between runs so each framework occupies each execution position once. The
+server is reset before every framework, and every individual run must produce
+4,000 unique items, 200 successful pages, 24 retries, zero exhausted retries,
+zero final errors, and exact server status counters before median timing and
+memory are compared.
 
 Colly runs with asynchronous collection enabled so its configured parallelism
 is effective. Scrapy enables its retry middleware only for this benchmark.
+The report records the seed, execution order, median throughput and RSS, and
+their minimum-to-maximum spread. A seed of zero derives a reproducible value
+from the GitHub workflow run ID.
 
 ## Hardware
 
@@ -137,8 +142,8 @@ cd benchmark
 # Kumo-only variable-latency and retry validation
 ./run.sh --realistic --concurrency=8
 
-# Correctness-gated Kumo, Scrapy, and Colly resilience comparison
-./run.sh --realistic-compare --concurrency=8
+# Correctness-gated, balanced Kumo/Scrapy/Colly comparison
+./run.sh --realistic-compare --runs=3 --seed=20260614 --concurrency=8
 
 # Custom number of runs
 ./run.sh --runs=5

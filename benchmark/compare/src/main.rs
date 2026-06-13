@@ -309,6 +309,9 @@ fn main() {
     let result = if args.first().is_some_and(|arg| arg == "realistic") {
         args.remove(0);
         realistic::run(args)
+    } else if args.first().is_some_and(|arg| arg == "realistic-schedule") {
+        args.remove(0);
+        realistic_compare::run_schedule(args)
     } else if args.first().is_some_and(|arg| arg == "realistic-compare") {
         args.remove(0);
         realistic_compare::run(args)

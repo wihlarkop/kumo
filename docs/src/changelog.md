@@ -40,6 +40,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - Added a correctness-gated realistic comparison for Kumo, Scrapy, and Colly,
   with reset failure schedules, equivalent retry limits, multi-start crawling,
   and asynchronous Colly execution.
+- Hardened the realistic framework comparison with seeded, position-balanced
+  repeated runs, per-sample correctness gates, and median throughput and memory
+  reports with min-max ranges.
 
 ### 0.5.0 - 2026-06-03
 
