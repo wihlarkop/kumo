@@ -17,11 +17,15 @@ on:
           - realistic
           - realistic-compare
       runs:
-        description: Number of runs for local or real benchmarks.
+        description: Number of runs for local, real, or realistic comparison benchmarks.
         required: true
         default: "3"
+      seed:
+        description: Realistic comparison order seed; 0 derives one from the workflow run.
+        required: true
+        default: "0"
       concurrency:
-        description: Crawl concurrency for local or real benchmarks.
+        description: Crawl concurrency for local, real, or realistic benchmarks.
         required: true
         default: "16"
       total_pages:
@@ -110,7 +114,10 @@ jobs:
         working-directory: benchmark
         timeout-minutes: 45
         run: |
-          bash run.sh --realistic-compare --concurrency=${{ inputs.concurrency }}
+          bash run.sh --realistic-compare \
+            --runs=${{ inputs.runs }} \
+            --seed=${{ inputs.seed }} \
+            --concurrency=${{ inputs.concurrency }}
           cat results/realistic-compare/summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Compare benchmark results
@@ -144,7 +151,6 @@ jobs:
             benchmark/results/large/*.md
             benchmark/results/realistic/*.json
             benchmark/results/realistic/*.md
-            benchmark/results/realistic-compare/*.json
-            benchmark/results/realistic-compare/*.md
+            benchmark/results/realistic-compare/
           if-no-files-found: warn
           retention-days: 7

@@ -11,6 +11,7 @@ WORKLOAD=""
 REALISTIC=false
 REALISTIC_COMPARE=false
 CONCURRENCY=16
+SEED=0
 PAGES_OVERRIDE=0
 ITEMS_PER_PAGE_OVERRIDE=20
 
@@ -19,6 +20,7 @@ for arg in "$@"; do
         --local) LOCAL=true ;;
         --runs=*) RUNS="${arg#*=}" ;;
         --concurrency=*) CONCURRENCY="${arg#*=}" ;;
+        --seed=*) SEED="${arg#*=}" ;;
         --pages=*) PAGES_OVERRIDE="${arg#*=}" ;;
         --items-per-page=*) ITEMS_PER_PAGE_OVERRIDE="${arg#*=}" ;;
         --scale) SCALE=true; LOCAL=true ;;
@@ -29,8 +31,11 @@ for arg in "$@"; do
     esac
 done
 
-if ! [[ "$PAGES_OVERRIDE" =~ ^[0-9]+$ ]] || ! [[ "$ITEMS_PER_PAGE_OVERRIDE" =~ ^[1-9][0-9]*$ ]]; then
-    echo "error: --pages must be zero or greater and --items-per-page must be positive" >&2
+if ! [[ "$RUNS" =~ ^[1-9][0-9]*$ ]] \
+    || ! [[ "$SEED" =~ ^[0-9]+$ ]] \
+    || ! [[ "$PAGES_OVERRIDE" =~ ^[0-9]+$ ]] \
+    || ! [[ "$ITEMS_PER_PAGE_OVERRIDE" =~ ^[1-9][0-9]*$ ]]; then
+    echo "error: --runs must be positive, --seed and --pages must be zero or greater, and --items-per-page must be positive" >&2
     exit 2
 fi
 
@@ -163,23 +168,36 @@ fi
 
 if $REALISTIC_COMPARE; then
     echo ""
-    echo "==> Realistic framework comparison..."
+    resolved_seed=$SEED
+    if [[ "$resolved_seed" == "0" ]]; then
+        resolved_seed="${GITHUB_RUN_ID:-$(date +%s)}"
+    fi
+    echo "==> Realistic framework comparison ($RUNS runs, seed $resolved_seed)..."
     start_realistic_server
     result_dir="results/realistic-compare"
     rm -rf "$result_dir"
     mkdir -p "$result_dir"
 
-    for svc in kumo scrapy colly; do
+    cargo run -p kumo-benchmark-compare -- realistic-schedule \
+        "$RUNS" "$resolved_seed" \
+        --output "$result_dir/schedule.json" \
+        --order-output "$result_dir/schedule.tsv"
+
+    while read -r run svc1 svc2 svc3; do
+        run_dir="$result_dir/run-$run"
+        mkdir -p "$run_dir"
         echo ""
-        echo "    $svc"
-        curl --fail --silent --request POST http://localhost:18080/__reset >/dev/null
-        rm -f "results/${svc}.jsonl" "results/${svc}_stats.json"
-        docker compose run --rm "$svc"
-        cp "results/${svc}.jsonl" "$result_dir/${svc}.jsonl"
-        cp "results/${svc}_stats.json" "$result_dir/${svc}_stats.json"
-        curl --fail --silent http://localhost:18080/__stats \
-            --output "$result_dir/${svc}_server_stats.json"
-    done
+        echo "    run $run/$RUNS: $svc1 -> $svc2 -> $svc3"
+        for svc in "$svc1" "$svc2" "$svc3"; do
+            curl --fail --silent --request POST http://localhost:18080/__reset >/dev/null
+            rm -f "results/${svc}.jsonl" "results/${svc}_stats.json"
+            docker compose run --rm "$svc"
+            cp "results/${svc}.jsonl" "$run_dir/${svc}.jsonl"
+            cp "results/${svc}_stats.json" "$run_dir/${svc}_stats.json"
+            curl --fail --silent http://localhost:18080/__stats \
+                --output "$run_dir/${svc}_server_stats.json"
+        done
+    done < "$result_dir/schedule.tsv"
 
     cargo run -p kumo-benchmark-compare -- realistic-compare "$result_dir" \
         --output "$result_dir/summary.md" \

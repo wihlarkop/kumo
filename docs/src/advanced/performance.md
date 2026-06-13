@@ -126,10 +126,12 @@ raw framework-overhead comparisons. Shared GitHub runner timing remains
 informational; correctness and retry counters are deterministic release gates.
 
 Use `realistic-compare` when comparing Kumo with Scrapy and Colly. The server
-state is reset before every framework, and the report is rejected unless all
-three frameworks independently satisfy the same item, page, duplicate, retry,
-error, and HTTP status counters. This prevents a fast but incomplete crawl from
-appearing in performance tables.
+state is reset before every framework. The default three-run schedule rotates a
+seeded framework permutation so every framework runs once in each position.
+The report is rejected unless every framework in every run independently
+satisfies the same item, page, duplicate, retry, error, and HTTP status
+counters. Public comparisons should use the reported medians and ranges rather
+than one shared-runner sample.
 
 ## Connection Pool
 
