@@ -183,7 +183,7 @@ if $REALISTIC_COMPARE; then
         --output "$result_dir/schedule.json" \
         --order-output "$result_dir/schedule.tsv"
 
-    while read -r run svc1 svc2 svc3; do
+    while read -r run svc1 svc2 svc3 <&3; do
         run_dir="$result_dir/run-$run"
         mkdir -p "$run_dir"
         echo ""
@@ -191,13 +191,13 @@ if $REALISTIC_COMPARE; then
         for svc in "$svc1" "$svc2" "$svc3"; do
             curl --fail --silent --request POST http://localhost:18080/__reset >/dev/null
             rm -f "results/${svc}.jsonl" "results/${svc}_stats.json"
-            docker compose run --rm "$svc"
+            docker compose run --rm -T "$svc" </dev/null
             cp "results/${svc}.jsonl" "$run_dir/${svc}.jsonl"
             cp "results/${svc}_stats.json" "$run_dir/${svc}_stats.json"
             curl --fail --silent http://localhost:18080/__stats \
                 --output "$run_dir/${svc}_server_stats.json"
         done
-    done < "$result_dir/schedule.tsv"
+    done 3< "$result_dir/schedule.tsv"
 
     cargo run -p kumo-benchmark-compare -- realistic-compare "$result_dir" \
         --output "$result_dir/summary.md" \
