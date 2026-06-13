@@ -1,6 +1,9 @@
 use std::{
     collections::HashMap,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -12,6 +15,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 static REQUEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug)]
+struct RequestUrlMetadata {
+    parsed: Option<url::Url>,
+    domain: Option<String>,
+}
 
 /// A request a spider wants the crawler to schedule.
 ///
@@ -28,6 +37,7 @@ pub struct CrawlRequest {
     meta: HashMap<String, Value>,
     dont_filter: bool,
     dedup_key: Option<String>,
+    url_metadata: Arc<OnceLock<RequestUrlMetadata>>,
 }
 
 impl CrawlRequest {
@@ -42,6 +52,7 @@ impl CrawlRequest {
             meta: HashMap::new(),
             dont_filter: false,
             dedup_key: None,
+            url_metadata: Arc::new(OnceLock::new()),
         }
     }
 
@@ -80,6 +91,28 @@ impl CrawlRequest {
 
     pub(crate) fn dedup_key(&self) -> &str {
         self.dedup_key.as_deref().unwrap_or(&self.url)
+    }
+
+    pub(crate) fn parsed_url(&self) -> Option<&url::Url> {
+        self.url_metadata().parsed.as_ref()
+    }
+
+    pub(crate) fn domain_key(&self) -> Option<&str> {
+        self.url_metadata().domain.as_deref()
+    }
+
+    pub(crate) fn stats_domain(&self) -> &str {
+        self.domain_key().unwrap_or("<unknown>")
+    }
+
+    fn url_metadata(&self) -> &RequestUrlMetadata {
+        self.url_metadata.get_or_init(|| {
+            let parsed = url::Url::parse(&self.url).ok();
+            let domain = parsed
+                .as_ref()
+                .and_then(|url| url.host_str().map(str::to_ascii_lowercase));
+            RequestUrlMetadata { parsed, domain }
+        })
     }
 
     pub fn method(mut self, method: Method) -> Self {
@@ -258,6 +291,7 @@ impl TryFrom<StoredCrawlRequest> for CrawlRequest {
             meta: stored.meta,
             dont_filter: stored.dont_filter,
             dedup_key: stored.dedup_key,
+            url_metadata: Arc::new(OnceLock::new()),
         })
     }
 }

@@ -45,6 +45,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   reports with min-max ranges.
 - Added a correctness-gated, balanced CI benchmark that isolates JSONL output
   overhead from fetching, parsing, scheduling, and other crawl work.
+- Reused lazy request URL and normalized domain metadata across fingerprinting,
+  scheduling, robots handling, allowed-domain filtering, statistics, and
+  lifecycle events.
 
 ### 0.5.0 - 2026-06-03
 

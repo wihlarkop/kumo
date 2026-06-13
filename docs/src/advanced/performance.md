@@ -46,6 +46,17 @@ creating new `Response` values from serialized HTML. `text()`, `attr()`, and
 nested `css()` operate directly on the shared document. `outer_html()` performs
 serialization only when requested and caches the result for that element.
 
+## Request URL Metadata
+
+Kumo parses each immutable `CrawlRequest` URL lazily and shares the resulting
+URL and normalized domain metadata across cloned requests. Fingerprinting,
+politeness scheduling, robots handling, allowed-domain checks, statistics, and
+events reuse that metadata automatically.
+
+No crawler configuration is required. Requests restored from a persistent
+frontier rebuild their metadata lazily, so persisted state remains compatible
+and does not contain derived cache fields.
+
 ## Allocator: jemalloc
 
 For long-running crawls (minutes or longer), replacing the system allocator with [jemalloc](https://github.com/tikv/jemallocator) can improve throughput by reducing allocator fragmentation and contention under concurrent workloads.

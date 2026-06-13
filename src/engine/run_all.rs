@@ -11,7 +11,7 @@ use crate::{
     pipeline::Pipeline,
     request::{CrawlRequest, FrontierRequest},
     scheduler::{CrawlScheduler, SchedulerPoll},
-    stats::{CrawlStats, domain_key},
+    stats::CrawlStats,
 };
 
 use super::{
@@ -108,12 +108,10 @@ impl CrawlEngine {
                 })
                 .await?;
             for url in spider.start_urls() {
-                let domain = domain_key(&url);
+                let request = CrawlRequest::get(url.clone());
+                let domain = request.stats_domain().to_string();
                 let stats = &mut stats_vec[idx];
-                if scheduler
-                    .push_request(CrawlRequest::get(url.clone()), 0)
-                    .await
-                {
+                if scheduler.push_request(request, 0).await {
                     stats.record_scheduled(&domain);
                     observer
                         .notify_with(|| crate::events::CrawlEvent::RequestScheduled {
@@ -183,10 +181,10 @@ impl CrawlEngine {
                             SchedulerPoll::Ready(queued) => {
                                 let queued = *queued;
                                 if let Some(ref cache) = robots_cache
-                                    && !cache.is_allowed(&client, queued.request.url()).await
+                                    && !cache.is_request_allowed(&client, queued.request()).await
                                 {
                                     let url = queued.request.url().to_string();
-                                    let domain = domain_key(&url);
+                                    let domain = queued.request.stats_domain().to_string();
                                     observer
                                         .notify_with(|| crate::events::CrawlEvent::RequestSkipped {
                                             spider: spider.name().to_string(),
@@ -214,10 +212,10 @@ impl CrawlEngine {
                                 }
                                 if let Some(ref cache) = robots_cache
                                     && let Some(delay) =
-                                        cache.crawl_delay(&client, queued.request.url()).await
+                                        cache.request_crawl_delay(&client, queued.request()).await
                                 {
                                     scheduler
-                                        .observe_robots_crawl_delay(queued.request.url(), delay)
+                                        .observe_request_robots_crawl_delay(queued.request(), delay)
                                         .await;
                                 }
                                 let ctx = TaskContext {
@@ -313,8 +311,7 @@ impl CrawlEngine {
                             let (_, scheduler) = &spider_entries[spider_idx];
                             scheduler.finish(&queued).await;
                             let stats = &mut stats_vec[spider_idx];
-                            let completed_domain = domain_key(queued.request.url());
-                            stats.record_completed(&completed_domain);
+                            stats.record_completed(queued.request.stats_domain());
                             stats.pages_crawled += 1;
                             stats.items_scraped += output.item_count;
                             stats.bytes_downloaded += output.bytes_downloaded;
@@ -325,7 +322,7 @@ impl CrawlEngine {
                                 if !budget_reached {
                                     for (follow_request, follow_depth) in output.follows {
                                         if should_enqueue(&follow_request, follow_depth, spider.as_ref()) {
-                                            let domain = domain_key(follow_request.url());
+                                            let domain = follow_request.stats_domain().to_string();
                                             let url = follow_request.url().to_string();
                                             if scheduler.push_request(follow_request, follow_depth).await {
                                                 stats.record_scheduled(&domain);
@@ -355,11 +352,12 @@ impl CrawlEngine {
                                             skip_reason(&follow_request, follow_depth, spider.as_ref())
                                         {
                                             let url = follow_request.url().to_string();
+                                            let domain = follow_request.stats_domain().to_string();
                                             observer
                                                 .notify_with(|| crate::events::CrawlEvent::RequestSkipped {
                                                 spider: spider.name().to_string(),
                                                 spider_index: Some(spider_idx),
-                                                domain: domain_key(&url),
+                                                domain,
                                                 url,
                                                 depth: follow_depth,
                                                 reason,
@@ -381,7 +379,7 @@ impl CrawlEngine {
                             for mw in middleware.iter() {
                                 mw.on_error(&url, &e).await;
                             }
-                            let domain = domain_key(&url);
+                            let domain = queued.request.stats_domain().to_string();
                             let retry_policy_exhausted = retry_policy.max_attempts > 0
                                 && retry_policy.is_retriable(&e)
                                 && queued.retry_count >= retry_policy.max_attempts;
@@ -553,7 +551,7 @@ impl CrawlEngine {
                                 let (_, scheduler) = &spider_entries[spider_idx];
                                 scheduler.finish(&queued).await;
                                 let url = queued.request.url().to_string();
-                                let domain = domain_key(&url);
+                                let domain = queued.request.stats_domain().to_string();
                                 stats_vec[spider_idx].record_error(&domain);
                                 {
                                     let (spider, _) = &spider_entries[spider_idx];
