@@ -17,10 +17,17 @@ struct Book {
 struct BooksSpider {
     start_urls: Vec<String>,
     extraction_operations: Arc<ExtractionOperations>,
+    progress: Arc<CrawlProgress>,
     products: CssSelector,
     titles: CssSelector,
     prices: CssSelector,
     next_page: CssSelector,
+}
+
+struct CrawlProgress {
+    started_at: Instant,
+    items: AtomicU64,
+    first_10k_elapsed_us: AtomicU64,
 }
 
 #[derive(Default)]
@@ -101,6 +108,11 @@ impl BooksSpider {
         Self {
             start_urls,
             extraction_operations: Arc::new(ExtractionOperations::default()),
+            progress: Arc::new(CrawlProgress {
+                started_at: Instant::now(),
+                items: AtomicU64::new(0),
+                first_10k_elapsed_us: AtomicU64::new(0),
+            }),
             products: CssSelector::parse("article.product_pod").expect("valid product selector"),
             titles: CssSelector::parse("h3 a").expect("valid title selector"),
             prices: CssSelector::parse(".price_color").expect("valid price selector"),
@@ -151,6 +163,19 @@ impl Spider for BooksSpider {
                 Book { title, price }
             })
             .collect();
+        let previous = self
+            .progress
+            .items
+            .fetch_add(books.len() as u64, Ordering::Relaxed);
+        if previous < 10_000 && previous + books.len() as u64 >= 10_000 {
+            let elapsed_us = self.progress.started_at.elapsed().as_micros() as u64;
+            let _ = self.progress.first_10k_elapsed_us.compare_exchange(
+                0,
+                elapsed_us,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            );
+        }
 
         self.extraction_operations
             .root_css
@@ -192,15 +217,17 @@ async fn main() -> Result<(), KumoError> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(16);
     let scale_mode = std::env::var("SCALE_MODE").is_ok_and(|value| value == "true");
+    let soak_mode = std::env::var("SOAK_MODE").is_ok_and(|value| value == "true");
 
     let spider = BooksSpider::new();
     let extraction_operations = Arc::clone(&spider.extraction_operations);
+    let progress = Arc::clone(&spider.progress);
     let concurrency_probe = ConcurrencyProbe::default();
     let mut engine = CrawlEngine::builder()
         .concurrency(concurrency)
         .respect_robots_txt(false)
         .store(JsonlStore::new("/results/kumo.jsonl")?);
-    if scale_mode {
+    if scale_mode || soak_mode {
         engine = engine
             .politeness(PolitenessPolicy::new().per_domain_concurrency(concurrency))
             .middleware(concurrency_probe.clone());
@@ -211,15 +238,20 @@ async fn main() -> Result<(), KumoError> {
     let rss_kb = peak_rss_kb();
     let report = CrawlReport::from(stats.clone());
     let report_json = report.to_json_value();
+    let first_10k_elapsed_us = progress.first_10k_elapsed_us.load(Ordering::Relaxed);
+    let first_10k_elapsed_s =
+        (first_10k_elapsed_us > 0).then(|| first_10k_elapsed_us as f64 / 1_000_000.0);
 
     let result = serde_json::json!({
         "framework": "kumo",
         "elapsed_s": (elapsed * 1000.0).round() / 1000.0,
         "items": stats.items_scraped,
         "pages": stats.pages_crawled,
+        "errors": stats.errors,
         "peak_rss_kb": rss_kb,
         "concurrency": concurrency,
         "peak_in_flight": scale_mode.then(|| concurrency_probe.peak()),
+        "first_10k_elapsed_s": first_10k_elapsed_s,
         "timings": report_json["timings"].clone(),
         "extraction_operations": extraction_operations.snapshot(),
         "versions": {

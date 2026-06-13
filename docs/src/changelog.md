@@ -31,6 +31,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - Reworked the scaling benchmark to use independent crawl chains, three-run
   medians, peak in-flight request measurement, and automatic throughput/memory
   saturation reporting across concurrency 1 through 64.
+- Added manual 10,000-item soak and 100,000-item large-crawl benchmark modes
+  with exact page/item validation, duplicate detection, peak RSS reporting,
+  memory per 1,000 items, and first-10k throughput comparison.
 
 ### 0.5.0 - 2026-06-03
 

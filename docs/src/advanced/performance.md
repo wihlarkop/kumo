@@ -89,6 +89,26 @@ exercise concurrency. It runs each level three times and reports median
 throughput, elapsed time, peak RSS, fetch/parse time, and peak requests in
 flight.
 
+## Validate Large Crawls
+
+Use the manual benchmark workflow before making production-scale claims:
+
+| Mode | Pages | Items |
+|---|---:|---:|
+| `soak` | 500 | 10,000 |
+| `large` | 5,000 | 100,000 |
+
+These workloads use 100 independent pagination chains and validate the engine,
+frontier, extraction, and JSONL store together. A run fails on an incorrect
+page count, incorrect item count, duplicate item, malformed JSONL output, or
+unsuccessful crawler process.
+
+The report includes peak RSS and RSS per 1,000 items. It also compares
+throughput for the first 10,000 items with the remaining crawl. Do not treat one
+shared-runner result as a stable memory limit. Establish three consecutive
+successful 100k runs before publishing a large-crawl claim, then use those runs
+to define a bounded RSS envelope.
+
 ## Connection Pool
 
 kumo automatically sets `pool_max_idle_per_host` to match the crawl's concurrency level, keeping connections warm across the full request window. You can tune the underlying `reqwest::Client` further via `.http_client_builder()`:

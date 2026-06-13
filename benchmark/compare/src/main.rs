@@ -7,6 +7,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 mod scale;
+mod soak;
 
 const METRICS: [(&str, MetricDirection); 3] = [
     ("elapsed_s", MetricDirection::LowerIsBetter),
@@ -306,6 +307,9 @@ fn main() {
     let result = if args.first().is_some_and(|arg| arg == "scale") {
         args.remove(0);
         scale::run(args)
+    } else if args.first().is_some_and(|arg| arg == "soak") {
+        args.remove(0);
+        soak::run(args)
     } else {
         run(args)
     };
