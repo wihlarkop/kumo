@@ -6,6 +6,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+mod realistic;
 mod scale;
 mod soak;
 
@@ -304,7 +305,10 @@ fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
 
 fn main() {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
-    let result = if args.first().is_some_and(|arg| arg == "scale") {
+    let result = if args.first().is_some_and(|arg| arg == "realistic") {
+        args.remove(0);
+        realistic::run(args)
+    } else if args.first().is_some_and(|arg| arg == "scale") {
         args.remove(0);
         scale::run(args)
     } else if args.first().is_some_and(|arg| arg == "soak") {

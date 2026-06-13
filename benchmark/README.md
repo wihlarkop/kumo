@@ -65,6 +65,26 @@ The mockserver image accepts `TOTAL_PAGES`, `ITEMS_PER_PAGE`, and
 `WORKLOAD_CHAINS` build arguments. The normal comparison workload remains fixed
 at 50 pages and 1,000 items.
 
+## Realistic Resilience Benchmark
+
+The manual `realistic` workflow mode runs Kumo against a deterministic
+production-like server instead of the zero-latency nginx fixture:
+
+- 200 pages and 4,000 unique items across 20 independent chains
+- 20, 40, 80, and 120 ms response-latency classes
+- 1, 8, 32, and 128 KiB response-payload classes
+- twenty first-attempt HTTP 503 responses
+- four first-attempt HTTP 429 responses with `Retry-After: 0`
+
+Kumo uses `StatusRetry` and a bounded `RetryPolicy`. The typed report
+cross-checks Kumo stats, JSONL rows, and server counters. It fails unless all
+4,000 unique items and 200 pages are recovered with exactly 24 retries, zero
+retry exhaustion, zero final errors, and the expected 200/429/503 status
+counts.
+
+Throughput on shared GitHub runners is informational. Exact crawl, retry, and
+server counters are hard correctness gates.
+
 ## Hardware
 
 - **CPU:** Intel Core i7-9750H @ 2.60 GHz (6 cores / 12 threads)
@@ -104,6 +124,9 @@ cd benchmark
 # Kumo-only correctness and memory validation
 ./run.sh --soak --concurrency=8
 ./run.sh --large --concurrency=8
+
+# Kumo-only variable-latency and retry validation
+./run.sh --realistic --concurrency=8
 
 # Custom number of runs
 ./run.sh --runs=5

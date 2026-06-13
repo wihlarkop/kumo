@@ -5,7 +5,7 @@ use std::{
         Arc,
         atomic::{AtomicU64, AtomicUsize, Ordering},
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 #[derive(Debug, Serialize)]
@@ -218,6 +218,7 @@ async fn main() -> Result<(), KumoError> {
         .unwrap_or(16);
     let scale_mode = std::env::var("SCALE_MODE").is_ok_and(|value| value == "true");
     let soak_mode = std::env::var("SOAK_MODE").is_ok_and(|value| value == "true");
+    let realistic_mode = std::env::var("REALISTIC_MODE").is_ok_and(|value| value == "true");
 
     let spider = BooksSpider::new();
     let extraction_operations = Arc::clone(&spider.extraction_operations);
@@ -227,10 +228,19 @@ async fn main() -> Result<(), KumoError> {
         .concurrency(concurrency)
         .respect_robots_txt(false)
         .store(JsonlStore::new("/results/kumo.jsonl")?);
-    if scale_mode || soak_mode {
+    if scale_mode || soak_mode || realistic_mode {
         engine = engine
             .politeness(PolitenessPolicy::new().per_domain_concurrency(concurrency))
             .middleware(concurrency_probe.clone());
+    }
+    if realistic_mode {
+        engine = engine.middleware(StatusRetry::new()).retry_policy(
+            RetryPolicy::new(2)
+                .base_delay(Duration::from_millis(10))
+                .max_delay(Duration::from_millis(100))
+                .on_status(429)
+                .on_status(503),
+        );
     }
     let stats = engine.run(spider).await?;
 
@@ -248,9 +258,12 @@ async fn main() -> Result<(), KumoError> {
         "items": stats.items_scraped,
         "pages": stats.pages_crawled,
         "errors": stats.errors,
+        "retries": stats.retries,
+        "retry_exhausted": stats.retry_exhausted,
+        "bytes_downloaded": stats.bytes_downloaded,
         "peak_rss_kb": rss_kb,
         "concurrency": concurrency,
-        "peak_in_flight": scale_mode.then(|| concurrency_probe.peak()),
+        "peak_in_flight": (scale_mode || realistic_mode).then(|| concurrency_probe.peak()),
         "first_10k_elapsed_s": first_10k_elapsed_s,
         "timings": report_json["timings"].clone(),
         "extraction_operations": extraction_operations.snapshot(),

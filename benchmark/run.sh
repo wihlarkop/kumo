@@ -8,6 +8,7 @@ RUNS=3
 LOCAL=false
 SCALE=false
 WORKLOAD=""
+REALISTIC=false
 CONCURRENCY=16
 PAGES_OVERRIDE=0
 ITEMS_PER_PAGE_OVERRIDE=20
@@ -22,6 +23,7 @@ for arg in "$@"; do
         --scale) SCALE=true; LOCAL=true ;;
         --soak) WORKLOAD="soak"; LOCAL=true ;;
         --large) WORKLOAD="large"; LOCAL=true ;;
+        --realistic) REALISTIC=true ;;
     esac
 done
 
@@ -105,6 +107,46 @@ if $SCALE; then
     cargo run -p kumo-benchmark-compare -- scale results/scale \
         --output results/scale/summary.md \
         --json-output results/scale/summary.json
+    exit 0
+fi
+
+if $REALISTIC; then
+    echo ""
+    echo "==> Kumo realistic resilience benchmark..."
+    trap 'docker compose stop realisticserver >/dev/null 2>&1 || true' EXIT
+    docker compose up -d realisticserver
+    for _ in $(seq 1 30); do
+        if curl --fail --silent http://localhost:18080/health >/dev/null; then
+            break
+        fi
+        sleep 1
+    done
+    curl --fail --silent http://localhost:18080/health >/dev/null
+
+    TARGET_URLS=""
+    for chain in $(seq 1 20); do
+        url="http://realisticserver/realistic/chain-${chain}/page-1.html"
+        TARGET_URLS="${TARGET_URLS:+${TARGET_URLS},}${url}"
+    done
+    export TARGET_URLS
+    export REALISTIC_MODE=true
+    export CONCURRENCY=$CONCURRENCY
+
+    rm -f results/kumo.jsonl results/kumo_stats.json results/realistic_server_stats.json
+    docker compose run --rm kumo
+    curl --fail --silent http://localhost:18080/__stats \
+        --output results/realistic_server_stats.json
+    mkdir -p results/realistic
+    cargo run -p kumo-benchmark-compare -- realistic \
+        results/kumo_stats.json \
+        results/kumo.jsonl \
+        results/realistic_server_stats.json \
+        --output results/realistic/summary.md \
+        --json-output results/realistic/summary.json
+    cp results/kumo_stats.json results/realistic/kumo_stats.json
+    cp results/realistic_server_stats.json results/realistic/server_stats.json
+    docker compose stop realisticserver
+    trap - EXIT
     exit 0
 fi
 
