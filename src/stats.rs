@@ -149,7 +149,13 @@ impl CrawlStats {
     }
 
     fn domain_mut(&mut self, domain: &str) -> &mut DomainStats {
-        self.domains.entry(domain.to_string()).or_default()
+        if !self.domains.contains_key(domain) {
+            self.domains
+                .insert(domain.to_string(), DomainStats::default());
+        }
+        self.domains
+            .get_mut(domain)
+            .expect("domain stats were inserted before lookup")
     }
 }
 
@@ -314,11 +320,4 @@ fn ratio(numerator: u64, denominator: u64) -> f64 {
     } else {
         0.0
     }
-}
-
-pub(crate) fn domain_key(url: &str) -> String {
-    url::Url::parse(url)
-        .ok()
-        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
-        .unwrap_or_else(|| "<unknown>".to_string())
 }

@@ -116,6 +116,11 @@ than comparing framework features. A no-op throughput gain of at least 10%
 marks JSONL storage as a material bottleneck. A smaller difference does not
 justify adding asynchronous batching and shutdown complexity.
 
+The first CI run measured a 3.2% median throughput difference, so JSONL
+batching was not selected as the next optimization. Request URL parsing was
+profiled next because fingerprinting, scheduling, robots handling, filtering,
+statistics, and events previously parsed the same immutable URL independently.
+
 ## Hardware
 
 - **CPU:** Intel Core i7-9750H @ 2.60 GHz (6 cores / 12 threads)

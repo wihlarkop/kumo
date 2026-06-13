@@ -1,5 +1,4 @@
 mod crawl;
-mod domain;
 mod fingerprint;
 mod policy;
 

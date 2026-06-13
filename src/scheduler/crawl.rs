@@ -12,7 +12,7 @@ use crate::{
     request::{CrawlRequest, FrontierRequest},
 };
 
-use super::{domain::domain_key, fingerprint::FingerprintPolicy, policy::PolitenessPolicy};
+use super::{fingerprint::FingerprintPolicy, policy::PolitenessPolicy};
 
 #[derive(Debug, Default)]
 struct DomainState {
@@ -49,6 +49,18 @@ fn delay_with_jitter(base: Duration, jitter: Option<Duration>) -> Duration {
 
     let extra = rand::rng().random_range(Duration::ZERO..=jitter);
     base.saturating_add(extra)
+}
+
+fn domain_state_mut<'a>(
+    domains: &'a mut HashMap<String, DomainState>,
+    domain: &str,
+) -> &'a mut DomainState {
+    if !domains.contains_key(domain) {
+        domains.insert(domain.to_string(), DomainState::default());
+    }
+    domains
+        .get_mut(domain)
+        .expect("domain state was inserted before lookup")
 }
 
 impl CrawlScheduler {
@@ -110,14 +122,14 @@ impl CrawlScheduler {
     }
 
     pub async fn finish(&self, queued: &FrontierRequest) {
-        let Some(domain) = domain_key(queued.request().url()) else {
+        let Some(domain) = queued.request().domain_key() else {
             return;
         };
 
         let mut domains = self.domains.lock().await;
-        let state = domains.entry(domain.clone()).or_default();
+        let state = domain_state_mut(&mut domains, domain);
         state.in_flight = state.in_flight.saturating_sub(1);
-        let policy_delay = self.policy.policy_for(&domain).delay();
+        let policy_delay = self.policy.policy_for(domain).delay();
         let robots_delay = if self.policy.respects_robots_crawl_delay() {
             state.robots_delay
         } else {
@@ -130,12 +142,22 @@ impl CrawlScheduler {
     }
 
     pub async fn observe_robots_crawl_delay(&self, url: &str, delay: Duration) {
-        let Some(domain) = domain_key(url) else {
+        let request = CrawlRequest::get(url);
+        self.observe_request_robots_crawl_delay(&request, delay)
+            .await;
+    }
+
+    pub(crate) async fn observe_request_robots_crawl_delay(
+        &self,
+        request: &CrawlRequest,
+        delay: Duration,
+    ) {
+        let Some(domain) = request.domain_key() else {
             return;
         };
 
         let mut domains = self.domains.lock().await;
-        let state = domains.entry(domain).or_default();
+        let state = domain_state_mut(&mut domains, domain);
         state.robots_delay = Some(delay);
     }
 
@@ -181,13 +203,13 @@ impl CrawlScheduler {
             return CandidateState::Pending(wait);
         }
 
-        let Some(domain) = domain_key(queued.request().url()) else {
+        let Some(domain) = queued.request().domain_key() else {
             return CandidateState::Ready;
         };
 
         let mut domains = self.domains.lock().await;
-        let state = domains.entry(domain.clone()).or_default();
-        let domain_policy = self.policy.policy_for(&domain);
+        let state = domain_state_mut(&mut domains, domain);
+        let domain_policy = self.policy.policy_for(domain);
 
         if state.in_flight >= domain_policy.concurrency() {
             CandidateState::Pending(Duration::from_millis(10))
@@ -210,10 +232,10 @@ impl CrawlScheduler {
             return request;
         }
 
-        let key = self
-            .fingerprint_policy
-            .fingerprint(request.url())
-            .unwrap_or_else(|_| request.url().to_string());
+        let key = request
+            .parsed_url()
+            .and_then(|url| self.fingerprint_policy.fingerprint_parsed(url).ok())
+            .unwrap_or_else(|| request.url().to_string());
         request.with_dedup_key(key)
     }
 }

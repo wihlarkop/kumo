@@ -6,6 +6,8 @@ use std::{
 use texting_robots::Robot;
 use tokio::sync::Mutex;
 
+use crate::request::CrawlRequest;
+
 const DEFAULT_TTL: Duration = Duration::from_secs(24 * 60 * 60); // 24 hours
 
 #[derive(Clone)]
@@ -126,29 +128,62 @@ impl RobotsCache {
     /// cache until the TTL expires. Returns `true` (allowed) if fetching
     /// robots.txt fails or it is absent.
     pub async fn is_allowed(&self, client: &reqwest::Client, url: &str) -> bool {
-        let Some(entry) = self.entry_for_url(client, url).await else {
+        let Ok(parsed) = url::Url::parse(url) else {
+            return true;
+        };
+        self.is_allowed_parsed(client, &parsed, url).await
+    }
+
+    pub(crate) async fn is_request_allowed(
+        &self,
+        client: &reqwest::Client,
+        request: &CrawlRequest,
+    ) -> bool {
+        let Some(parsed) = request.parsed_url() else {
+            return true;
+        };
+        self.is_allowed_parsed(client, parsed, request.url()).await
+    }
+
+    async fn is_allowed_parsed(
+        &self,
+        client: &reqwest::Client,
+        parsed: &url::Url,
+        raw_url: &str,
+    ) -> bool {
+        let Some(entry) = self.entry_for_parsed_url(client, parsed).await else {
             return true;
         };
         Self::robot_allows(
             &self.user_agent,
             entry.txt.as_deref().map(|s| s.as_str()),
-            url,
+            raw_url,
         )
     }
 
     /// Return this URL's robots.txt `Crawl-delay`, if present for the cache user agent.
     pub async fn crawl_delay(&self, client: &reqwest::Client, url: &str) -> Option<Duration> {
-        self.entry_for_url(client, url)
+        let parsed = url::Url::parse(url).ok()?;
+        self.entry_for_parsed_url(client, &parsed)
             .await
             .and_then(|entry| entry.crawl_delay)
     }
 
-    async fn entry_for_url(&self, client: &reqwest::Client, url: &str) -> Option<CacheEntry> {
-        let parsed = match url::Url::parse(url) {
-            Ok(parsed) => parsed,
-            Err(_) => return None,
-        };
+    pub(crate) async fn request_crawl_delay(
+        &self,
+        client: &reqwest::Client,
+        request: &CrawlRequest,
+    ) -> Option<Duration> {
+        self.entry_for_parsed_url(client, request.parsed_url()?)
+            .await
+            .and_then(|entry| entry.crawl_delay)
+    }
 
+    async fn entry_for_parsed_url(
+        &self,
+        client: &reqwest::Client,
+        parsed: &url::Url,
+    ) -> Option<CacheEntry> {
         let origin = format!("{}://{}", parsed.scheme(), parsed.host_str().unwrap_or(""));
 
         // Return cached result if still fresh.

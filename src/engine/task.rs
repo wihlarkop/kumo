@@ -41,7 +41,7 @@ async fn process_request(
 ) -> Result<RequestTaskOutput, KumoError> {
     let url = queued.request.url();
     let depth = queued.depth;
-    let domain = crate::stats::domain_key(url);
+    let domain = queued.request.stats_domain().to_string();
     let started_at = std::time::Instant::now();
     let mut timings = CrawlTimingStats::default();
 
@@ -216,10 +216,10 @@ pub(super) fn skip_reason(
     if allowed.is_empty() {
         return None;
     }
-    let allowed = url::Url::parse(request.url())
-        .ok()
-        .and_then(|u| u.host_str().map(String::from))
-        .map(|host| allowed.iter().any(|d| host.ends_with(*d)))
+    let allowed = request
+        .parsed_url()
+        .and_then(url::Url::host_str)
+        .map(|host| allowed.iter().any(|domain| host.ends_with(*domain)))
         .unwrap_or(false);
     if allowed {
         None

@@ -20,7 +20,15 @@ impl FingerprintPolicy {
     }
 
     pub fn fingerprint(&self, raw_url: &str) -> Result<String, url::ParseError> {
-        let mut url = url::Url::parse(raw_url)?;
+        let url = url::Url::parse(raw_url)?;
+        self.fingerprint_url(url)
+    }
+
+    pub(crate) fn fingerprint_parsed(&self, parsed: &url::Url) -> Result<String, url::ParseError> {
+        self.fingerprint_url(parsed.clone())
+    }
+
+    fn fingerprint_url(&self, mut url: url::Url) -> Result<String, url::ParseError> {
         if let Some(host) = url.host_str().map(str::to_ascii_lowercase) {
             url.set_host(Some(&host))?;
         }
