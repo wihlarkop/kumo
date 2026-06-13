@@ -24,7 +24,21 @@ class JsonlPipeline:
             "framework": "scrapy",
             "elapsed_s": round(elapsed, 3),
             "items": self.count,
-            "pages": spider.crawler.stats.get_value("response_received_count", 0),
+            "pages": spider.crawler.stats.get_value(
+                "downloader/response_status_count/200",
+                0,
+            ),
+            "errors": spider.crawler.stats.get_value("retry/max_reached", 0)
+            + spider.crawler.stats.get_value("downloader/exception_count", 0),
+            "retries": spider.crawler.stats.get_value("retry/count", 0),
+            "retry_exhausted": spider.crawler.stats.get_value(
+                "retry/max_reached",
+                0,
+            ),
+            "bytes_downloaded": spider.crawler.stats.get_value(
+                "downloader/response_bytes",
+                0,
+            ),
             "downloader_exceptions": spider.crawler.stats.get_value(
                 "downloader/exception_count",
                 0,

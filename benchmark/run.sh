@@ -9,6 +9,7 @@ LOCAL=false
 SCALE=false
 WORKLOAD=""
 REALISTIC=false
+REALISTIC_COMPARE=false
 CONCURRENCY=16
 PAGES_OVERRIDE=0
 ITEMS_PER_PAGE_OVERRIDE=20
@@ -24,6 +25,7 @@ for arg in "$@"; do
         --soak) WORKLOAD="soak"; LOCAL=true ;;
         --large) WORKLOAD="large"; LOCAL=true ;;
         --realistic) REALISTIC=true ;;
+        --realistic-compare) REALISTIC_COMPARE=true ;;
     esac
 done
 
@@ -71,6 +73,32 @@ echo "==> Building images..."
 echo "    KUMO_VERSION=$KUMO_VERSION"
 docker compose build
 
+start_realistic_server() {
+    trap 'docker compose stop realisticserver >/dev/null 2>&1 || true' EXIT
+    docker compose up -d realisticserver
+    for _ in $(seq 1 30); do
+        if curl --fail --silent http://localhost:18080/health >/dev/null; then
+            break
+        fi
+        sleep 1
+    done
+    curl --fail --silent http://localhost:18080/health >/dev/null
+
+    TARGET_URLS=""
+    for chain in $(seq 1 20); do
+        url="http://realisticserver/realistic/chain-${chain}/page-1.html"
+        TARGET_URLS="${TARGET_URLS:+${TARGET_URLS},}${url}"
+    done
+    export TARGET_URLS
+    export REALISTIC_MODE=true
+    export CONCURRENCY=$CONCURRENCY
+}
+
+stop_realistic_server() {
+    docker compose stop realisticserver
+    trap - EXIT
+}
+
 if $SCALE; then
     echo ""
     echo "==> Kumo scaling benchmark (local mock, concurrency: 1 4 8 16 32 64)..."
@@ -113,24 +141,8 @@ fi
 if $REALISTIC; then
     echo ""
     echo "==> Kumo realistic resilience benchmark..."
-    trap 'docker compose stop realisticserver >/dev/null 2>&1 || true' EXIT
-    docker compose up -d realisticserver
-    for _ in $(seq 1 30); do
-        if curl --fail --silent http://localhost:18080/health >/dev/null; then
-            break
-        fi
-        sleep 1
-    done
-    curl --fail --silent http://localhost:18080/health >/dev/null
-
-    TARGET_URLS=""
-    for chain in $(seq 1 20); do
-        url="http://realisticserver/realistic/chain-${chain}/page-1.html"
-        TARGET_URLS="${TARGET_URLS:+${TARGET_URLS},}${url}"
-    done
-    export TARGET_URLS
-    export REALISTIC_MODE=true
-    export CONCURRENCY=$CONCURRENCY
+    start_realistic_server
+    curl --fail --silent --request POST http://localhost:18080/__reset >/dev/null
 
     rm -f results/kumo.jsonl results/kumo_stats.json results/realistic_server_stats.json
     docker compose run --rm kumo
@@ -145,8 +157,34 @@ if $REALISTIC; then
         --json-output results/realistic/summary.json
     cp results/kumo_stats.json results/realistic/kumo_stats.json
     cp results/realistic_server_stats.json results/realistic/server_stats.json
-    docker compose stop realisticserver
-    trap - EXIT
+    stop_realistic_server
+    exit 0
+fi
+
+if $REALISTIC_COMPARE; then
+    echo ""
+    echo "==> Realistic framework comparison..."
+    start_realistic_server
+    result_dir="results/realistic-compare"
+    rm -rf "$result_dir"
+    mkdir -p "$result_dir"
+
+    for svc in kumo scrapy colly; do
+        echo ""
+        echo "    $svc"
+        curl --fail --silent --request POST http://localhost:18080/__reset >/dev/null
+        rm -f "results/${svc}.jsonl" "results/${svc}_stats.json"
+        docker compose run --rm "$svc"
+        cp "results/${svc}.jsonl" "$result_dir/${svc}.jsonl"
+        cp "results/${svc}_stats.json" "$result_dir/${svc}_stats.json"
+        curl --fail --silent http://localhost:18080/__stats \
+            --output "$result_dir/${svc}_server_stats.json"
+    done
+
+    cargo run -p kumo-benchmark-compare -- realistic-compare "$result_dir" \
+        --output "$result_dir/summary.md" \
+        --json-output "$result_dir/summary.json"
+    stop_realistic_server
     exit 0
 fi
 

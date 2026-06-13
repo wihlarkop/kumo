@@ -21,13 +21,17 @@ type Book struct {
 }
 
 type Stats struct {
-	ElapsedS    float64 `json:"elapsed_s"`
-	Items       int     `json:"items"`
-	Pages       int     `json:"pages"`
-	PeakRSSKB   int64   `json:"peak_rss_kb"`
-	Concurrency int     `json:"concurrency"`
-	Framework   string  `json:"framework"`
-	Versions    Versions `json:"versions"`
+	ElapsedS        float64  `json:"elapsed_s"`
+	Items           int      `json:"items"`
+	Pages           int      `json:"pages"`
+	Errors          int      `json:"errors"`
+	Retries         int      `json:"retries"`
+	RetryExhausted  int      `json:"retry_exhausted"`
+	BytesDownloaded int64    `json:"bytes_downloaded"`
+	PeakRSSKB       int64    `json:"peak_rss_kb"`
+	Concurrency     int      `json:"concurrency"`
+	Framework       string   `json:"framework"`
+	Versions        Versions `json:"versions"`
 }
 
 type Versions struct {
@@ -66,10 +70,20 @@ func peakRSSKB() int64 {
 }
 
 func main() {
-	startURL := os.Getenv("TARGET_URL")
-	if startURL == "" {
-		startURL = "https://books.toscrape.com/catalogue/page-1.html"
+	startURLs := []string{}
+	for _, url := range strings.Split(os.Getenv("TARGET_URLS"), ",") {
+		if url != "" {
+			startURLs = append(startURLs, url)
+		}
 	}
+	if len(startURLs) == 0 {
+		startURL := os.Getenv("TARGET_URL")
+		if startURL == "" {
+			startURL = "https://books.toscrape.com/catalogue/page-1.html"
+		}
+		startURLs = append(startURLs, startURL)
+	}
+	realisticMode := os.Getenv("REALISTIC_MODE") == "true"
 
 	concurrency := 16
 	if v := os.Getenv("CONCURRENCY"); v != "" {
@@ -90,8 +104,12 @@ func main() {
 	var mu sync.Mutex
 	itemCount := 0
 	pageCount := 0
+	errorCount := 0
+	retryCount := 0
+	retryExhausted := 0
+	var bytesDownloaded int64
 
-	c := colly.NewCollector()
+	c := colly.NewCollector(colly.Async(true))
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
 		Parallelism: concurrency,
@@ -114,25 +132,61 @@ func main() {
 		e.Request.Visit(e.Attr("href"))
 	})
 
-	c.OnResponse(func(_ *colly.Response) {
+	c.OnResponse(func(response *colly.Response) {
+		if response.StatusCode != 200 {
+			return
+		}
 		mu.Lock()
 		pageCount++
+		bytesDownloaded += int64(len(response.Body))
 		mu.Unlock()
 	})
 
-	c.Visit(startURL)
+	c.OnError(func(response *colly.Response, _ error) {
+		status := response.StatusCode
+		if realisticMode && (status == 429 || status == 503) {
+			attempt, _ := strconv.Atoi(response.Ctx.Get("benchmark_retry_count"))
+			if attempt < 2 {
+				response.Ctx.Put("benchmark_retry_count", strconv.Itoa(attempt+1))
+				mu.Lock()
+				retryCount++
+				mu.Unlock()
+				if err := response.Request.Retry(); err == nil {
+					return
+				}
+			} else {
+				mu.Lock()
+				retryExhausted++
+				mu.Unlock()
+			}
+		}
+		mu.Lock()
+		errorCount++
+		mu.Unlock()
+	})
+
+	for _, startURL := range startURLs {
+		if err := c.Visit(startURL); err != nil {
+			fmt.Fprintln(os.Stderr, "failed to schedule start URL:", err)
+			os.Exit(1)
+		}
+	}
 	c.Wait()
 
 	elapsed := time.Since(start).Seconds()
 	rssKB := peakRSSKB()
 
 	stats := Stats{
-		ElapsedS:    math.Round(elapsed*1000) / 1000,
-		Items:       itemCount,
-		Pages:       pageCount,
-		PeakRSSKB:   rssKB,
-		Concurrency: concurrency,
-		Framework:   "colly",
+		ElapsedS:        math.Round(elapsed*1000) / 1000,
+		Items:           itemCount,
+		Pages:           pageCount,
+		Errors:          errorCount,
+		Retries:         retryCount,
+		RetryExhausted:  retryExhausted,
+		BytesDownloaded: bytesDownloaded,
+		PeakRSSKB:       rssKB,
+		Concurrency:     concurrency,
+		Framework:       "colly",
 		Versions: Versions{
 			Language:  runtime.Version(),
 			Framework: collyVersion(),

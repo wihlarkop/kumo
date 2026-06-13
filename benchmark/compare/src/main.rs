@@ -7,6 +7,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 mod realistic;
+mod realistic_compare;
 mod scale;
 mod soak;
 
@@ -308,6 +309,9 @@ fn main() {
     let result = if args.first().is_some_and(|arg| arg == "realistic") {
         args.remove(0);
         realistic::run(args)
+    } else if args.first().is_some_and(|arg| arg == "realistic-compare") {
+        args.remove(0);
+        realistic_compare::run(args)
     } else if args.first().is_some_and(|arg| arg == "scale") {
         args.remove(0);
         scale::run(args)
