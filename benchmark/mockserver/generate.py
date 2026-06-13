@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Generate 50 pages of books.toscrape.com-compatible HTML for local benchmarking."""
+"""Generate books.toscrape.com-compatible HTML for local benchmarking."""
 
 import os
 
-BOOKS_PER_PAGE = 20
-TOTAL_PAGES = 50
+BOOKS_PER_PAGE = int(os.environ.get("ITEMS_PER_PAGE", "20"))
+CATALOGUE_PAGES = 50
+WORKLOAD_PAGES = int(os.environ.get("TOTAL_PAGES", "50"))
+WORKLOAD_CHAINS = int(os.environ.get("WORKLOAD_CHAINS", "100"))
 
 os.makedirs("html/catalogue", exist_ok=True)
 os.makedirs("html/scale", exist_ok=True)
+os.makedirs("html/workload", exist_ok=True)
 
-for page in range(1, TOTAL_PAGES + 1):
+for page in range(1, CATALOGUE_PAGES + 1):
     books = ""
     for i in range(BOOKS_PER_PAGE):
         n = (page - 1) * BOOKS_PER_PAGE + i + 1
@@ -22,7 +25,7 @@ for page in range(1, TOTAL_PAGES + 1):
     </article>"""
 
     next_link = ""
-    if page < TOTAL_PAGES:
+    if page < CATALOGUE_PAGES:
         next_link = f'<li class="next"><a href="page-{page + 1}.html">next</a></li>'
 
     prev_link = ""
@@ -79,7 +82,45 @@ for chain in range(1, SCALE_CHAINS + 1):
         with open(f"{chain_dir}/page-{page}.html", "w") as f:
             f.write(html)
 
+workload_chains = min(WORKLOAD_CHAINS, WORKLOAD_PAGES)
+base_pages, extra_pages = divmod(WORKLOAD_PAGES, workload_chains)
+next_item = 1
+
+for chain in range(1, workload_chains + 1):
+    pages_in_chain = base_pages + (1 if chain <= extra_pages else 0)
+    chain_dir = f"html/workload/chain-{chain}"
+    os.makedirs(chain_dir, exist_ok=True)
+
+    for page in range(1, pages_in_chain + 1):
+        books = ""
+        for _ in range(BOOKS_PER_PAGE):
+            n = next_item
+            next_item += 1
+            books += f"""
+    <article class="product_pod">
+      <h3><a href="/workload/book-{n}.html" title="Workload Book {n}">Workload Book {n}</a></h3>
+      <p class="price_color">${n}.00</p>
+    </article>"""
+
+        next_link = ""
+        if page < pages_in_chain:
+            next_link = f'<li class="next"><a href="page-{page + 1}.html">next</a></li>'
+
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Workload Chain {chain} Page {page}</title></head>
+<body>
+  <div class="catalogue">{books}
+  </div>
+  <ul class="pager">{next_link}</ul>
+</body>
+</html>
+"""
+        with open(f"{chain_dir}/page-{page}.html", "w") as f:
+            f.write(html)
+
 print(
-    f"Generated {TOTAL_PAGES} comparison pages and "
-    f"{SCALE_CHAINS * SCALE_PAGES_PER_CHAIN} scale pages"
+    f"Generated {CATALOGUE_PAGES} comparison pages and "
+    f"{SCALE_CHAINS * SCALE_PAGES_PER_CHAIN} scale pages and "
+    f"{WORKLOAD_PAGES} workload pages with {BOOKS_PER_PAGE} items each"
 )

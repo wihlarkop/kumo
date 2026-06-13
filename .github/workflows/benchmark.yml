@@ -12,6 +12,8 @@ on:
           - local
           - real
           - scale
+          - soak
+          - large
       runs:
         description: Number of runs for local or real benchmarks.
         required: true
@@ -20,6 +22,14 @@ on:
         description: Crawl concurrency for local or real benchmarks.
         required: true
         default: "16"
+      total_pages:
+        description: Optional soak/large page override; 0 uses the mode default.
+        required: true
+        default: "0"
+      items_per_page:
+        description: Items generated on each soak/large page.
+        required: true
+        default: "20"
 
 permissions:
   contents: read
@@ -43,7 +53,7 @@ jobs:
           docker compose version
 
       - name: Preserve checked-in benchmark baseline
-        if: inputs.mode != 'scale'
+        if: inputs.mode == 'local' || inputs.mode == 'real'
         run: |
           if [ "${{ inputs.mode }}" = "local" ]; then
             cp benchmark/baselines/local.json "$RUNNER_TEMP/benchmark-baseline.json"
@@ -68,8 +78,25 @@ jobs:
           bash run.sh --scale
           cat results/scale/summary.md >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Run 10k-item soak validation
+        if: inputs.mode == 'soak'
+        working-directory: benchmark
+        run: |
+          bash run.sh --soak --concurrency=${{ inputs.concurrency }} \
+            --pages=${{ inputs.total_pages }} --items-per-page=${{ inputs.items_per_page }}
+          cat results/soak/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run 100k-item large-crawl validation
+        if: inputs.mode == 'large'
+        working-directory: benchmark
+        timeout-minutes: 45
+        run: |
+          bash run.sh --large --concurrency=${{ inputs.concurrency }} \
+            --pages=${{ inputs.total_pages }} --items-per-page=${{ inputs.items_per_page }}
+          cat results/large/summary.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Compare benchmark results
-        if: inputs.mode != 'scale'
+        if: inputs.mode == 'local' || inputs.mode == 'real'
         run: |
           if [ "${{ inputs.mode }}" = "local" ]; then
             current="benchmark/results/latest_local.json"
@@ -93,5 +120,9 @@ jobs:
             benchmark/results/*.md
             benchmark/results/scale/*.json
             benchmark/results/scale/*.md
+            benchmark/results/soak/*.json
+            benchmark/results/soak/*.md
+            benchmark/results/large/*.json
+            benchmark/results/large/*.md
           if-no-files-found: warn
           retention-days: 7

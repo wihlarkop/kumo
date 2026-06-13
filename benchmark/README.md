@@ -45,6 +45,26 @@ time, peak RSS, fetch and parse timings, and peak requests in flight. The
 report marks the first level where throughput improves by less than 5% or RSS
 grows by more than 25%.
 
+## Large-Crawl Validation
+
+The manual GitHub `Benchmark` workflow provides two Kumo-only correctness and
+memory workloads:
+
+| Mode | Pages | Items | Crawl shape |
+|---|---:|---:|---|
+| `soak` | 500 | 10,000 | 100 independent chains |
+| `large` | 5,000 | 100,000 | 100 independent chains |
+
+Both modes fail when the crawler reports the wrong item or page count, the
+JSONL output contains missing or duplicate items, or the benchmark process
+fails. Reports include throughput, peak RSS, RSS per 1,000 items, first-10k
+throughput, and throughput after the first 10,000 items. Memory is reported
+without a fixed failure threshold until three successful 100k baselines exist.
+
+The mockserver image accepts `TOTAL_PAGES`, `ITEMS_PER_PAGE`, and
+`WORKLOAD_CHAINS` build arguments. The normal comparison workload remains fixed
+at 50 pages and 1,000 items.
+
 ## Hardware
 
 - **CPU:** Intel Core i7-9750H @ 2.60 GHz (6 cores / 12 threads)
@@ -80,6 +100,10 @@ cd benchmark
 
 # Local mock server (eliminates network noise)
 ./run.sh --local
+
+# Kumo-only correctness and memory validation
+./run.sh --soak --concurrency=8
+./run.sh --large --concurrency=8
 
 # Custom number of runs
 ./run.sh --runs=5
@@ -143,6 +167,12 @@ cargo run -p kumo-benchmark-compare -- scale benchmark/results/scale \
   --output benchmark/results/scale/summary.md \
   --json-output benchmark/results/scale/summary.json
 ```
+
+For large-crawl validation, dispatch `soak` first and then `large`. The large
+mode is manual and has a dedicated 45-minute step timeout. A public 100k-item
+claim requires three consecutive successful large runs with exact counts, zero
+duplicates, bounded RSS growth, and no sustained throughput collapse after the
+first 10,000 items.
 
 ### Baseline Policy
 

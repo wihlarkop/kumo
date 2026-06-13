@@ -7,16 +7,28 @@ cd "$SCRIPT_DIR"
 RUNS=3
 LOCAL=false
 SCALE=false
+WORKLOAD=""
 CONCURRENCY=16
+PAGES_OVERRIDE=0
+ITEMS_PER_PAGE_OVERRIDE=20
 
 for arg in "$@"; do
     case $arg in
         --local) LOCAL=true ;;
         --runs=*) RUNS="${arg#*=}" ;;
         --concurrency=*) CONCURRENCY="${arg#*=}" ;;
+        --pages=*) PAGES_OVERRIDE="${arg#*=}" ;;
+        --items-per-page=*) ITEMS_PER_PAGE_OVERRIDE="${arg#*=}" ;;
         --scale) SCALE=true; LOCAL=true ;;
+        --soak) WORKLOAD="soak"; LOCAL=true ;;
+        --large) WORKLOAD="large"; LOCAL=true ;;
     esac
 done
+
+if ! [[ "$PAGES_OVERRIDE" =~ ^[0-9]+$ ]] || ! [[ "$ITEMS_PER_PAGE_OVERRIDE" =~ ^[1-9][0-9]*$ ]]; then
+    echo "error: --pages must be zero or greater and --items-per-page must be positive" >&2
+    exit 2
+fi
 
 mkdir -p results
 export KUMO_VERSION="$(python - <<'EOF'
@@ -33,6 +45,25 @@ else:
     print("unknown")
 EOF
 )"
+
+if [[ "$WORKLOAD" == "soak" ]]; then
+    TOTAL_PAGES=500
+    ITEMS_PER_PAGE=20
+    WORKLOAD_CHAINS=100
+elif [[ "$WORKLOAD" == "large" ]]; then
+    TOTAL_PAGES=5000
+    ITEMS_PER_PAGE=20
+    WORKLOAD_CHAINS=100
+else
+    TOTAL_PAGES=50
+    ITEMS_PER_PAGE=20
+    WORKLOAD_CHAINS=100
+fi
+if [[ "$PAGES_OVERRIDE" -gt 0 ]]; then
+    TOTAL_PAGES=$PAGES_OVERRIDE
+fi
+ITEMS_PER_PAGE=$ITEMS_PER_PAGE_OVERRIDE
+export TOTAL_PAGES ITEMS_PER_PAGE WORKLOAD_CHAINS
 
 echo "==> Building images..."
 echo "    KUMO_VERSION=$KUMO_VERSION"
@@ -74,6 +105,40 @@ if $SCALE; then
     cargo run -p kumo-benchmark-compare -- scale results/scale \
         --output results/scale/summary.md \
         --json-output results/scale/summary.json
+    exit 0
+fi
+
+if [[ -n "$WORKLOAD" ]]; then
+    echo ""
+    echo "==> Kumo $WORKLOAD validation ($TOTAL_PAGES pages, $ITEMS_PER_PAGE items/page)..."
+    docker compose up -d mockserver
+    sleep 1
+    active_chains=$WORKLOAD_CHAINS
+    if [[ "$TOTAL_PAGES" -lt "$active_chains" ]]; then
+        active_chains=$TOTAL_PAGES
+    fi
+    TARGET_URLS=""
+    for chain in $(seq 1 "$active_chains"); do
+        url="http://mockserver/workload/chain-${chain}/page-1.html"
+        TARGET_URLS="${TARGET_URLS:+${TARGET_URLS},}${url}"
+    done
+    export TARGET_URLS
+    export SOAK_MODE=true
+    export CONCURRENCY=$CONCURRENCY
+    expected_items=$((TOTAL_PAGES * ITEMS_PER_PAGE))
+
+    rm -f results/kumo.jsonl results/kumo_stats.json
+    docker compose run --rm kumo
+    mkdir -p "results/$WORKLOAD"
+    cargo run -p kumo-benchmark-compare -- soak \
+        results/kumo_stats.json \
+        results/kumo.jsonl \
+        "$expected_items" \
+        "$TOTAL_PAGES" \
+        --output "results/$WORKLOAD/summary.md" \
+        --json-output "results/$WORKLOAD/summary.json"
+    cp results/kumo_stats.json "results/$WORKLOAD/kumo_stats.json"
+    docker compose stop mockserver
     exit 0
 fi
 
