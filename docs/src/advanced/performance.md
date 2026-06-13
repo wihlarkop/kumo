@@ -125,6 +125,12 @@ Use this mode for production-behavior regressions. Use the nginx local mode for
 raw framework-overhead comparisons. Shared GitHub runner timing remains
 informational; correctness and retry counters are deterministic release gates.
 
+Use `realistic-compare` when comparing Kumo with Scrapy and Colly. The server
+state is reset before every framework, and the report is rejected unless all
+three frameworks independently satisfy the same item, page, duplicate, retry,
+error, and HTTP status counters. This prevents a fast but incomplete crawl from
+appearing in performance tables.
+
 ## Connection Pool
 
 kumo automatically sets `pool_max_idle_per_host` to match the crawl's concurrency level, keeping connections warm across the full request window. You can tune the underlying `reqwest::Client` further via `.http_client_builder()`:

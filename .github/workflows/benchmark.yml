@@ -15,6 +15,7 @@ on:
           - soak
           - large
           - realistic
+          - realistic-compare
       runs:
         description: Number of runs for local or real benchmarks.
         required: true
@@ -104,6 +105,14 @@ jobs:
           bash run.sh --realistic --concurrency=${{ inputs.concurrency }}
           cat results/realistic/summary.md >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Run realistic framework comparison
+        if: inputs.mode == 'realistic-compare'
+        working-directory: benchmark
+        timeout-minutes: 45
+        run: |
+          bash run.sh --realistic-compare --concurrency=${{ inputs.concurrency }}
+          cat results/realistic-compare/summary.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Compare benchmark results
         if: inputs.mode == 'local' || inputs.mode == 'real'
         run: |
@@ -135,5 +144,7 @@ jobs:
             benchmark/results/large/*.md
             benchmark/results/realistic/*.json
             benchmark/results/realistic/*.md
+            benchmark/results/realistic-compare/*.json
+            benchmark/results/realistic-compare/*.md
           if-no-files-found: warn
           retention-days: 7

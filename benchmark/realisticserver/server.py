@@ -51,6 +51,14 @@ class WorkloadState:
                 "unique_workload_paths": len(self.attempts),
             }
 
+    def reset(self):
+        with self.lock:
+            self.attempts.clear()
+            self.workload_requests = 0
+            self.status_200 = 0
+            self.status_429 = 0
+            self.status_503 = 0
+
 
 STATE = WorkloadState()
 
@@ -138,6 +146,13 @@ class Handler(BaseHTTPRequestHandler):
         body = render_page(chain, page, page_number)
         STATE.record_status(200)
         self.send_body(200, body, "text/html; charset=utf-8")
+
+    def do_POST(self):
+        if self.path == "/__reset":
+            STATE.reset()
+            self.send_body(200, b"reset", "text/plain")
+            return
+        self.send_body(404, b"not found", "text/plain")
 
     def send_body(self, status, body, content_type, headers=None):
         self.send_response(status)

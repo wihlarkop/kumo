@@ -22,6 +22,8 @@ services:
       context: ./scrapy
     environment:
       - TARGET_URL=${TARGET_URL:-https://books.toscrape.com/catalogue/page-1.html}
+      - TARGET_URLS=${TARGET_URLS:-}
+      - REALISTIC_MODE=${REALISTIC_MODE:-false}
       - CONCURRENCY=${CONCURRENCY:-16}
     volumes:
       - ./results:/results
@@ -33,6 +35,8 @@ services:
       context: ./colly
     environment:
       - TARGET_URL=${TARGET_URL:-https://books.toscrape.com/catalogue/page-1.html}
+      - TARGET_URLS=${TARGET_URLS:-}
+      - REALISTIC_MODE=${REALISTIC_MODE:-false}
       - CONCURRENCY=${CONCURRENCY:-16}
     volumes:
       - ./results:/results

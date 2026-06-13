@@ -37,6 +37,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - Added a deterministic realistic resilience benchmark with variable latency,
   variable response sizes, recoverable HTTP 429/503 responses, and typed
   cross-validation of crawl output, retry stats, and server counters.
+- Added a correctness-gated realistic comparison for Kumo, Scrapy, and Colly,
+  with reset failure schedules, equivalent retry limits, multi-start crawling,
+  and asynchronous Colly execution.
 
 ### 0.5.0 - 2026-06-03
 
