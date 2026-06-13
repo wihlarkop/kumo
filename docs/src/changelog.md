@@ -28,6 +28,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - Added reusable `CssSelector` values plus `Response::css_with(...)` and
   `Element::css_with(...)` for hot loops that need to bypass repeated global
   selector-cache lookups while preserving the existing `css(&str)` API.
+- Reworked the scaling benchmark to use independent crawl chains, three-run
+  medians, peak in-flight request measurement, and automatic throughput/memory
+  saturation reporting across concurrency 1 through 64.
 
 ### 0.5.0 - 2026-06-03
 

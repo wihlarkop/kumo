@@ -64,7 +64,9 @@ jobs:
       - name: Run scaling benchmark
         if: inputs.mode == 'scale'
         working-directory: benchmark
-        run: bash run.sh --scale
+        run: |
+          bash run.sh --scale
+          cat results/scale/summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Compare benchmark results
         if: inputs.mode != 'scale'
@@ -90,5 +92,6 @@ jobs:
             benchmark/results/*.json
             benchmark/results/*.md
             benchmark/results/scale/*.json
+            benchmark/results/scale/*.md
           if-no-files-found: warn
           retention-days: 7

@@ -6,6 +6,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+mod scale;
+
 const METRICS: [(&str, MetricDirection); 3] = [
     ("elapsed_s", MetricDirection::LowerIsBetter),
     ("items_per_s", MetricDirection::HigherIsBetter),
@@ -279,8 +281,8 @@ fn write_output(path: &Path, contents: &str) -> Result<(), String> {
     fs::write(path, contents).map_err(|error| format!("write {}: {error}", path.display()))
 }
 
-fn run() -> Result<(), String> {
-    let args = parse_args(env::args().skip(1))?;
+fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
+    let args = parse_args(args)?;
     let report = compare(
         &load_results(&args.baseline)?,
         &load_results(&args.current)?,
@@ -300,7 +302,14 @@ fn run() -> Result<(), String> {
 }
 
 fn main() {
-    if let Err(error) = run() {
+    let mut args = env::args().skip(1).collect::<Vec<_>>();
+    let result = if args.first().is_some_and(|arg| arg == "scale") {
+        args.remove(0);
+        scale::run(args)
+    } else {
+        run(args)
+    };
+    if let Err(error) = result {
         eprintln!("error: {error}");
         std::process::exit(2);
     }

@@ -7,6 +7,8 @@ services:
         KUMO_VERSION: ${KUMO_VERSION:-unknown}
     environment:
       - TARGET_URL=${TARGET_URL:-https://books.toscrape.com/catalogue/page-1.html}
+      - TARGET_URLS=${TARGET_URLS:-}
+      - SCALE_MODE=${SCALE_MODE:-false}
       - CONCURRENCY=${CONCURRENCY:-16}
     volumes:
       - ./results:/results

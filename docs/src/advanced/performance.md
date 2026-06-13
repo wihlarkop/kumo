@@ -82,6 +82,13 @@ CrawlEngine::builder()
     .await?;
 ```
 
+Use the manually dispatched `Benchmark` workflow in `scale` mode to measure
+Kumo at concurrency `1`, `4`, `8`, `16`, `32`, and `64`. Scale mode uses 64
+independent pagination chains so the frontier contains enough runnable work to
+exercise concurrency. It runs each level three times and reports median
+throughput, elapsed time, peak RSS, fetch/parse time, and peak requests in
+flight.
+
 ## Connection Pool
 
 kumo automatically sets `pool_max_idle_per_host` to match the crawl's concurrency level, keeping connections warm across the full request window. You can tune the underlying `reqwest::Client` further via `.http_client_builder()`:
