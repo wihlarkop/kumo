@@ -14,6 +14,7 @@ on:
           - scale
           - soak
           - large
+          - realistic
       runs:
         description: Number of runs for local or real benchmarks.
         required: true
@@ -95,6 +96,14 @@ jobs:
             --pages=${{ inputs.total_pages }} --items-per-page=${{ inputs.items_per_page }}
           cat results/large/summary.md >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Run realistic resilience benchmark
+        if: inputs.mode == 'realistic'
+        working-directory: benchmark
+        timeout-minutes: 45
+        run: |
+          bash run.sh --realistic --concurrency=${{ inputs.concurrency }}
+          cat results/realistic/summary.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Compare benchmark results
         if: inputs.mode == 'local' || inputs.mode == 'real'
         run: |
@@ -124,5 +133,7 @@ jobs:
             benchmark/results/soak/*.md
             benchmark/results/large/*.json
             benchmark/results/large/*.md
+            benchmark/results/realistic/*.json
+            benchmark/results/realistic/*.md
           if-no-files-found: warn
           retention-days: 7

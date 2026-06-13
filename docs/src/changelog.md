@@ -34,6 +34,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - Added manual 10,000-item soak and 100,000-item large-crawl benchmark modes
   with exact page/item validation, duplicate detection, peak RSS reporting,
   memory per 1,000 items, and first-10k throughput comparison.
+- Added a deterministic realistic resilience benchmark with variable latency,
+  variable response sizes, recoverable HTTP 429/503 responses, and typed
+  cross-validation of crawl output, retry stats, and server counters.
 
 ### 0.5.0 - 2026-06-03
 

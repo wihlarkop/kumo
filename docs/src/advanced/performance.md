@@ -109,6 +109,22 @@ shared-runner result as a stable memory limit. Establish three consecutive
 successful 100k runs before publishing a large-crawl claim, then use those runs
 to define a bounded RSS envelope.
 
+## Validate Retry Resilience
+
+The manual `Benchmark` workflow's `realistic` mode exercises Kumo against a
+deterministic server with variable 20-120 ms latency, 1-128 KiB response
+payloads, and first-attempt HTTP 429/503 failures.
+
+The workload contains 200 pages and 4,000 unique items over 20 independent
+pagination chains. Kumo must recover exactly 24 transient failures with no
+exhausted retries or final crawl errors. The report cross-checks crawler output
+with server-side request and status counters, so a green result proves both
+correct retry behavior and complete extraction.
+
+Use this mode for production-behavior regressions. Use the nginx local mode for
+raw framework-overhead comparisons. Shared GitHub runner timing remains
+informational; correctness and retry counters are deterministic release gates.
+
 ## Connection Pool
 
 kumo automatically sets `pool_max_idle_per_host` to match the crawl's concurrency level, keeping connections warm across the full request window. You can tune the underlying `reqwest::Client` further via `.http_client_builder()`:
