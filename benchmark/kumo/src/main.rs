@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::Instant,
 };
@@ -15,7 +15,7 @@ struct Book {
 }
 
 struct BooksSpider {
-    start_url: String,
+    start_urls: Vec<String>,
     extraction_operations: Arc<ExtractionOperations>,
     products: CssSelector,
     titles: CssSelector,
@@ -39,6 +39,37 @@ struct ExtractionOperationCounts {
     attr: u64,
 }
 
+#[derive(Clone, Default)]
+struct ConcurrencyProbe {
+    state: Arc<ConcurrencyProbeState>,
+}
+
+#[derive(Default)]
+struct ConcurrencyProbeState {
+    active: AtomicUsize,
+    peak: AtomicUsize,
+}
+
+impl ConcurrencyProbe {
+    fn peak(&self) -> usize {
+        self.state.peak.load(Ordering::Relaxed)
+    }
+}
+
+#[async_trait::async_trait]
+impl Middleware for ConcurrencyProbe {
+    async fn before_request(&self, _request: &mut FetchRequest) -> Result<(), KumoError> {
+        let active = self.state.active.fetch_add(1, Ordering::Relaxed) + 1;
+        self.state.peak.fetch_max(active, Ordering::Relaxed);
+        Ok(())
+    }
+
+    async fn after_response(&self, _response: &mut Response) -> Result<(), KumoError> {
+        self.state.active.fetch_sub(1, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
 impl ExtractionOperations {
     fn snapshot(&self) -> ExtractionOperationCounts {
         ExtractionOperationCounts {
@@ -52,9 +83,23 @@ impl ExtractionOperations {
 
 impl BooksSpider {
     fn new() -> Self {
+        let start_urls =
+            std::env::var("TARGET_URLS")
+                .ok()
+                .map(|urls| {
+                    urls.split(',')
+                        .filter(|url| !url.is_empty())
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                })
+                .filter(|urls| !urls.is_empty())
+                .unwrap_or_else(|| {
+                    vec![std::env::var("TARGET_URL").unwrap_or_else(|_| {
+                        "https://books.toscrape.com/catalogue/page-1.html".into()
+                    })]
+                });
         Self {
-            start_url: std::env::var("TARGET_URL")
-                .unwrap_or_else(|_| "https://books.toscrape.com/catalogue/page-1.html".into()),
+            start_urls,
             extraction_operations: Arc::new(ExtractionOperations::default()),
             products: CssSelector::parse("article.product_pod").expect("valid product selector"),
             titles: CssSelector::parse("h3 a").expect("valid title selector"),
@@ -73,7 +118,7 @@ impl Spider for BooksSpider {
     }
 
     fn start_urls(&self) -> Vec<String> {
-        vec![self.start_url.clone()]
+        self.start_urls.clone()
     }
 
     async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
@@ -146,15 +191,21 @@ async fn main() -> Result<(), KumoError> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(16);
+    let scale_mode = std::env::var("SCALE_MODE").is_ok_and(|value| value == "true");
 
     let spider = BooksSpider::new();
     let extraction_operations = Arc::clone(&spider.extraction_operations);
-    let stats = CrawlEngine::builder()
+    let concurrency_probe = ConcurrencyProbe::default();
+    let mut engine = CrawlEngine::builder()
         .concurrency(concurrency)
         .respect_robots_txt(false)
-        .store(JsonlStore::new("/results/kumo.jsonl")?)
-        .run(spider)
-        .await?;
+        .store(JsonlStore::new("/results/kumo.jsonl")?);
+    if scale_mode {
+        engine = engine
+            .politeness(PolitenessPolicy::new().per_domain_concurrency(concurrency))
+            .middleware(concurrency_probe.clone());
+    }
+    let stats = engine.run(spider).await?;
 
     let elapsed = start.elapsed().as_secs_f64();
     let rss_kb = peak_rss_kb();
@@ -168,6 +219,7 @@ async fn main() -> Result<(), KumoError> {
         "pages": stats.pages_crawled,
         "peak_rss_kb": rss_kb,
         "concurrency": concurrency,
+        "peak_in_flight": scale_mode.then(|| concurrency_probe.peak()),
         "timings": report_json["timings"].clone(),
         "extraction_operations": extraction_operations.snapshot(),
         "versions": {

@@ -32,18 +32,18 @@ Network removed; this measures raw framework throughput (parsing, routing, concu
 
 ## Scaling Results — Local Mock Server
 
-How throughput (items/s) scales with concurrency. 1 run per level, local mock server:
+The previous scale table used one serial pagination chain, which did not keep
+multiple requests runnable and therefore could not measure scheduler scaling.
+It has been removed.
 
-| Concurrency | **kumo** | Colly (Go) | Scrapy (Python) |
-|------------:|--------:|-----------:|----------------:|
-| 16 | **4 831** | 3 937 | 181 |
-| 32 | **11 765** | 4 608 | 177 |
-| 64 | **12 048** | 4 237 | 181 |
-| 128 | **12 987** | 3 891 | 181 |
+The current `scale` workflow is Kumo-specific and uses 64 independent
+pagination chains, four pages per chain, for 5,120 items. It measures
+concurrency `1`, `4`, `8`, `16`, `32`, and `64`, with three runs per level.
 
-- kumo scales **2.7× from 16→32** then plateaus near nginx's static-file serving ceiling (~13 000 items/s)
-- Colly plateaus at ~4 000–4 600 items/s regardless of concurrency — goroutine scheduling overhead limits further gain
-- Scrapy is flat at ~180 items/s across all levels — the Python GIL prevents true parallel I/O beyond a narrow window
+The uploaded `summary.json` and `summary.md` report median throughput, elapsed
+time, peak RSS, fetch and parse timings, and peak requests in flight. The
+report marks the first level where throughput improves by less than 5% or RSS
+grows by more than 25%.
 
 ## Hardware
 
@@ -134,6 +134,15 @@ GitHub's manual `Benchmark` workflow runs this comparison after local or
 real-site benchmarks, adds the Markdown report to the workflow summary, and
 uploads both report formats with the raw results. Comparisons are informational:
 shared CI runner noise must not automatically block a merge or release.
+
+For scheduler scaling, dispatch the workflow in `scale` mode. The typed
+reporter reads the three raw Kumo results for every concurrency level:
+
+```bash
+cargo run -p kumo-benchmark-compare -- scale benchmark/results/scale \
+  --output benchmark/results/scale/summary.md \
+  --json-output benchmark/results/scale/summary.json
+```
 
 ### Baseline Policy
 
