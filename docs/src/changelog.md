@@ -56,9 +56,6 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   `O(log n)`.
 - Added a CI-only frontier benchmark for 100-request and 10,000-request
   push/drain workloads.
-- Avoided an eager frontier length lookup for immediately runnable scheduler
-  requests while preserving complete candidate scans for delayed or
-  domain-blocked work.
 - Added a CI-only scheduler benchmark for complete 100-request and
   10,000-request push, dispatch, and finish lifecycles.
 

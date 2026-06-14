@@ -137,12 +137,6 @@ to define a bounded RSS envelope.
 pop operations are `O(log n)`, including when many requests are waiting at
 once. Equal-priority requests still preserve FIFO order.
 
-The crawl scheduler pops and classifies the highest-priority request before
-querying the remaining queue length. Immediately runnable requests therefore
-avoid an extra frontier lookup. If that request is delayed or domain-blocked,
-the scheduler still scans the remaining queued candidates once so unrelated
-ready work can proceed.
-
 Use the manual `Benchmark` workflow's `frontier` mode to measure isolated
 100-request and 10,000-request push/drain batches. This benchmark bypasses
 deduplication so Bloom-filter false positives cannot affect the measured queue
