@@ -48,6 +48,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - Reused lazy request URL and normalized domain metadata across fingerprinting,
   scheduling, robots handling, allowed-domain filtering, statistics, and
   lifecycle events.
+- Removed a redundant frontier-request clone from every dispatched task and
+  deferred event-only request string allocations when events and hooks are
+  disabled.
 
 ### 0.5.0 - 2026-06-03
 

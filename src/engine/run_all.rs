@@ -231,8 +231,7 @@ impl CrawlEngine {
                                 let task_queued = queued.clone();
                                 let task_id = join_set
                                     .spawn(async move {
-                                        let result =
-                                            process_request_once(task_queued.clone(), ctx).await;
+                                        let result = process_request_once(&task_queued, &ctx).await;
                                         (idx, task_queued, result)
                                     })
                                     .id();
@@ -323,14 +322,18 @@ impl CrawlEngine {
                                     for (follow_request, follow_depth) in output.follows {
                                         if should_enqueue(&follow_request, follow_depth, spider.as_ref()) {
                                             let domain = follow_request.stats_domain().to_string();
-                                            let url = follow_request.url().to_string();
+                                            let event_url = observer
+                                                .is_enabled()
+                                                .then(|| follow_request.url().to_string());
                                             if scheduler.push_request(follow_request, follow_depth).await {
                                                 stats.record_scheduled(&domain);
                                                 observer
                                                     .notify_with(|| crate::events::CrawlEvent::RequestScheduled {
                                                         spider: spider.name().to_string(),
                                                         spider_index: Some(spider_idx),
-                                                        url,
+                                                        url: event_url.expect(
+                                                            "enabled observer has a request URL",
+                                                        ),
                                                         domain,
                                                         depth: follow_depth,
                                                     })
@@ -341,7 +344,9 @@ impl CrawlEngine {
                                                     .notify_with(|| crate::events::CrawlEvent::RequestSkipped {
                                                         spider: spider.name().to_string(),
                                                         spider_index: Some(spider_idx),
-                                                        url,
+                                                        url: event_url.expect(
+                                                            "enabled observer has a request URL",
+                                                        ),
                                                         domain,
                                                         depth: follow_depth,
                                                         reason: crate::events::RequestSkipReason::Duplicate,
@@ -351,14 +356,12 @@ impl CrawlEngine {
                                         } else if let Some(reason) =
                                             skip_reason(&follow_request, follow_depth, spider.as_ref())
                                         {
-                                            let url = follow_request.url().to_string();
-                                            let domain = follow_request.stats_domain().to_string();
                                             observer
                                                 .notify_with(|| crate::events::CrawlEvent::RequestSkipped {
                                                 spider: spider.name().to_string(),
                                                 spider_index: Some(spider_idx),
-                                                domain,
-                                                url,
+                                                domain: follow_request.stats_domain().to_string(),
+                                                url: follow_request.url().to_string(),
                                                 depth: follow_depth,
                                                 reason,
                                             })
@@ -550,21 +553,18 @@ impl CrawlEngine {
                             if let Some((spider_idx, queued)) = task_context.remove(&join_err.id()) {
                                 let (_, scheduler) = &spider_entries[spider_idx];
                                 scheduler.finish(&queued).await;
-                                let url = queued.request.url().to_string();
-                                let domain = queued.request.stats_domain().to_string();
-                                stats_vec[spider_idx].record_error(&domain);
-                                {
-                                    let (spider, _) = &spider_entries[spider_idx];
-                                    observer
-                                        .notify_with(|| crate::events::CrawlEvent::TaskPanicked {
+                                stats_vec[spider_idx]
+                                    .record_error(queued.request.stats_domain());
+                                let (spider, _) = &spider_entries[spider_idx];
+                                observer
+                                    .notify_with(|| crate::events::CrawlEvent::TaskPanicked {
                                         spider: spider.name().to_string(),
                                         spider_index: Some(spider_idx),
-                                        domain: Some(domain),
-                                        url: Some(url),
+                                        domain: Some(queued.request.stats_domain().to_string()),
+                                        url: Some(queued.request.url().to_string()),
                                         depth: Some(queued.depth),
                                     })
-                                        .await?;
-                                }
+                                    .await?;
                                 budgets.mark_if_reached(&mut stats_vec[spider_idx], start);
                             }
                             error!(

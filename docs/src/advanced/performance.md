@@ -57,6 +57,17 @@ No crawler configuration is required. Requests restored from a persistent
 frontier rebuild their metadata lazily, so persisted state remains compatible
 and does not contain derived cache fields.
 
+## Request Task Ownership
+
+Kumo's engine keeps one frontier-record copy for task panic recovery while the
+spawned task borrows its own record during fetching and parsing. This avoids an
+additional request clone for every dispatched page without weakening scheduler
+cleanup after a task panic.
+
+Lifecycle event URL and domain strings are also created lazily. Crawls that do
+not configure an event receiver or hook avoid those event payload allocations
+automatically; enabling events or hooks preserves the same owned event values.
+
 ## Allocator: jemalloc
 
 For long-running crawls (minutes or longer), replacing the system allocator with [jemalloc](https://github.com/tikv/jemallocator) can improve throughput by reducing allocator fragmentation and contention under concurrent workloads.

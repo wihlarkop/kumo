@@ -41,7 +41,7 @@ async fn process_request(
 ) -> Result<RequestTaskOutput, KumoError> {
     let url = queued.request.url();
     let depth = queued.depth;
-    let domain = queued.request.stats_domain().to_string();
+    let domain = queued.request.stats_domain();
     let started_at = std::time::Instant::now();
     let mut timings = CrawlTimingStats::default();
 
@@ -50,7 +50,7 @@ async fn process_request(
             spider: ctx.spider.name().to_string(),
             spider_index: ctx.spider_index,
             url: url.to_string(),
-            domain: domain.clone(),
+            domain: domain.to_string(),
             depth,
             attempt: queued.retry_count,
         })
@@ -179,7 +179,7 @@ async fn process_request(
             spider: ctx.spider.name().to_string(),
             spider_index: ctx.spider_index,
             url: url.to_string(),
-            domain,
+            domain: domain.to_string(),
             depth,
             attempt: queued.retry_count,
             status: response.status(),
@@ -198,10 +198,10 @@ async fn process_request(
 }
 
 pub(super) async fn process_request_once(
-    queued: FrontierRequest,
-    ctx: TaskContext,
+    queued: &FrontierRequest,
+    ctx: &TaskContext,
 ) -> Result<RequestTaskOutput, KumoError> {
-    process_request(&queued, &ctx).await
+    process_request(queued, ctx).await
 }
 
 pub(super) fn skip_reason(
