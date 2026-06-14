@@ -16,7 +16,9 @@ The default setup works without configuration.
 
 The default frontier is held in RAM and is lost when the process exits.
 It supports `CrawlRequest` priority scheduling: higher priority requests are
-fetched first, and requests with equal priority keep FIFO order.
+fetched first, and requests with equal priority keep FIFO order. Its heap-backed
+queue keeps insertion and removal at `O(log n)`, so large pending queues do not
+degrade into repeated linear scans.
 
 ```rust
 CrawlEngine::builder()

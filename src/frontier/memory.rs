@@ -1,12 +1,41 @@
 use super::Frontier;
 use crate::request::{CrawlRequest, FrontierRequest};
 use bloomfilter::Bloom;
-use std::collections::VecDeque;
+use std::{cmp::Ordering, collections::BinaryHeap};
 use tokio::sync::Mutex;
+
+struct MemoryQueueEntry {
+    queued: FrontierRequest,
+}
+
+impl PartialEq for MemoryQueueEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.queued.request.priority_value() == other.queued.request.priority_value()
+            && self.queued.sequence == other.queued.sequence
+    }
+}
+
+impl Eq for MemoryQueueEntry {}
+
+impl PartialOrd for MemoryQueueEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MemoryQueueEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.queued
+            .request
+            .priority_value()
+            .cmp(&other.queued.request.priority_value())
+            .then_with(|| other.queued.sequence.cmp(&self.queued.sequence))
+    }
+}
 
 /// In-memory frontier: a priority queue + Bloom filter for O(1) URL deduplication.
 pub struct MemoryFrontier {
-    queue: Mutex<VecDeque<FrontierRequest>>,
+    queue: Mutex<BinaryHeap<MemoryQueueEntry>>,
     seen: Mutex<Bloom<String>>,
 }
 
@@ -20,7 +49,7 @@ impl MemoryFrontier {
     /// custom `Frontier` implementation.
     pub fn new(expected_urls: usize) -> Self {
         Self {
-            queue: Mutex::new(VecDeque::new()),
+            queue: Mutex::new(BinaryHeap::new()),
             seen: Mutex::new(
                 Bloom::new_for_fp_rate(expected_urls, 0.001)
                     .expect("valid bloom filter parameters"),
@@ -70,30 +99,18 @@ impl Frontier for MemoryFrontier {
             seen.set(&seen_key);
         }
         drop(seen);
-        self.queue
-            .lock()
-            .await
-            .push_back(FrontierRequest::new(request, depth, 0));
+        self.queue.lock().await.push(MemoryQueueEntry {
+            queued: FrontierRequest::new(request, depth, 0),
+        });
         true
     }
 
     async fn push_request_force(&self, queued: FrontierRequest) {
-        self.queue.lock().await.push_back(queued);
+        self.queue.lock().await.push(MemoryQueueEntry { queued });
     }
 
     async fn pop_request(&self) -> Option<FrontierRequest> {
-        let mut queue = self.queue.lock().await;
-        let best_idx = queue
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| {
-                a.request
-                    .priority_value()
-                    .cmp(&b.request.priority_value())
-                    .then_with(|| b.sequence.cmp(&a.sequence))
-            })
-            .map(|(idx, _)| idx)?;
-        queue.remove(best_idx)
+        self.queue.lock().await.pop().map(|entry| entry.queued)
     }
 
     async fn len(&self) -> usize {
