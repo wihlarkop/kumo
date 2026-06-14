@@ -79,9 +79,12 @@ impl PolitenessPolicy {
     }
 
     pub fn policy_for(&self, domain: &str) -> &DomainPolicy {
-        self.domains
-            .get(&domain.to_ascii_lowercase())
-            .unwrap_or(&self.default)
+        let domain = domain.to_ascii_lowercase();
+        self.policy_for_normalized(&domain)
+    }
+
+    pub(crate) fn policy_for_normalized(&self, domain: &str) -> &DomainPolicy {
+        self.domains.get(domain).unwrap_or(&self.default)
     }
 
     pub fn default_per_domain_concurrency(&self) -> usize {

@@ -58,6 +58,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   push/drain workloads.
 - Added a CI-only scheduler benchmark for complete 100-request and
   10,000-request push, dispatch, and finish lifecycles.
+- Reduced scheduler domain bookkeeping overhead with short synchronous state
+  locks, entry-based state insertion, and allocation-free policy lookups for
+  normalized request domains.
 
 ### 0.5.0 - 2026-06-03
 

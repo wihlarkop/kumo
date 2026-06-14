@@ -1,11 +1,10 @@
 use std::{
     collections::HashMap,
-    sync::Arc,
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
     time::{Duration, Instant},
 };
 
 use rand::Rng;
-use tokio::sync::Mutex;
 
 use crate::{
     frontier::Frontier,
@@ -55,12 +54,13 @@ fn domain_state_mut<'a>(
     domains: &'a mut HashMap<String, DomainState>,
     domain: &str,
 ) -> &'a mut DomainState {
-    if !domains.contains_key(domain) {
-        domains.insert(domain.to_string(), DomainState::default());
-    }
-    domains
-        .get_mut(domain)
-        .expect("domain state was inserted before lookup")
+    domains.entry(domain.to_string()).or_default()
+}
+
+fn lock_domains(
+    domains: &Mutex<HashMap<String, DomainState>>,
+) -> MutexGuard<'_, HashMap<String, DomainState>> {
+    domains.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 impl CrawlScheduler {
@@ -126,10 +126,10 @@ impl CrawlScheduler {
             return;
         };
 
-        let mut domains = self.domains.lock().await;
+        let policy_delay = self.policy.policy_for_normalized(domain).delay();
+        let mut domains = lock_domains(&self.domains);
         let state = domain_state_mut(&mut domains, domain);
         state.in_flight = state.in_flight.saturating_sub(1);
-        let policy_delay = self.policy.policy_for(domain).delay();
         let robots_delay = if self.policy.respects_robots_crawl_delay() {
             state.robots_delay
         } else {
@@ -156,7 +156,7 @@ impl CrawlScheduler {
             return;
         };
 
-        let mut domains = self.domains.lock().await;
+        let mut domains = lock_domains(&self.domains);
         let state = domain_state_mut(&mut domains, domain);
         state.robots_delay = Some(delay);
     }
@@ -207,9 +207,9 @@ impl CrawlScheduler {
             return CandidateState::Ready;
         };
 
-        let mut domains = self.domains.lock().await;
+        let domain_policy = self.policy.policy_for_normalized(domain);
+        let mut domains = lock_domains(&self.domains);
         let state = domain_state_mut(&mut domains, domain);
-        let domain_policy = self.policy.policy_for(domain);
 
         if state.in_flight >= domain_policy.concurrency() {
             CandidateState::Pending(Duration::from_millis(10))

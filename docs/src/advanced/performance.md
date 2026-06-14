@@ -145,6 +145,12 @@ size.
 Use `scheduler` mode to measure complete push, dispatch, and finish lifecycles
 at the same queue sizes.
 
+Scheduler domain bookkeeping uses short synchronous critical sections because
+no asynchronous work occurs while per-domain concurrency and delay state is
+read or updated. Request-owned normalized domain keys are reused for policy
+lookups, avoiding repeated normalization allocations during dispatch and
+completion.
+
 ## Validate Retry Resilience
 
 The manual `Benchmark` workflow's `realistic` mode exercises Kumo against a
