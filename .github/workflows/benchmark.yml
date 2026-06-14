@@ -19,6 +19,11 @@ on:
           - store
           - frontier
           - scheduler
+          - scheduler-compare
+      baseline_ref:
+        description: Git ref containing the benchmark-only baseline for comparison modes.
+        required: true
+        default: main
       runs:
         description: Number of runs for local, real, or realistic comparison benchmarks.
         required: true
@@ -52,6 +57,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -140,6 +147,21 @@ jobs:
         if: inputs.mode == 'scheduler'
         timeout-minutes: 30
         run: cargo bench --bench hot_path -- crawl_scheduler --noplot
+
+      - name: Compare crawl scheduler with baseline
+        if: inputs.mode == 'scheduler-compare'
+        timeout-minutes: 45
+        env:
+          BASELINE_REF: ${{ inputs.baseline_ref }}
+        run: |
+          head_sha="$(git rev-parse HEAD)"
+          baseline_sha="$(git rev-parse --verify "$BASELINE_REF^{commit}")"
+          git checkout --detach "$baseline_sha"
+          cargo bench --bench hot_path -- crawl_scheduler \
+            --save-baseline comparison-base --noplot
+          git checkout --detach "$head_sha"
+          cargo bench --bench hot_path -- crawl_scheduler \
+            --baseline comparison-base --noplot
 
       - name: Compare benchmark results
         if: inputs.mode == 'local' || inputs.mode == 'real'

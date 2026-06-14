@@ -261,6 +261,19 @@ using the in-memory frontier. It uploads the same Criterion estimate and sample
 files under `crawl_scheduler`; values are nanoseconds per complete lifecycle,
 so lower is better.
 
+The same mode also reports `blocked_scan`. This workload saturates a
+single-domain concurrency limit, leaves one request in flight, and measures a
+complete scheduler scan that finds no additional runnable request. It exposes
+the cost of deferring and restoring large blocked queues; lower nanoseconds are
+better.
+
+Use `scheduler-compare` for a same-runner A/B measurement. Set `baseline_ref`
+to a commit that already contains the benchmark but not the production
+optimization. The workflow checks out that ref, saves a Criterion baseline,
+then checks out the dispatched head and compares it against the saved samples.
+This controls for most GitHub runner variation and is the preferred merge gate
+for scheduler performance changes.
+
 ### Baseline Policy
 
 Committed baselines live in `benchmark/baselines/` and are never overwritten by
