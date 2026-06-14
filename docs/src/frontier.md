@@ -162,6 +162,17 @@ individual request. This is useful for deliberate revisits such as retrying a
 page after a state change or fetching the same endpoint with a different
 request body.
 
+## Custom Frontier Scan Batching
+
+Custom `Frontier` implementations continue to require only the existing
+single-request queue methods. The trait provides default
+`pop_request_batch()` and `restore_request_batch()` implementations for
+scheduler fairness scans.
+
+Remote or lock-backed frontiers can override these methods to drain and restore
+multiple records with one round trip or critical section. Restoration must
+bypass duplicate filtering and preserve the frontier's ordering rules.
+
 ## Tuning the Bloom Filter
 
 `MemoryFrontier` uses a Bloom filter for deduplication. The default is sized for

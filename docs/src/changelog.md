@@ -58,6 +58,11 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   push/drain workloads.
 - Added a CI-only scheduler benchmark for complete 100-request and
   10,000-request push, dispatch, and finish lifecycles.
+- Added a blocked-domain scheduler benchmark and batched frontier scan
+  operations, reducing per-candidate synchronization for memory and file
+  frontiers without changing custom frontier requirements.
+- Stopped FileFrontier scheduler restoration from advancing the automatic
+  persistence flush counter for already-queued requests.
 
 ### 0.5.0 - 2026-06-03
 

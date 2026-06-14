@@ -167,19 +167,20 @@ impl CrawlScheduler {
             return SchedulerPoll::Empty;
         };
 
-        let mut deferred = Vec::new();
+        let candidates = self.frontier.pop_request_batch(queued_len).await;
+        if candidates.is_empty() {
+            return SchedulerPoll::Empty;
+        }
+
+        let mut deferred = Vec::with_capacity(candidates.len());
         let mut shortest_wait: Option<Duration> = None;
+        let mut candidates = candidates.into_iter();
 
-        for _ in 0..queued_len {
-            let Some(queued) = self.frontier.pop_request().await else {
-                break;
-            };
-
+        while let Some(queued) = candidates.next() {
             match self.classify_candidate(&queued).await {
                 CandidateState::Ready => {
-                    for item in deferred {
-                        self.frontier.push_request_force(item).await;
-                    }
+                    deferred.extend(candidates);
+                    self.frontier.restore_request_batch(deferred).await;
                     return SchedulerPoll::Ready(Box::new(queued));
                 }
                 CandidateState::Pending(wait) => {
@@ -189,9 +190,7 @@ impl CrawlScheduler {
             }
         }
 
-        for item in deferred {
-            self.frontier.push_request_force(item).await;
-        }
+        self.frontier.restore_request_batch(deferred).await;
 
         shortest_wait.map_or(SchedulerPoll::Empty, SchedulerPoll::Pending)
     }

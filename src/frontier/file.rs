@@ -293,6 +293,16 @@ impl Frontier for FileFrontier {
         self.queue.lock().await.pop_front()
     }
 
+    async fn pop_request_batch(&self, limit: usize) -> Vec<FrontierRequest> {
+        let mut queue = self.queue.lock().await;
+        let count = limit.min(queue.len());
+        queue.drain(..count).collect()
+    }
+
+    async fn restore_request_batch(&self, requests: Vec<FrontierRequest>) {
+        self.queue.lock().await.extend(requests);
+    }
+
     async fn len(&self) -> usize {
         self.queue.lock().await.len()
     }

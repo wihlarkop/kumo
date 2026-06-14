@@ -145,6 +145,12 @@ size.
 Use `scheduler` mode to measure complete push, dispatch, and finish lifecycles
 at the same queue sizes.
 
+When delayed or domain-blocked requests require a complete frontier scan, the
+scheduler drains and restores candidates in batches. `MemoryFrontier` and
+`FileFrontier` perform each batch operation under one queue lock, avoiding one
+asynchronous lock round trip per candidate. File-backed restoration also does
+not count deferred records as newly scheduled persistence work.
+
 ## Validate Retry Resilience
 
 The manual `Benchmark` workflow's `realistic` mode exercises Kumo against a
