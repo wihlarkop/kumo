@@ -131,6 +131,17 @@ shared-runner result as a stable memory limit. Establish three consecutive
 successful 100k runs before publishing a large-crawl claim, then use those runs
 to define a bounded RSS envelope.
 
+## Large Pending Queues
+
+`MemoryFrontier` uses a binary heap for request priority scheduling. Push and
+pop operations are `O(log n)`, including when many requests are waiting at
+once. Equal-priority requests still preserve FIFO order.
+
+Use the manual `Benchmark` workflow's `frontier` mode to measure isolated
+100-request and 10,000-request push/drain batches. This benchmark bypasses
+deduplication so Bloom-filter false positives cannot affect the measured queue
+size.
+
 ## Validate Retry Resilience
 
 The manual `Benchmark` workflow's `realistic` mode exercises Kumo against a

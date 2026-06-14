@@ -248,6 +248,13 @@ For output-store diagnosis, dispatch `store`. The workflow runs all six
 samples, validates their correctness, appends the typed report to the workflow
 summary, and retains raw stats plus JSONL row-count evidence as an artifact.
 
+For in-memory frontier scaling, dispatch `frontier`. The workflow executes
+complete push-and-drain iterations at 100 and 10,000 queued requests and
+uploads Criterion's raw `estimates.json` and `sample.json` files. Compare the
+`median.point_estimate` or `mean.point_estimate` values from equivalent
+artifacts; the values are nanoseconds per complete iteration, so lower is
+better.
+
 ### Baseline Policy
 
 Committed baselines live in `benchmark/baselines/` and are never overwritten by
@@ -271,7 +278,7 @@ cargo bench
 Current microbenchmarks cover:
 
 - request fingerprint canonicalization
-- `MemoryFrontier` push/pop overhead
+- `MemoryFrontier` push/pop overhead at 100 and 10,000 queued requests
 
 For release candidates, run `cargo bench` before tagging and compare the output
 against the previous release. CI compiles benchmark targets with

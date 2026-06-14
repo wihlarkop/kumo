@@ -17,6 +17,7 @@ on:
           - realistic
           - realistic-compare
           - store
+          - frontier
       runs:
         description: Number of runs for local, real, or realistic comparison benchmarks.
         required: true
@@ -129,6 +130,11 @@ jobs:
           bash run.sh --store --concurrency=${{ inputs.concurrency }}
           cat results/store/summary.md >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Run memory frontier benchmark
+        if: inputs.mode == 'frontier'
+        timeout-minutes: 30
+        run: cargo bench --bench hot_path -- memory_frontier --noplot
+
       - name: Compare benchmark results
         if: inputs.mode == 'local' || inputs.mode == 'real'
         run: |
@@ -162,5 +168,7 @@ jobs:
             benchmark/results/realistic/*.md
             benchmark/results/realistic-compare/
             benchmark/results/store/
+            target/criterion/memory_frontier/**/estimates.json
+            target/criterion/memory_frontier/**/sample.json
           if-no-files-found: warn
           retention-days: 7

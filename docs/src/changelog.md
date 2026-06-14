@@ -51,6 +51,11 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - Removed a redundant frontier-request clone from every dispatched task and
   deferred event-only request string allocations when events and hooks are
   disabled.
+- Replaced `MemoryFrontier`'s linear priority scan with a stable binary heap,
+  preserving priority and FIFO behavior while making queue push/pop operations
+  `O(log n)`.
+- Added a CI-only frontier benchmark for 100-request and 10,000-request
+  push/drain workloads.
 
 ### 0.5.0 - 2026-06-03
 

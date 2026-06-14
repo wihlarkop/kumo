@@ -1,6 +1,6 @@
-use std::hint::black_box;
+use std::{hint::black_box, time::Duration};
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use kumo::{
     extract::{CssSelector, Response},
     frontier::{Frontier, MemoryFrontier},
@@ -36,19 +36,28 @@ fn bench_frontier_request_clone(c: &mut Criterion) {
 
 fn bench_memory_frontier_batch(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
+    let mut group = c.benchmark_group("memory_frontier");
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_secs(1));
+    group.measurement_time(Duration::from_secs(5));
 
-    c.bench_function("memory_frontier_push_pop_100", |b| {
-        b.to_async(&runtime).iter(|| async {
-            let frontier = MemoryFrontier::new(1_000);
-            for i in 0..100 {
-                let url = format!("https://example.com/catalogue/page-{i}.html");
-                frontier.push_request(CrawlRequest::get(url), 0).await;
-            }
-            for _ in 0..100 {
-                let _ = frontier.pop_request().await.unwrap();
-            }
-        })
-    });
+    for size in [100usize, 10_000] {
+        group.bench_with_input(BenchmarkId::new("push_pop", size), &size, |b, &size| {
+            b.to_async(&runtime).iter(|| async {
+                let frontier = MemoryFrontier::new(size + 1);
+                for i in 0..size {
+                    let url = format!("https://example.com/catalogue/page-{i}.html");
+                    frontier
+                        .push_request(CrawlRequest::get(url).dont_filter(true), 0)
+                        .await;
+                }
+                for _ in 0..size {
+                    let _ = frontier.pop_request().await.unwrap();
+                }
+            })
+        });
+    }
+    group.finish();
 }
 
 fn selector_fixture() -> String {
