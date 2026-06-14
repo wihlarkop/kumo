@@ -54,32 +54,6 @@ pub trait Frontier: Send + Sync {
         })
     }
 
-    /// Dequeue the currently available crawl requests in frontier order.
-    ///
-    /// Frontier implementations can override this to amortize queue
-    /// synchronization or remote I/O across a scheduler scan.
-    async fn pop_request_batch(&self) -> Vec<FrontierRequest> {
-        let limit = self.len().await;
-        let mut requests = Vec::with_capacity(limit);
-        for _ in 0..limit {
-            let Some(request) = self.pop_request().await else {
-                break;
-            };
-            requests.push(request);
-        }
-        requests
-    }
-
-    /// Restore scheduler-deferred requests without duplicate filtering.
-    ///
-    /// The default delegates to [`Frontier::push_request_force`] so existing
-    /// custom frontier implementations remain source compatible.
-    async fn restore_request_batch(&self, requests: Vec<FrontierRequest>) {
-        for request in requests {
-            self.push_request_force(request).await;
-        }
-    }
-
     /// Number of URLs waiting in the queue.
     async fn len(&self) -> usize;
 

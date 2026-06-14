@@ -129,7 +129,7 @@ impl CrawlScheduler {
         let mut domains = self.domains.lock().await;
         let state = domain_state_mut(&mut domains, domain);
         state.in_flight = state.in_flight.saturating_sub(1);
-        let policy_delay = self.policy.policy_for_normalized(domain).delay();
+        let policy_delay = self.policy.policy_for(domain).delay();
         let robots_delay = if self.policy.respects_robots_crawl_delay() {
             state.robots_delay
         } else {
@@ -162,34 +162,24 @@ impl CrawlScheduler {
     }
 
     async fn poll_next(&self) -> SchedulerPoll {
-        let Some(first) = self.frontier.pop_request().await else {
+        let queued_len = self.frontier.len().await;
+        if queued_len == 0 {
             return SchedulerPoll::Empty;
         };
 
-        let first_wait = match self.classify_candidate(&first).await {
-            CandidateState::Ready => return SchedulerPoll::Ready(Box::new(first)),
-            CandidateState::Pending(wait) => wait,
-        };
+        let mut deferred = Vec::new();
+        let mut shortest_wait: Option<Duration> = None;
 
-        let candidates = self.frontier.pop_request_batch().await;
-        let mut deferred = Vec::with_capacity(candidates.len() + 1);
-        deferred.push(first);
-        let mut shortest_wait = Some(first_wait);
+        for _ in 0..queued_len {
+            let Some(queued) = self.frontier.pop_request().await else {
+                break;
+            };
 
-        if candidates.is_empty() {
-            self.frontier.restore_request_batch(deferred).await;
-            return SchedulerPoll::Pending(first_wait);
-        }
-
-        let mut candidates = candidates.into_iter();
-        let mut domains = self.domains.lock().await;
-
-        while let Some(queued) = candidates.next() {
-            match self.classify_candidate_with_domains(&queued, &mut domains) {
+            match self.classify_candidate(&queued).await {
                 CandidateState::Ready => {
-                    drop(domains);
-                    deferred.extend(candidates);
-                    self.frontier.restore_request_batch(deferred).await;
+                    for item in deferred {
+                        self.frontier.push_request_force(item).await;
+                    }
                     return SchedulerPoll::Ready(Box::new(queued));
                 }
                 CandidateState::Pending(wait) => {
@@ -199,8 +189,9 @@ impl CrawlScheduler {
             }
         }
 
-        drop(domains);
-        self.frontier.restore_request_batch(deferred).await;
+        for item in deferred {
+            self.frontier.push_request_force(item).await;
+        }
 
         shortest_wait.map_or(SchedulerPoll::Empty, SchedulerPoll::Pending)
     }
@@ -217,34 +208,8 @@ impl CrawlScheduler {
         };
 
         let mut domains = self.domains.lock().await;
-        self.classify_domain_candidate(domain, &mut domains)
-    }
-
-    fn classify_candidate_with_domains(
-        &self,
-        queued: &FrontierRequest,
-        domains: &mut HashMap<String, DomainState>,
-    ) -> CandidateState {
-        if let Some(scheduled_at) = queued.scheduled_at()
-            && let Ok(wait) = scheduled_at.duration_since(std::time::SystemTime::now())
-        {
-            return CandidateState::Pending(wait);
-        }
-
-        let Some(domain) = queued.request().domain_key() else {
-            return CandidateState::Ready;
-        };
-
-        self.classify_domain_candidate(domain, domains)
-    }
-
-    fn classify_domain_candidate(
-        &self,
-        domain: &str,
-        domains: &mut HashMap<String, DomainState>,
-    ) -> CandidateState {
-        let state = domain_state_mut(domains, domain);
-        let domain_policy = self.policy.policy_for_normalized(domain);
+        let state = domain_state_mut(&mut domains, domain);
+        let domain_policy = self.policy.policy_for(domain);
 
         if state.in_flight >= domain_policy.concurrency() {
             CandidateState::Pending(Duration::from_millis(10))
