@@ -261,6 +261,12 @@ using the in-memory frontier. It uploads the same Criterion estimate and sample
 files under `crawl_scheduler`; values are nanoseconds per complete lifecycle,
 so lower is better.
 
+The same mode also reports `blocked_scan`. This workload saturates a
+single-domain concurrency limit, leaves one request in flight, and measures a
+complete scheduler scan that finds no additional runnable request. It exposes
+the cost of deferring and restoring large blocked queues; lower nanoseconds are
+better.
+
 ### Baseline Policy
 
 Committed baselines live in `benchmark/baselines/` and are never overwritten by

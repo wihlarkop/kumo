@@ -91,6 +91,25 @@ fn bench_crawl_scheduler_batch(c: &mut Criterion) {
                 })
             },
         );
+
+        group.bench_with_input(BenchmarkId::new("blocked_scan", size), &size, |b, &size| {
+            b.to_async(&runtime).iter(|| async {
+                let scheduler = CrawlScheduler::new(
+                    MemoryFrontier::new(size + 1),
+                    PolitenessPolicy::new().per_domain_concurrency(1),
+                );
+                for i in 0..size {
+                    let url = format!("https://example.com/catalogue/page-{i}.html");
+                    scheduler
+                        .push_request(CrawlRequest::get(url).dont_filter(true), 0)
+                        .await;
+                }
+
+                let in_flight = scheduler.next_ready().await.unwrap();
+                assert!(scheduler.try_next_ready().await.is_none());
+                black_box(in_flight);
+            })
+        });
     }
     group.finish();
 }
