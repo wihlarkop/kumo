@@ -57,6 +57,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -153,8 +155,8 @@ jobs:
           BASELINE_REF: ${{ inputs.baseline_ref }}
         run: |
           head_sha="$(git rev-parse HEAD)"
-          git fetch --no-tags origin "$BASELINE_REF"
-          git checkout --detach FETCH_HEAD
+          baseline_sha="$(git rev-parse --verify "$BASELINE_REF^{commit}")"
+          git checkout --detach "$baseline_sha"
           cargo bench --bench hot_path -- crawl_scheduler \
             --save-baseline comparison-base --noplot
           git checkout --detach "$head_sha"
