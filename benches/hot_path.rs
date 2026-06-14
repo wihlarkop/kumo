@@ -47,7 +47,9 @@ fn bench_memory_frontier_batch(c: &mut Criterion) {
                 let frontier = MemoryFrontier::new(size + 1);
                 for i in 0..size {
                     let url = format!("https://example.com/catalogue/page-{i}.html");
-                    frontier.push_request(CrawlRequest::get(url), 0).await;
+                    frontier
+                        .push_request(CrawlRequest::get(url).dont_filter(true), 0)
+                        .await;
                 }
                 for _ in 0..size {
                     let _ = frontier.pop_request().await.unwrap();
