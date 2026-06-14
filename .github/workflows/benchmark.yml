@@ -133,7 +133,7 @@ jobs:
       - name: Run memory frontier benchmark
         if: inputs.mode == 'frontier'
         timeout-minutes: 30
-        run: cargo bench --bench hot_path -- memory_frontier -- --noplot
+        run: cargo bench --bench hot_path -- memory_frontier --noplot
 
       - name: Compare benchmark results
         if: inputs.mode == 'local' || inputs.mode == 'real'
