@@ -162,15 +162,20 @@ impl CrawlScheduler {
     }
 
     async fn poll_next(&self) -> SchedulerPoll {
-        let queued_len = self.frontier.len().await;
-        if queued_len == 0 {
+        let Some(first) = self.frontier.pop_request().await else {
             return SchedulerPoll::Empty;
         };
 
-        let mut deferred = Vec::new();
-        let mut shortest_wait: Option<Duration> = None;
+        let first_wait = match self.classify_candidate(&first).await {
+            CandidateState::Ready => return SchedulerPoll::Ready(Box::new(first)),
+            CandidateState::Pending(wait) => wait,
+        };
 
-        for _ in 0..queued_len {
+        let mut deferred = vec![first];
+        let mut shortest_wait = first_wait;
+        let remaining_len = self.frontier.len().await;
+
+        for _ in 0..remaining_len {
             let Some(queued) = self.frontier.pop_request().await else {
                 break;
             };
@@ -183,7 +188,7 @@ impl CrawlScheduler {
                     return SchedulerPoll::Ready(Box::new(queued));
                 }
                 CandidateState::Pending(wait) => {
-                    shortest_wait = Some(shortest_wait.map_or(wait, |current| current.min(wait)));
+                    shortest_wait = shortest_wait.min(wait);
                     deferred.push(queued);
                 }
             }
@@ -193,7 +198,7 @@ impl CrawlScheduler {
             self.frontier.push_request_force(item).await;
         }
 
-        shortest_wait.map_or(SchedulerPoll::Empty, SchedulerPoll::Pending)
+        SchedulerPoll::Pending(shortest_wait)
     }
 
     async fn classify_candidate(&self, queued: &FrontierRequest) -> CandidateState {
