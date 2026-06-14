@@ -129,7 +129,7 @@ impl CrawlScheduler {
         let mut domains = self.domains.lock().await;
         let state = domain_state_mut(&mut domains, domain);
         state.in_flight = state.in_flight.saturating_sub(1);
-        let policy_delay = self.policy.policy_for(domain).delay();
+        let policy_delay = self.policy.policy_for_normalized(domain).delay();
         let robots_delay = if self.policy.respects_robots_crawl_delay() {
             state.robots_delay
         } else {
@@ -244,7 +244,7 @@ impl CrawlScheduler {
         domains: &mut HashMap<String, DomainState>,
     ) -> CandidateState {
         let state = domain_state_mut(domains, domain);
-        let domain_policy = self.policy.policy_for(domain);
+        let domain_policy = self.policy.policy_for_normalized(domain);
 
         if state.in_flight >= domain_policy.concurrency() {
             CandidateState::Pending(Duration::from_millis(10))

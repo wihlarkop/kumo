@@ -61,7 +61,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - Added a blocked-domain scheduler benchmark and batched frontier scan
   operations, reducing per-candidate synchronization for memory and file
   frontiers and domain-state classification without changing custom frontier
-  requirements.
+  requirements. Scheduler policy lookup also reuses normalized request domains
+  without allocating a lowercase key per candidate.
 - Stopped FileFrontier scheduler restoration from advancing the automatic
   persistence flush counter for already-queued requests.
 

@@ -151,7 +151,8 @@ scheduler drains and restores candidates in batches. `MemoryFrontier` and
 asynchronous lock round trip per candidate. File-backed restoration also does
 not count deferred records as newly scheduled persistence work. Candidate
 classification shares one domain-state guard for the drained batch rather than
-reacquiring it for every blocked request.
+reacquiring it for every blocked request, and reuses request-owned normalized
+domain keys for allocation-free policy lookup.
 
 ## Validate Retry Resilience
 
