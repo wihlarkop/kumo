@@ -171,8 +171,7 @@ impl CrawlScheduler {
             CandidateState::Pending(wait) => wait,
         };
 
-        let remaining_len = self.frontier.len().await;
-        let candidates = self.frontier.pop_request_batch(remaining_len).await;
+        let candidates = self.frontier.pop_request_batch().await;
         let mut deferred = Vec::with_capacity(candidates.len() + 1);
         deferred.push(first);
         let mut shortest_wait = Some(first_wait);

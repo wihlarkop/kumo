@@ -54,11 +54,12 @@ pub trait Frontier: Send + Sync {
         })
     }
 
-    /// Dequeue up to `limit` crawl requests in frontier order.
+    /// Dequeue the currently available crawl requests in frontier order.
     ///
     /// Frontier implementations can override this to amortize queue
     /// synchronization or remote I/O across a scheduler scan.
-    async fn pop_request_batch(&self, limit: usize) -> Vec<FrontierRequest> {
+    async fn pop_request_batch(&self) -> Vec<FrontierRequest> {
+        let limit = self.len().await;
         let mut requests = Vec::with_capacity(limit);
         for _ in 0..limit {
             let Some(request) = self.pop_request().await else {

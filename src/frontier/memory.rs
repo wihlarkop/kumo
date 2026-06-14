@@ -113,9 +113,9 @@ impl Frontier for MemoryFrontier {
         self.queue.lock().await.pop().map(|entry| entry.queued)
     }
 
-    async fn pop_request_batch(&self, limit: usize) -> Vec<FrontierRequest> {
+    async fn pop_request_batch(&self) -> Vec<FrontierRequest> {
         let mut queue = self.queue.lock().await;
-        let count = limit.min(queue.len());
+        let count = queue.len();
         let mut requests = Vec::with_capacity(count);
         for _ in 0..count {
             if let Some(entry) = queue.pop() {
