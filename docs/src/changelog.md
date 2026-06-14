@@ -60,7 +60,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   10,000-request push, dispatch, and finish lifecycles.
 - Added a blocked-domain scheduler benchmark and batched frontier scan
   operations, reducing per-candidate synchronization for memory and file
-  frontiers without changing custom frontier requirements.
+  frontiers and domain-state classification without changing custom frontier
+  requirements.
 - Stopped FileFrontier scheduler restoration from advancing the automatic
   persistence flush counter for already-queued requests.
 
