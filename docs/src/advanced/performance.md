@@ -142,6 +142,9 @@ Use the manual `Benchmark` workflow's `frontier` mode to measure isolated
 deduplication so Bloom-filter false positives cannot affect the measured queue
 size.
 
+Use `scheduler` mode to measure complete push, dispatch, and finish lifecycles
+at the same queue sizes.
+
 ## Validate Retry Resilience
 
 The manual `Benchmark` workflow's `realistic` mode exercises Kumo against a

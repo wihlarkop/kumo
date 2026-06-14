@@ -5,6 +5,7 @@ use kumo::{
     extract::{CssSelector, Response},
     frontier::{Frontier, MemoryFrontier},
     request::{CrawlRequest, FrontierRequest},
+    scheduler::{CrawlScheduler, PolitenessPolicy},
 };
 
 fn bench_domain_key(c: &mut Criterion) {
@@ -56,6 +57,40 @@ fn bench_memory_frontier_batch(c: &mut Criterion) {
                 }
             })
         });
+    }
+    group.finish();
+}
+
+fn bench_crawl_scheduler_batch(c: &mut Criterion) {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let mut group = c.benchmark_group("crawl_scheduler");
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_secs(1));
+    group.measurement_time(Duration::from_secs(5));
+
+    for size in [100usize, 10_000] {
+        group.bench_with_input(
+            BenchmarkId::new("push_dispatch_finish", size),
+            &size,
+            |b, &size| {
+                b.to_async(&runtime).iter(|| async {
+                    let scheduler = CrawlScheduler::new(
+                        MemoryFrontier::new(size + 1),
+                        PolitenessPolicy::default(),
+                    );
+                    for i in 0..size {
+                        let url = format!("https://example.com/catalogue/page-{i}.html");
+                        scheduler
+                            .push_request(CrawlRequest::get(url).dont_filter(true), 0)
+                            .await;
+                    }
+                    for _ in 0..size {
+                        let queued = scheduler.next_ready().await.unwrap();
+                        scheduler.finish(&queued).await;
+                    }
+                })
+            },
+        );
     }
     group.finish();
 }
@@ -154,6 +189,7 @@ criterion_group!(
     bench_domain_key,
     bench_frontier_request_clone,
     bench_memory_frontier_batch,
+    bench_crawl_scheduler_batch,
     bench_document_backed_selectors
 );
 criterion_main!(benches);

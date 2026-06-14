@@ -18,6 +18,7 @@ on:
           - realistic-compare
           - store
           - frontier
+          - scheduler
       runs:
         description: Number of runs for local, real, or realistic comparison benchmarks.
         required: true
@@ -135,6 +136,11 @@ jobs:
         timeout-minutes: 30
         run: cargo bench --bench hot_path -- memory_frontier --noplot
 
+      - name: Run crawl scheduler benchmark
+        if: inputs.mode == 'scheduler'
+        timeout-minutes: 30
+        run: cargo bench --bench hot_path -- crawl_scheduler --noplot
+
       - name: Compare benchmark results
         if: inputs.mode == 'local' || inputs.mode == 'real'
         run: |
@@ -170,5 +176,7 @@ jobs:
             benchmark/results/store/
             target/criterion/memory_frontier/**/estimates.json
             target/criterion/memory_frontier/**/sample.json
+            target/criterion/crawl_scheduler/**/estimates.json
+            target/criterion/crawl_scheduler/**/sample.json
           if-no-files-found: warn
           retention-days: 7

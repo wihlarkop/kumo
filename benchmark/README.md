@@ -255,6 +255,12 @@ uploads Criterion's raw `estimates.json` and `sample.json` files. Compare the
 artifacts; the values are nanoseconds per complete iteration, so lower is
 better.
 
+For scheduler dispatch scaling, dispatch `scheduler`. The workflow executes
+complete push, dispatch, and finish lifecycles at 100 and 10,000 ready requests
+using the in-memory frontier. It uploads the same Criterion estimate and sample
+files under `crawl_scheduler`; values are nanoseconds per complete lifecycle,
+so lower is better.
+
 ### Baseline Policy
 
 Committed baselines live in `benchmark/baselines/` and are never overwritten by
