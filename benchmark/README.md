@@ -201,6 +201,11 @@ middleware, parsing, item pipelines, and storage. These values are diagnostic
 signals, not wall-clock percentages: concurrent request phases can overlap, so
 their sum can exceed the process elapsed time.
 
+The local mock benchmark is the primary signal for request-dispatch ownership
+and allocation changes. Use at least five runs with the same concurrency and
+compare medians; changes below 5% on shared runners should be treated as noise.
+Confirm accepted hot-path changes with the 100k-item large mode before merging.
+
 ## Compare Results
 
 Use the typed Rust comparison tool to compare a trusted baseline with a new
