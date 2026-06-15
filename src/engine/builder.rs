@@ -343,6 +343,12 @@ impl CrawlEngine {
     /// Use this to set custom timeouts, DNS resolvers, TLS configuration, or
     /// any other reqwest option not exposed by the engine builder.
     ///
+    /// This callback configures the default reqwest client only. Lazily
+    /// created per-proxy clients inherit Kumo's concurrency, request timeout,
+    /// User-Agent, cookie, and TCP keepalive policy, but arbitrary callback
+    /// customization is not replayed. The wreq-backed stealth client is also
+    /// configured separately.
+    ///
     /// # Example
     /// ```rust,ignore
     /// CrawlEngine::builder()

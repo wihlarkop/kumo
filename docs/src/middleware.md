@@ -84,7 +84,10 @@ Rotate through a list of proxy URLs per request:
 )
 ```
 
-Proxies are cycled in round-robin order.
+Proxies are cycled in round-robin order. Kumo lazily creates and caches one
+HTTP client per proxy URL, so connections are reused without sharing cookies
+or connection pools between proxies. These clients inherit the engine's
+concurrency, request timeout, User-Agent, and TCP keepalive settings.
 
 ## UserAgentRotator
 

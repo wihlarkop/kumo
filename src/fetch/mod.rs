@@ -1,4 +1,5 @@
 pub mod cache;
+pub(crate) mod client_policy;
 pub mod http;
 pub mod mock;
 

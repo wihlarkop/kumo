@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use super::Fetcher;
+use super::{Fetcher, client_policy::HttpClientPolicy};
 use crate::{
     error::KumoError,
     extract::{Response, response::ResponseBody},
@@ -16,19 +16,27 @@ use tokio::sync::RwLock;
 /// When `request.proxy` is set by a `ProxyRotator` middleware, the fetcher
 /// lazily builds and caches a dedicated `Client` for that proxy URL so
 /// connection pooling is preserved across requests through the same proxy.
-/// Proxy clients inherit the same User-Agent as the default client.
+/// Proxy clients inherit Kumo's User-Agent, pool size, request timeout, and
+/// TCP keepalive policy while retaining isolated cookie jars and pools.
 #[derive(Debug)]
 pub struct HttpFetcher {
     client: Client,
-    default_user_agent: String,
+    policy: HttpClientPolicy,
     proxy_clients: Arc<RwLock<HashMap<String, Client>>>,
 }
 
 impl HttpFetcher {
     pub fn new(client: Client, default_user_agent: impl Into<String>) -> Self {
+        Self::with_policy(
+            client,
+            HttpClientPolicy::default_for(default_user_agent.into()),
+        )
+    }
+
+    pub(crate) fn with_policy(client: Client, policy: HttpClientPolicy) -> Self {
         Self {
             client,
-            default_user_agent: default_user_agent.into(),
+            policy,
             proxy_clients: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -46,12 +54,10 @@ impl HttpFetcher {
             }
         }
 
-        // Slow path: build and cache a new client for this proxy,
-        // inheriting the same UA and cookie settings as the default client.
         let proxy = reqwest::Proxy::all(proxy_url.as_str()).map_err(KumoError::Fetch)?;
-        let new_client = Client::builder()
-            .cookie_store(true)
-            .user_agent(&self.default_user_agent)
+        let new_client = self
+            .policy
+            .reqwest_builder()
             .proxy(proxy)
             .build()
             .map_err(KumoError::Fetch)?;
@@ -116,5 +122,32 @@ impl Fetcher for HttpFetcher {
             elapsed,
             body,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HttpFetcher;
+    use crate::middleware::FetchRequest;
+
+    #[test]
+    fn public_constructor_remains_available() {
+        let fetcher = HttpFetcher::new(reqwest::Client::new(), "test-agent");
+
+        assert_eq!(fetcher.policy.concurrency(), 8);
+    }
+
+    #[tokio::test]
+    async fn proxy_clients_are_cached_by_url() {
+        let fetcher = HttpFetcher::new(reqwest::Client::new(), "test-agent");
+        let mut request = FetchRequest::new("https://example.com", 0);
+        request.proxy = Some("http://127.0.0.1:8080".to_string());
+
+        let (first, second) =
+            tokio::join!(fetcher.client_for(&request), fetcher.client_for(&request));
+
+        assert!(first.is_ok());
+        assert!(second.is_ok());
+        assert_eq!(fetcher.proxy_clients.read().await.len(), 1);
     }
 }

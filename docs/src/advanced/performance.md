@@ -171,7 +171,14 @@ than one shared-runner sample.
 
 ## Connection Pool
 
-kumo automatically sets `pool_max_idle_per_host` to match the crawl's concurrency level, keeping connections warm across the full request window. You can tune the underlying `reqwest::Client` further via `.http_client_builder()`:
+kumo automatically sets `pool_max_idle_per_host` to match the crawl's
+concurrency level, keeping connections warm across the full request window.
+Each URL selected by `ProxyRotator` receives its own cached client, cookie jar,
+and connection pool. Proxy clients inherit Kumo's concurrency, request timeout,
+User-Agent, and TCP keepalive settings.
+
+You can tune the default `reqwest::Client` further via
+`.http_client_builder()`:
 
 ```rust
 CrawlEngine::builder()
@@ -183,6 +190,10 @@ CrawlEngine::builder()
     .run(MySpider)
     .await?;
 ```
+
+The callback is applied once to the default reqwest client. It is not replayed
+for dynamically created proxy clients and does not configure the wreq-backed
+stealth client.
 
 ## Request Timeout
 
