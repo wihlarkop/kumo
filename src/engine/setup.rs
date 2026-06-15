@@ -4,7 +4,7 @@ use crate::{
     engine::USER_AGENT,
     error::KumoError,
     extract::Response,
-    fetch::{Fetcher, http::HttpFetcher},
+    fetch::{Fetcher, client_policy::HttpClientPolicy, http::HttpFetcher},
     robots::RobotsCache,
 };
 
@@ -12,18 +12,10 @@ use crate::{
 use crate::fetch::{BrowserConfig, BrowserFetcher};
 
 pub(super) fn build_http_client(
-    concurrency: usize,
-    timeout: Option<Duration>,
+    policy: &HttpClientPolicy,
     customize: Option<Box<dyn FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder + Send>>,
 ) -> Result<reqwest::Client, KumoError> {
-    let mut builder = reqwest::Client::builder()
-        .cookie_store(true)
-        .user_agent(USER_AGENT)
-        .pool_max_idle_per_host(concurrency)
-        .tcp_keepalive(Duration::from_secs(60));
-    if let Some(t) = timeout {
-        builder = builder.timeout(t);
-    }
+    let mut builder = policy.reqwest_builder();
     if let Some(f) = customize {
         builder = f(builder);
     }
@@ -58,6 +50,7 @@ pub(super) fn wrap_with_cache(
 pub(super) struct FetcherArgs {
     pub(super) fetcher_override: Option<Arc<dyn Fetcher>>,
     pub(super) client: reqwest::Client,
+    pub(super) client_policy: HttpClientPolicy,
     pub(super) concurrency: usize,
     #[cfg(feature = "stealth")]
     pub(super) stealth_profile: Option<crate::fetch::StealthProfile>,
@@ -72,7 +65,10 @@ pub(super) async fn build_raw_fetcher(args: FetcherArgs) -> Result<Arc<dyn Fetch
 
     #[cfg(feature = "stealth")]
     if let Some(profile) = args.stealth_profile {
-        return Ok(Arc::new(crate::fetch::StealthHttpFetcher::new(profile)?));
+        return Ok(Arc::new(crate::fetch::StealthHttpFetcher::with_policy(
+            profile,
+            args.client_policy,
+        )?));
     }
 
     #[cfg(feature = "browser")]
@@ -82,7 +78,10 @@ pub(super) async fn build_raw_fetcher(args: FetcherArgs) -> Result<Arc<dyn Fetch
         ));
     }
 
-    Ok(Arc::new(HttpFetcher::new(args.client, USER_AGENT)))
+    Ok(Arc::new(HttpFetcher::with_policy(
+        args.client,
+        args.client_policy,
+    )))
 }
 
 struct ArcFetcher(Arc<dyn Fetcher>);

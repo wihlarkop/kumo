@@ -14,6 +14,11 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### 0.5.1 - 2026-06-04
 
+- Applied Kumo's connection-pool size, request timeout, User-Agent, cookie, and
+  TCP keepalive policy consistently to lazily created per-proxy HTTP clients
+  while preserving isolated proxy cookie jars and pools.
+- Applied equivalent pool, timeout, and keepalive settings to default and
+  per-proxy stealth HTTP clients.
 - Added `CrawlTimingStats` and `CrawlReport::timings` for cumulative
   successful-request phase timings across request middleware, fetch, response
   middleware, parse, pipeline, and store work.

@@ -5,7 +5,7 @@
 //!
 //! [`wreq`]: https://crates.io/crates/wreq
 
-use super::Fetcher;
+use super::{Fetcher, client_policy::HttpClientPolicy};
 use crate::{
     error::KumoError,
     extract::{Response, response::ResponseBody},
@@ -60,13 +60,23 @@ pub struct StealthHttpFetcher {
     client: Client,
     proxy_clients: Arc<RwLock<HashMap<String, Client>>>,
     profile: StealthProfile,
+    policy: HttpClientPolicy,
 }
 
 impl StealthHttpFetcher {
     pub fn new(profile: StealthProfile) -> Result<Self, KumoError> {
-        let client = Client::builder()
-            .emulation(profile.to_emulation())
-            .cookie_store(true)
+        Self::with_policy(
+            profile,
+            HttpClientPolicy::default_for(crate::engine::USER_AGENT),
+        )
+    }
+
+    pub(crate) fn with_policy(
+        profile: StealthProfile,
+        policy: HttpClientPolicy,
+    ) -> Result<Self, KumoError> {
+        let client = policy
+            .wreq_builder(profile.to_emulation())
             .build()
             .map_err(|e| KumoError::Browser(format!("stealth client: {e}")))?;
 
@@ -74,6 +84,7 @@ impl StealthHttpFetcher {
             client,
             proxy_clients: Arc::new(RwLock::new(HashMap::new())),
             profile,
+            policy,
         })
     }
 
@@ -89,9 +100,9 @@ impl StealthHttpFetcher {
             }
         }
 
-        let new_client = Client::builder()
-            .emulation(self.profile.to_emulation())
-            .cookie_store(true)
+        let new_client = self
+            .policy
+            .wreq_builder(self.profile.to_emulation())
             .proxy(proxy_url)
             .build()
             .map_err(|e| KumoError::Browser(format!("stealth proxy client: {e}")))?;
@@ -174,7 +185,8 @@ impl Fetcher for StealthHttpFetcher {
 
 #[cfg(test)]
 mod tests {
-    use super::StealthProfile;
+    use super::{StealthHttpFetcher, StealthProfile};
+    use crate::middleware::FetchRequest;
     use wreq_util::Emulation;
 
     #[test]
@@ -189,5 +201,27 @@ mod tests {
         for (profile, expected) in cases {
             assert_eq!(profile.to_emulation(), expected);
         }
+    }
+
+    #[test]
+    fn public_constructor_remains_available() {
+        let fetcher = StealthHttpFetcher::new(StealthProfile::Chrome131);
+
+        assert!(fetcher.is_ok());
+    }
+
+    #[tokio::test]
+    async fn proxy_clients_are_cached_by_url() {
+        let fetcher =
+            StealthHttpFetcher::new(StealthProfile::Chrome131).expect("stealth client builds");
+        let mut request = FetchRequest::new("https://example.com", 0);
+        request.proxy = Some("http://127.0.0.1:8080".to_string());
+
+        let (first, second) =
+            tokio::join!(fetcher.client_for(&request), fetcher.client_for(&request));
+
+        assert!(first.is_ok());
+        assert!(second.is_ok());
+        assert_eq!(fetcher.proxy_clients.read().await.len(), 1);
     }
 }

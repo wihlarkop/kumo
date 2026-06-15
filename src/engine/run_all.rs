@@ -15,6 +15,7 @@ use crate::{
 };
 
 use super::{
+    USER_AGENT,
     budget::CrawlBudgets,
     builder::CrawlEngine,
     erased::ErasedSpider,
@@ -70,11 +71,16 @@ impl CrawlEngine {
         let concurrency = self.concurrency;
         let retry_policy = self.retry_policy;
 
-        let client =
-            build_http_client(concurrency, self.request_timeout, self.http_client_builder)?;
+        let client_policy = crate::fetch::client_policy::HttpClientPolicy::new(
+            concurrency,
+            self.request_timeout,
+            USER_AGENT,
+        );
+        let client = build_http_client(&client_policy, self.http_client_builder)?;
         let fetcher = build_raw_fetcher(FetcherArgs {
             fetcher_override: self.fetcher_override,
             client: client.clone(),
+            client_policy,
             concurrency,
             #[cfg(feature = "stealth")]
             stealth_profile: self.stealth_profile,
