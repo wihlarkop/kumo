@@ -68,6 +68,12 @@ Lifecycle event URL and domain strings are also created lazily. Crawls that do
 not configure an event receiver or hook avoid those event payload allocations
 automatically; enabling events or hooks preserves the same owned event values.
 
+Robots-blocked, retry, and permanent-failure engine paths borrow request URL and
+domain metadata for stats, middleware, and tracing, then allocate owned event
+payload strings only when events or hooks are enabled. Per-domain stats updates
+also use a single map-entry lookup, keeping large single-domain crawls from
+paying extra bookkeeping work on every counter update.
+
 ## Allocator: jemalloc
 
 For long-running crawls (minutes or longer), replacing the system allocator with [jemalloc](https://github.com/tikv/jemallocator) can improve throughput by reducing allocator fragmentation and contention under concurrent workloads.

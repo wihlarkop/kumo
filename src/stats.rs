@@ -149,13 +149,7 @@ impl CrawlStats {
     }
 
     fn domain_mut(&mut self, domain: &str) -> &mut DomainStats {
-        if !self.domains.contains_key(domain) {
-            self.domains
-                .insert(domain.to_string(), DomainStats::default());
-        }
-        self.domains
-            .get_mut(domain)
-            .expect("domain stats were inserted before lookup")
+        self.domains.entry(domain.to_string()).or_default()
     }
 }
 

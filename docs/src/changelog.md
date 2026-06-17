@@ -19,6 +19,11 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   while preserving isolated proxy cookie jars and pools.
 - Applied equivalent pool, timeout, and keepalive settings to default and
   per-proxy stealth HTTP clients.
+- Reduced scheduler bookkeeping allocations by borrowing request URL/domain
+  metadata in robots-blocked, retry, and permanent-failure paths unless owned
+  lifecycle event payloads are actually emitted.
+- Removed an extra per-domain stats map lookup from every scheduled, completed,
+  retry, error, and robots-blocked counter update.
 - Added `CrawlTimingStats` and `CrawlReport::timings` for cumulative
   successful-request phase timings across request middleware, fetch, response
   middleware, parse, pipeline, and store work.
