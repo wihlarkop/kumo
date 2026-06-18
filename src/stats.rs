@@ -77,17 +77,40 @@ pub struct StoreStats {
     pub written: u64,
     /// Number of non-empty `store_many` calls made by the writer.
     pub batches: u64,
+    /// Items in batches that returned a store error.
+    pub failed_writes: u64,
+    /// Number of non-empty `store_many` calls that returned a store error.
+    pub failed_batches: u64,
     /// Number of explicit flush requests completed by the writer.
     pub flushes: u64,
     /// Number of item sends that observed a full queue before awaiting capacity.
     pub queue_full_waits: u64,
     /// Cumulative time request tasks spent waiting to enqueue accepted items.
     pub queue_wait: Duration,
-    /// Cumulative time the writer spent inside store batch writes.
+    /// Maximum time a request task spent waiting to enqueue one item.
+    pub queue_wait_max: Duration,
+    /// Cumulative time the writer spent inside store batch writes, including failed attempts.
     pub write: Duration,
+    /// Maximum time the writer spent inside one store batch write attempt.
+    pub write_max: Duration,
 }
 
 impl StoreStats {
+    /// Average time request tasks spent waiting to enqueue each accepted item.
+    pub fn average_queue_wait_per_item(&self) -> Duration {
+        average_duration(self.queue_wait, self.queued)
+    }
+
+    /// Average time the writer spent in each batch write attempt.
+    pub fn average_write_per_batch(&self) -> Duration {
+        average_duration(self.write, self.batches + self.failed_batches)
+    }
+
+    /// Average time the writer spent per item in batch write attempts.
+    pub fn average_write_per_item(&self) -> Duration {
+        average_duration(self.write, self.written + self.failed_writes)
+    }
+
     pub(crate) fn to_json_value(self) -> serde_json::Value {
         serde_json::json!({
             "buffered": self.buffered,
@@ -96,12 +119,24 @@ impl StoreStats {
             "queued": self.queued,
             "written": self.written,
             "batches": self.batches,
+            "failed_writes": self.failed_writes,
+            "failed_batches": self.failed_batches,
             "flushes": self.flushes,
             "queue_full_waits": self.queue_full_waits,
             "queue_wait_ms": self.queue_wait.as_millis(),
             "queue_wait_secs": self.queue_wait.as_secs_f64(),
+            "queue_wait_avg_ms": self.average_queue_wait_per_item().as_millis(),
+            "queue_wait_avg_secs": self.average_queue_wait_per_item().as_secs_f64(),
+            "queue_wait_max_ms": self.queue_wait_max.as_millis(),
+            "queue_wait_max_secs": self.queue_wait_max.as_secs_f64(),
             "write_ms": self.write.as_millis(),
             "write_secs": self.write.as_secs_f64(),
+            "write_avg_batch_ms": self.average_write_per_batch().as_millis(),
+            "write_avg_batch_secs": self.average_write_per_batch().as_secs_f64(),
+            "write_avg_item_ms": self.average_write_per_item().as_millis(),
+            "write_avg_item_secs": self.average_write_per_item().as_secs_f64(),
+            "write_max_ms": self.write_max.as_millis(),
+            "write_max_secs": self.write_max.as_secs_f64(),
         })
     }
 }
@@ -398,5 +433,13 @@ fn ratio(numerator: u64, denominator: u64) -> f64 {
         numerator as f64 / denominator as f64
     } else {
         0.0
+    }
+}
+
+fn average_duration(total: Duration, count: u64) -> Duration {
+    if count > 0 {
+        Duration::from_secs_f64(total.as_secs_f64() / count as f64)
+    } else {
+        Duration::ZERO
     }
 }

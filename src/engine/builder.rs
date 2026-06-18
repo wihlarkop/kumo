@@ -154,6 +154,18 @@ impl CrawlEngine {
         self
     }
 
+    /// Enable a bounded asynchronous store buffer with explicit configuration.
+    ///
+    /// Use this when you want to make the store failure policy explicit. The
+    /// default policy is [`StoreFailurePolicy::Abort`], which preserves store
+    /// errors instead of silently dropping accepted items.
+    ///
+    /// [`StoreFailurePolicy::Abort`]: crate::store::StoreFailurePolicy::Abort
+    pub fn store_buffer_config(mut self, config: crate::store::StoreBufferConfig) -> Self {
+        self.store_buffer = Some(config);
+        self
+    }
+
     /// Insert a fixed delay between requests (applied per task, not globally).
     pub fn crawl_delay(mut self, delay: Duration) -> Self {
         self.politeness_policy = self.politeness_policy.per_domain_delay(delay);

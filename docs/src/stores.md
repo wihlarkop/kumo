@@ -47,10 +47,21 @@ For high-concurrency crawls or slow downstream stores, enable Kumo's bounded
 store buffer:
 
 ```rust
+use kumo::store::{StoreBufferConfig, StoreFailurePolicy};
+
 CrawlEngine::builder()
     .concurrency(32)
     .store(JsonlStore::new("items.jsonl")?)
-    .store_buffer(1_000, 100) // queue capacity, batch size
+    .store_buffer(1_000, 100) // queue capacity, batch size, abort-on-error
+    .run(MySpider)
+    .await?;
+
+CrawlEngine::builder()
+    .store(JsonlStore::new("items.jsonl")?)
+    .store_buffer_config(
+        StoreBufferConfig::new(1_000, 100)
+            .failure_policy(StoreFailurePolicy::Abort),
+    )
     .run(MySpider)
     .await?;
 ```
@@ -59,6 +70,13 @@ Accepted items are queued into a background writer. If the queue is full,
 request tasks wait for capacity, so store pressure is bounded instead of
 growing memory without limit. The writer passes up to `batch_size` items to
 `ItemStore::store_many()`.
+
+The store-buffer failure policy is explicit and defaults to
+`StoreFailurePolicy::Abort`. When the background writer observes a store error,
+it records the first failure, stops accepting new items, and the crawl returns a
+store error on flush or on the next store attempt. Kumo does not currently offer
+a continue/drop policy because continuing after a failed write would need
+durable retry or drop accounting to avoid silent item loss.
 
 Custom stores do not need to change. `store_many()` defaults to calling
 `store()` for each item, while stores that support efficient batch writes can
@@ -74,9 +92,16 @@ Final reports include `report.store`:
 | `queued` | Items accepted into the queue |
 | `written` | Items written by the background writer |
 | `batches` | Non-empty `store_many()` calls |
+| `failed_writes` | Items in batches that returned a store error |
+| `failed_batches` | Non-empty `store_many()` calls that returned a store error |
 | `queue_full_waits` | Times an item observed a full queue before waiting |
 | `queue_wait` | Total time request tasks spent waiting to enqueue items |
-| `write` | Total time the writer spent inside store writes |
+| `queue_wait_max` | Longest enqueue wait for one item |
+| `average_queue_wait_per_item()` | Average enqueue wait per queued item |
+| `write` | Total time the writer spent inside store write attempts |
+| `write_max` | Longest single batch write attempt |
+| `average_write_per_batch()` | Average backend write time per batch attempt |
+| `average_write_per_item()` | Average backend write time per written or failed item |
 
 For `run_all()`, the store is shared by all registered spiders, so each returned
 `CrawlStats` receives the same aggregate store-buffer counters.
