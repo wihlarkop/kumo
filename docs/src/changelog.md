@@ -31,6 +31,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   permutations.
 - Updated GitHub Pages deployment actions to their Node 24-compatible major
   versions.
+- Added `RetryReport` and `CrawlReport::retry_summary()` so production reports
+  expose retry pressure, retry exhaustion, and exhausted-failure rates in one
+  typed summary and JSON object.
 - Added `CrawlTimingStats` and `CrawlReport::timings` for cumulative
   successful-request phase timings across request middleware, fetch, response
   middleware, parse, pipeline, and store work.

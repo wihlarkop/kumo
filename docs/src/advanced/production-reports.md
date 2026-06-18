@@ -28,6 +28,7 @@ write without duplicating rate math in every crawler.
 | `deduped` | Requests dropped by fingerprint deduplication |
 | `retries` | Retry attempts scheduled by retry policy or spider error policy |
 | `retry_exhausted` | Requests that still failed after retry capacity was used |
+| `retry_summary()` | Retry attempts, exhausted retries, retry pressure, exhaustion, and exhausted-failure rates |
 | `robots_blocked` | Requests blocked by robots.txt |
 | `stop_reason` | Why the crawl stopped |
 | `pages_per_second()` | Crawl throughput |
@@ -39,7 +40,33 @@ write without duplicating rate math in every crawler.
 | `timings` | Cumulative successful-request phase timings for bottleneck diagnosis |
 
 The JSON export uses the same names in snake_case, including derived fields such
-as `pages_per_second`, `error_rate`, `retry_exhaustion_rate`, and `timings`.
+as `pages_per_second`, `error_rate`, `retry_exhaustion_rate`,
+`retry_summary`, and `timings`.
+
+## Retry Summary
+
+`CrawlReport::retry_summary()` groups retry health into one small report:
+
+| Field | Meaning |
+|-------|---------|
+| `attempts` | Total retry attempts that were scheduled |
+| `exhausted` | Requests that still failed after retry capacity was used |
+| `pressure_rate` | Retry attempts divided by scheduled requests |
+| `exhaustion_rate` | Exhausted retries divided by retry attempts |
+| `exhausted_failure_rate` | Exhausted retries divided by permanent errors |
+
+Use the fields together:
+
+- high `pressure_rate` means the target or network is making many requests
+  retry, even if the crawl eventually recovers;
+- high `exhaustion_rate` means retries are often not helping;
+- high `exhausted_failure_rate` means permanent failures are mostly retry
+  exhaustion, which often points to rate limits, blocking, or sustained upstream
+  instability.
+
+The JSON report includes the same values under `retry_summary`, while keeping
+the top-level `retries`, `retry_exhausted`, and `retry_exhaustion_rate` fields
+for compatibility.
 
 ## Timing Breakdown
 
@@ -77,15 +104,19 @@ if report.error_rate() > 0.10 {
 }
 ```
 
-Use `retry_exhaustion_rate()` when retry attempts are happening but not helping.
-This usually points to sustained upstream failures, rate limits, or blocking:
+Use `retry_summary()` when retry attempts are happening. This separates retry
+pressure from retry exhaustion:
 
 ```rust
-if report.retries > 0 && report.retry_exhaustion_rate() > 0.25 {
+let retry = report.retry_summary();
+
+if retry.attempts > 0 && retry.exhaustion_rate > 0.25 {
     tracing::warn!(
-        retry_exhaustion_rate = report.retry_exhaustion_rate(),
-        retries = report.retries,
-        retry_exhausted = report.retry_exhausted,
+        retry_exhaustion_rate = retry.exhaustion_rate,
+        retry_pressure_rate = retry.pressure_rate,
+        retry_exhausted_failure_rate = retry.exhausted_failure_rate,
+        retries = retry.attempts,
+        retry_exhausted = retry.exhausted,
         "retry exhaustion exceeded threshold"
     );
 }
@@ -122,6 +153,7 @@ send the same values to logs or metrics:
 
 ```rust
 let report = CrawlReport::from(stats);
+let retry = report.retry_summary();
 
 tracing::info!(
     pages = report.pages_crawled,
@@ -129,7 +161,9 @@ tracing::info!(
     errors = report.errors,
     error_rate = report.error_rate(),
     pages_per_second = report.pages_per_second(),
-    retry_exhaustion_rate = report.retry_exhaustion_rate(),
+    retry_pressure_rate = retry.pressure_rate,
+    retry_exhaustion_rate = retry.exhaustion_rate,
+    retry_exhausted_failure_rate = retry.exhausted_failure_rate,
     fetch_secs = report.timings.fetch.as_secs_f64(),
     parse_secs = report.timings.parse.as_secs_f64(),
     store_secs = report.timings.store.as_secs_f64(),

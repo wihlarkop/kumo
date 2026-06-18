@@ -187,6 +187,21 @@ pub struct CrawlReport {
     pub stop_reason: Option<StopReason>,
 }
 
+/// Retry health summary derived from [`CrawlReport`] counters.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RetryReport {
+    /// Retry attempts scheduled by retry policy or spider error policy.
+    pub attempts: u64,
+    /// Requests that permanently failed after retry capacity was exhausted.
+    pub exhausted: u64,
+    /// Retry attempts divided by scheduled requests.
+    pub pressure_rate: f64,
+    /// Retry-exhausted requests divided by retry attempts.
+    pub exhaustion_rate: f64,
+    /// Retry-exhausted requests divided by all permanent errors.
+    pub exhausted_failure_rate: f64,
+}
+
 impl From<CrawlStats> for CrawlReport {
     fn from(stats: CrawlStats) -> Self {
         Self {
@@ -240,6 +255,17 @@ impl CrawlReport {
         ratio(self.retry_exhausted, self.retries)
     }
 
+    /// Retry-focused health summary for production logs, dashboards, and alerts.
+    pub fn retry_summary(&self) -> RetryReport {
+        RetryReport {
+            attempts: self.retries,
+            exhausted: self.retry_exhausted,
+            pressure_rate: ratio(self.retries, self.scheduled),
+            exhaustion_rate: self.retry_exhaustion_rate(),
+            exhausted_failure_rate: ratio(self.retry_exhausted, self.errors),
+        }
+    }
+
     /// Convert the report to a stable JSON value.
     ///
     /// Durations are exported as `duration_ms` and `duration_secs` so consumers
@@ -265,6 +291,8 @@ impl CrawlReport {
             })
             .collect::<serde_json::Map<_, _>>();
 
+        let retry_summary = self.retry_summary();
+
         serde_json::json!({
             "pages_crawled": self.pages_crawled,
             "items_scraped": self.items_scraped,
@@ -282,6 +310,13 @@ impl CrawlReport {
             "deduped": self.deduped,
             "retries": self.retries,
             "retry_exhausted": self.retry_exhausted,
+            "retry_summary": {
+                "attempts": retry_summary.attempts,
+                "exhausted": retry_summary.exhausted,
+                "pressure_rate": retry_summary.pressure_rate,
+                "exhaustion_rate": retry_summary.exhaustion_rate,
+                "exhausted_failure_rate": retry_summary.exhausted_failure_rate,
+            },
             "error_rate": self.error_rate(),
             "success_rate": self.success_rate(),
             "retry_exhaustion_rate": self.retry_exhaustion_rate(),
