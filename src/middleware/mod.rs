@@ -7,7 +7,7 @@ pub mod user_agent;
 
 pub use autothrottle::AutoThrottle;
 pub use default_headers::DefaultHeaders;
-pub use proxy::ProxyRotator;
+pub use proxy::{ProxyHealthSnapshot, ProxyRotator};
 pub use rate_limit::RateLimiter;
 pub use status_retry::StatusRetry;
 pub use user_agent::UserAgentRotator;
@@ -26,6 +26,17 @@ use std::{
 pub(super) enum RotationStrategy {
     RoundRobin(AtomicUsize),
     Random(AtomicUsize),
+}
+
+impl Clone for RotationStrategy {
+    fn clone(&self) -> Self {
+        match self {
+            Self::RoundRobin(counter) => {
+                Self::RoundRobin(AtomicUsize::new(counter.load(Ordering::Relaxed)))
+            }
+            Self::Random(state) => Self::Random(AtomicUsize::new(state.load(Ordering::Relaxed))),
+        }
+    }
 }
 
 impl RotationStrategy {
