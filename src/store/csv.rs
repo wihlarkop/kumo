@@ -70,16 +70,11 @@ impl CsvStore {
         store.preset_headers = Some(headers.iter().map(|s| s.to_string()).collect());
         Ok(store)
     }
-}
 
-#[async_trait::async_trait]
-impl ItemStore for CsvStore {
-    async fn store(&self, item: &serde_json::Value) -> Result<(), KumoError> {
+    fn write_item(&self, inner: &mut CsvInner, item: &serde_json::Value) -> Result<(), KumoError> {
         let obj = item
             .as_object()
             .ok_or_else(|| KumoError::store_msg("csv store: item must be a JSON object"))?;
-
-        let mut inner = self.inner.lock().unwrap();
 
         if inner.key_order.is_none() {
             let keys: Vec<String> = if let Some(ref preset) = self.preset_headers {
@@ -113,6 +108,22 @@ impl ItemStore for CsvStore {
         writeln!(inner.writer, "{}", row.join(","))
             .map_err(|e| KumoError::store("csv store", e))?;
 
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl ItemStore for CsvStore {
+    async fn store(&self, item: &serde_json::Value) -> Result<(), KumoError> {
+        let mut inner = self.inner.lock().unwrap();
+        self.write_item(&mut inner, item)
+    }
+
+    async fn store_many(&self, items: &[serde_json::Value]) -> Result<(), KumoError> {
+        let mut inner = self.inner.lock().unwrap();
+        for item in items {
+            self.write_item(&mut inner, item)?;
+        }
         Ok(())
     }
 

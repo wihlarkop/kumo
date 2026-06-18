@@ -12,6 +12,7 @@ use crate::{
     request::{CrawlRequest, FrontierRequest},
     scheduler::{CrawlScheduler, SchedulerPoll},
     stats::CrawlStats,
+    store::ItemStore,
 };
 
 use super::{
@@ -66,6 +67,13 @@ impl CrawlEngine {
         let store = self
             .store
             .unwrap_or_else(|| Arc::new(crate::store::stdout::StdoutStore));
+        let buffered_store = self
+            .store_buffer
+            .map(|config| Arc::new(crate::store::BufferedStore::new(store.clone(), config)));
+        let store: Arc<dyn ItemStore> = match buffered_store.clone() {
+            Some(buffered) => buffered,
+            None => store,
+        };
         let middleware: Arc<Vec<Arc<dyn Middleware>>> = Arc::new(self.middleware);
         let pipelines: Arc<Vec<Arc<dyn Pipeline>>> = Arc::new(self.pipelines);
         let concurrency = self.concurrency;
@@ -592,6 +600,12 @@ impl CrawlEngine {
             scheduler.flush().await?;
         }
         store.flush().await?;
+        if let Some(buffered) = buffered_store {
+            let store_stats = buffered.stats();
+            for stats in &mut stats_vec {
+                stats.store = store_stats;
+            }
+        }
         let elapsed = start.elapsed();
 
         for (i, (spider, _)) in spider_entries.iter().enumerate() {
@@ -631,6 +645,11 @@ impl CrawlEngine {
                 retries = stats_vec[i].retries,
                 retry_exhausted = stats_vec[i].retry_exhausted,
                 robots_blocked = stats_vec[i].robots_blocked,
+                store_buffered = stats_vec[i].store.buffered,
+                store_queued = stats_vec[i].store.queued,
+                store_written = stats_vec[i].store.written,
+                store_batches = stats_vec[i].store.batches,
+                store_queue_full_waits = stats_vec[i].store.queue_full_waits,
                 bytes = stats_vec[i].bytes_downloaded,
                 pages_per_sec = format!("{rps:.1}"),
                 stop_reason = stats_vec[i].stop_reason.map(crate::stats::StopReason::as_str),

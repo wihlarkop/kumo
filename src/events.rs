@@ -49,6 +49,7 @@ impl ItemDropReason {
 ///
 /// Event delivery is best-effort. If there are no receivers or a receiver lags,
 /// the crawl continues normally.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum CrawlEvent {
     CrawlStarted {

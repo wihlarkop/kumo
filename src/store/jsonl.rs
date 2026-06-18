@@ -43,6 +43,16 @@ impl ItemStore for JsonlStore {
         Ok(())
     }
 
+    async fn store_many(&self, items: &[serde_json::Value]) -> Result<(), KumoError> {
+        let mut writer = self.writer.lock().unwrap();
+        for item in items {
+            let json =
+                serde_json::to_string(item).map_err(|e| KumoError::store("jsonl store", e))?;
+            writeln!(writer, "{json}").map_err(|e| KumoError::store("jsonl store", e))?;
+        }
+        Ok(())
+    }
+
     async fn flush(&self) -> Result<(), KumoError> {
         self.writer
             .lock()

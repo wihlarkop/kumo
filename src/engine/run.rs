@@ -13,6 +13,7 @@ use crate::{
     scheduler::{CrawlScheduler, SchedulerPoll},
     spider::Spider,
     stats::CrawlStats,
+    store::ItemStore,
 };
 
 use super::{
@@ -70,6 +71,13 @@ impl CrawlEngine {
         let store = self
             .store
             .unwrap_or_else(|| Arc::new(crate::store::stdout::StdoutStore));
+        let buffered_store = self
+            .store_buffer
+            .map(|config| Arc::new(crate::store::BufferedStore::new(store.clone(), config)));
+        let store: Arc<dyn ItemStore> = match buffered_store.clone() {
+            Some(buffered) => buffered,
+            None => store,
+        };
         let middleware: Arc<Vec<Arc<dyn Middleware>>> = Arc::new(self.middleware);
         let pipelines: Arc<Vec<Arc<dyn Pipeline>>> = Arc::new(self.pipelines);
 
@@ -183,6 +191,9 @@ impl CrawlEngine {
                         errors = s.errors,
                         retries = s.retries,
                         retry_exhausted = s.retry_exhausted,
+                        store_queued = s.store.queued,
+                        store_written = s.store.written,
+                        store_queue_full_waits = s.store.queue_full_waits,
                         bytes = s.bytes_downloaded,
                         elapsed_secs = s.duration.as_secs_f64(),
                         "crawl.metrics"
@@ -631,6 +642,9 @@ impl CrawlEngine {
 
         scheduler.flush().await?;
         store.flush().await?;
+        if let Some(buffered) = buffered_store {
+            stats.store = buffered.stats();
+        }
         stats.duration = start.elapsed();
         if stats.stop_reason.is_none() {
             stats.stop_reason = if stats.interrupted {
@@ -669,6 +683,11 @@ impl CrawlEngine {
             retries = stats.retries,
             retry_exhausted = stats.retry_exhausted,
             robots_blocked = stats.robots_blocked,
+            store_buffered = stats.store.buffered,
+            store_queued = stats.store.queued,
+            store_written = stats.store.written,
+            store_batches = stats.store.batches,
+            store_queue_full_waits = stats.store.queue_full_waits,
             bytes = stats.bytes_downloaded,
             duration_secs = stats.duration.as_secs_f64(),
             pages_per_sec = format!("{rps:.1}"),

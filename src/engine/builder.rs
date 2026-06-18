@@ -31,6 +31,7 @@ pub struct CrawlEngine {
     pub(super) middleware: Vec<Arc<dyn Middleware>>,
     pub(super) pipelines: Vec<Arc<dyn Pipeline>>,
     pub(super) store: Option<Arc<dyn ItemStore>>,
+    pub(super) store_buffer: Option<crate::store::StoreBufferConfig>,
     pub(super) respect_robots: bool,
     pub(super) retry_policy: crate::retry::RetryPolicy,
     pub(super) politeness_policy: crate::scheduler::PolitenessPolicy,
@@ -68,6 +69,7 @@ impl Default for CrawlEngine {
             concurrency: 8,
             middleware: Vec::new(),
             store: None,
+            store_buffer: None,
             respect_robots: true,
             pipelines: Vec::new(),
             frontier: None,
@@ -132,6 +134,23 @@ impl CrawlEngine {
     /// Set the output store. Defaults to `StdoutStore` if not called.
     pub fn store(mut self, store: impl ItemStore + 'static) -> Self {
         self.store = Some(Arc::new(store));
+        self
+    }
+
+    /// Enable a bounded asynchronous store buffer.
+    ///
+    /// Accepted items are queued into a background writer. When the queue is
+    /// full, request tasks wait for capacity, making slow stores visible as
+    /// backpressure instead of unbounded memory growth. `batch_size` controls
+    /// how many queued items are passed to `ItemStore::store_many` at once.
+    ///
+    /// Defaults keep direct store writes. Call this only when you want the
+    /// crawler to decouple parsing from slower item persistence.
+    pub fn store_buffer(mut self, queue_capacity: usize, batch_size: usize) -> Self {
+        self.store_buffer = Some(crate::store::StoreBufferConfig::new(
+            queue_capacity,
+            batch_size,
+        ));
         self
     }
 

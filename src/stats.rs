@@ -60,6 +60,52 @@ impl AddAssign for CrawlTimingStats {
     }
 }
 
+/// Store buffering counters collected when [`CrawlEngine::store_buffer`] is enabled.
+///
+/// [`CrawlEngine::store_buffer`]: crate::engine::CrawlEngine::store_buffer
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct StoreStats {
+    /// `true` when the crawl used Kumo's bounded asynchronous store buffer.
+    pub buffered: bool,
+    /// Configured maximum queued items.
+    pub queue_capacity: u64,
+    /// Configured maximum batch size.
+    pub batch_size: u64,
+    /// Items accepted into the store queue.
+    pub queued: u64,
+    /// Items written by the background store writer.
+    pub written: u64,
+    /// Number of non-empty `store_many` calls made by the writer.
+    pub batches: u64,
+    /// Number of explicit flush requests completed by the writer.
+    pub flushes: u64,
+    /// Number of item sends that observed a full queue before awaiting capacity.
+    pub queue_full_waits: u64,
+    /// Cumulative time request tasks spent waiting to enqueue accepted items.
+    pub queue_wait: Duration,
+    /// Cumulative time the writer spent inside store batch writes.
+    pub write: Duration,
+}
+
+impl StoreStats {
+    pub(crate) fn to_json_value(self) -> serde_json::Value {
+        serde_json::json!({
+            "buffered": self.buffered,
+            "queue_capacity": self.queue_capacity,
+            "batch_size": self.batch_size,
+            "queued": self.queued,
+            "written": self.written,
+            "batches": self.batches,
+            "flushes": self.flushes,
+            "queue_full_waits": self.queue_full_waits,
+            "queue_wait_ms": self.queue_wait.as_millis(),
+            "queue_wait_secs": self.queue_wait.as_secs_f64(),
+            "write_ms": self.write.as_millis(),
+            "write_secs": self.write.as_secs_f64(),
+        })
+    }
+}
+
 /// Why a crawl stopped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StopReason {
@@ -96,6 +142,7 @@ pub struct CrawlStats {
     pub robots_blocked: u64,
     pub domains: BTreeMap<String, DomainStats>,
     pub stop_reason: Option<StopReason>,
+    pub store: StoreStats,
 }
 
 impl CrawlStats {
@@ -185,6 +232,7 @@ pub struct CrawlReport {
     pub robots_blocked: u64,
     pub domains: BTreeMap<String, DomainStats>,
     pub stop_reason: Option<StopReason>,
+    pub store: StoreStats,
 }
 
 /// Retry health summary derived from [`CrawlReport`] counters.
@@ -220,6 +268,7 @@ impl From<CrawlStats> for CrawlReport {
             robots_blocked: stats.robots_blocked,
             domains: stats.domains,
             stop_reason: stats.stop_reason,
+            store: stats.store,
         }
     }
 }
@@ -304,6 +353,7 @@ impl CrawlReport {
             "bytes_per_second": self.bytes_per_second(),
             "bytes_downloaded": self.bytes_downloaded,
             "timings": self.timings.to_json_value(),
+            "store": self.store.to_json_value(),
             "interrupted": self.interrupted,
             "error_kinds": self.error_kinds,
             "scheduled": self.scheduled,

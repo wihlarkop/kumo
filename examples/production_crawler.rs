@@ -112,6 +112,7 @@ async fn main() -> Result<(), KumoError> {
         .frontier(frontier)
         .metrics_interval(Duration::from_secs(30))
         .store(JsonlStore::new("production-quotes.jsonl")?)
+        .store_buffer(1_000, 100)
         .run(ProductionSpider)
         .await?;
 
@@ -125,7 +126,7 @@ async fn main() -> Result<(), KumoError> {
     let retry = report.retry_summary();
 
     println!(
-        "pages={} items={} scheduled={} errors={} error_rate={:.3} pages_per_second={:.2} items_per_second={:.2} retries={} retry_exhausted={} retry_pressure_rate={:.3} retry_exhaustion_rate={:.3} retry_exhausted_failure_rate={:.3} deduped={} robots_blocked={} error_kinds={:?} report=production-crawl-report.json",
+        "pages={} items={} scheduled={} errors={} error_rate={:.3} pages_per_second={:.2} items_per_second={:.2} retries={} retry_exhausted={} retry_pressure_rate={:.3} retry_exhaustion_rate={:.3} retry_exhausted_failure_rate={:.3} store_queued={} store_written={} store_queue_full_waits={} deduped={} robots_blocked={} error_kinds={:?} report=production-crawl-report.json",
         report.pages_crawled,
         report.items_scraped,
         report.scheduled,
@@ -138,6 +139,9 @@ async fn main() -> Result<(), KumoError> {
         retry.pressure_rate,
         retry.exhaustion_rate,
         retry.exhausted_failure_rate,
+        report.store.queued,
+        report.store.written,
+        report.store.queue_full_waits,
         report.deduped,
         report.robots_blocked,
         report.error_kinds

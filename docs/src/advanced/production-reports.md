@@ -38,10 +38,31 @@ write without duplicating rate math in every crawler.
 | `success_rate()` | Completed requests divided by completed and failed requests |
 | `retry_exhaustion_rate()` | Retry-exhausted requests divided by retry attempts |
 | `timings` | Cumulative successful-request phase timings for bottleneck diagnosis |
+| `store` | Store-buffer queue/write counters when `store_buffer()` is enabled |
 
 The JSON export uses the same names in snake_case, including derived fields such
 as `pages_per_second`, `error_rate`, `retry_exhaustion_rate`,
-`retry_summary`, and `timings`.
+`retry_summary`, `timings`, and `store`.
+
+## Store Summary
+
+`CrawlReport::store` is always present. When `store_buffer()` is not enabled,
+its counters are zero and `buffered` is `false`. When buffering is enabled, it
+shows how much item output moved through the bounded writer:
+
+| Field | Meaning |
+|-------|---------|
+| `buffered` | Whether the bounded store buffer was enabled |
+| `queued` | Items accepted into the store queue |
+| `written` | Items written by the background writer |
+| `batches` | Non-empty batch write calls |
+| `queue_full_waits` | Times request tasks observed a full store queue |
+| `queue_wait` | Total time request tasks spent waiting for queue capacity |
+| `write` | Total time the writer spent inside store writes |
+
+If `queue_full_waits` or `queue_wait` is high, the item store is backpressuring
+the crawl. That is often better than unbounded memory growth, but it means
+throughput is now limited by item persistence.
 
 ## Retry Summary
 
@@ -164,6 +185,10 @@ tracing::info!(
     retry_pressure_rate = retry.pressure_rate,
     retry_exhaustion_rate = retry.exhaustion_rate,
     retry_exhausted_failure_rate = retry.exhausted_failure_rate,
+    store_buffered = report.store.buffered,
+    store_queued = report.store.queued,
+    store_written = report.store.written,
+    store_queue_full_waits = report.store.queue_full_waits,
     fetch_secs = report.timings.fetch.as_secs_f64(),
     parse_secs = report.timings.parse.as_secs_f64(),
     store_secs = report.timings.store.as_secs_f64(),

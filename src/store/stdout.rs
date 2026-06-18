@@ -13,4 +13,13 @@ impl ItemStore for StdoutStore {
         println!("{json}");
         Ok(())
     }
+
+    async fn store_many(&self, items: &[serde_json::Value]) -> Result<(), KumoError> {
+        for item in items {
+            let json = serde_json::to_string(item)
+                .map_err(|e| KumoError::store("stdout serialization", e))?;
+            println!("{json}");
+        }
+        Ok(())
+    }
 }

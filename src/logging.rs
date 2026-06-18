@@ -21,6 +21,7 @@ pub(crate) mod event {
     pub(crate) const CACHE_STORE_SKIP: &str = "cache.store_skip";
     pub(crate) const ITEM_DROP: &str = "item.drop";
     pub(crate) const ITEM_DROP_PIPELINE_ERROR: &str = "item.drop.pipeline_error";
+    pub(crate) const STORE_BUFFER_ERROR: &str = "store.buffer_error";
     pub(crate) const REQUEST_FETCH: &str = "request.fetch";
     pub(crate) const REQUEST_OK: &str = "request.ok";
     pub(crate) const REQUEST_AUTOTHROTTLE: &str = "request.autothrottle";
@@ -62,6 +63,7 @@ mod tests {
             event::CACHE_STORE_SKIP,
             event::ITEM_DROP,
             event::ITEM_DROP_PIPELINE_ERROR,
+            event::STORE_BUFFER_ERROR,
             event::REQUEST_FETCH,
             event::REQUEST_OK,
             event::REQUEST_AUTOTHROTTLE,
