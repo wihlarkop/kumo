@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use crate::extract::selector::SharedDocument;
+use crate::{extract::selector::SharedDocument, fetch::FetchStatsSnapshot};
 
 pub(crate) enum ResponseBody {
     Text(String),
@@ -21,6 +21,7 @@ pub struct Response {
     pub(super) elapsed: Duration,
     pub(crate) body: ResponseBody,
     pub(super) document: OnceLock<SharedDocument>,
+    pub(crate) fetch_stats: FetchStatsSnapshot,
 }
 
 impl Response {
@@ -33,6 +34,7 @@ impl Response {
             elapsed: Duration::ZERO,
             body: ResponseBody::Text(body.into()),
             document: OnceLock::new(),
+            fetch_stats: FetchStatsSnapshot::default(),
         }
     }
 
@@ -50,6 +52,7 @@ impl Response {
             elapsed: Duration::ZERO,
             body: ResponseBody::Text(body.into()),
             document: OnceLock::new(),
+            fetch_stats: FetchStatsSnapshot::default(),
         }
     }
 
@@ -74,6 +77,7 @@ impl Response {
             elapsed,
             body,
             document: OnceLock::new(),
+            fetch_stats: FetchStatsSnapshot::default(),
         }
     }
 
@@ -97,7 +101,18 @@ impl Response {
             elapsed: Duration::ZERO,
             body: ResponseBody::Bytes(bytes),
             document: OnceLock::new(),
+            fetch_stats: FetchStatsSnapshot::default(),
         }
+    }
+
+    #[cfg(feature = "browser")]
+    pub(crate) fn with_fetch_stats(mut self, stats: FetchStatsSnapshot) -> Self {
+        self.fetch_stats = stats;
+        self
+    }
+
+    pub(crate) fn fetch_stats(&self) -> FetchStatsSnapshot {
+        self.fetch_stats
     }
 
     /// The URL of the fetched page.

@@ -19,6 +19,9 @@ fn crawl_report_exposes_scheduler_counters() {
     stats.record_retry("example.com");
     stats.record_retry_exhausted("example.com");
     stats.record_robots_blocked("example.com");
+    stats.browser_fallbacks = 3;
+    stats.browser_fallback_successes = 2;
+    stats.browser_fallback_failures = 1;
 
     let report = CrawlReport::from(stats);
 
@@ -27,6 +30,9 @@ fn crawl_report_exposes_scheduler_counters() {
     assert_eq!(report.retries, 1);
     assert_eq!(report.retry_exhausted, 1);
     assert_eq!(report.robots_blocked, 1);
+    assert_eq!(report.browser_fallbacks, 3);
+    assert_eq!(report.browser_fallback_successes, 2);
+    assert_eq!(report.browser_fallback_failures, 1);
     assert_eq!(report.domains["example.com"].scheduled, 1);
     assert_eq!(report.domains["example.com"].deduped, 1);
     assert_eq!(report.domains["example.com"].retries, 1);

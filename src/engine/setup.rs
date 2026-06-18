@@ -4,12 +4,12 @@ use crate::{
     engine::USER_AGENT,
     error::KumoError,
     extract::Response,
-    fetch::{Fetcher, client_policy::HttpClientPolicy, http::HttpFetcher},
+    fetch::{FetchStatsSnapshot, Fetcher, client_policy::HttpClientPolicy, http::HttpFetcher},
     robots::RobotsCache,
 };
 
 #[cfg(feature = "browser")]
-use crate::fetch::{BrowserConfig, BrowserFetcher};
+use crate::fetch::{BrowserConfig, BrowserFallbackConfig, BrowserFallbackFetcher, BrowserFetcher};
 
 pub(super) fn build_http_client(
     policy: &HttpClientPolicy,
@@ -56,19 +56,13 @@ pub(super) struct FetcherArgs {
     pub(super) stealth_profile: Option<crate::fetch::StealthProfile>,
     #[cfg(feature = "browser")]
     pub(super) browser: Option<BrowserConfig>,
+    #[cfg(feature = "browser")]
+    pub(super) browser_fallback: Option<BrowserFallbackConfig>,
 }
 
 pub(super) async fn build_raw_fetcher(args: FetcherArgs) -> Result<Arc<dyn Fetcher>, KumoError> {
     if let Some(f) = args.fetcher_override {
         return Ok(f);
-    }
-
-    #[cfg(feature = "stealth")]
-    if let Some(profile) = args.stealth_profile {
-        return Ok(Arc::new(crate::fetch::StealthHttpFetcher::with_policy(
-            profile,
-            args.client_policy,
-        )?));
     }
 
     #[cfg(feature = "browser")]
@@ -78,10 +72,32 @@ pub(super) async fn build_raw_fetcher(args: FetcherArgs) -> Result<Arc<dyn Fetch
         ));
     }
 
-    Ok(Arc::new(HttpFetcher::with_policy(
-        args.client,
-        args.client_policy,
-    )))
+    #[cfg(feature = "stealth")]
+    let http_fetcher: Arc<dyn Fetcher> = if let Some(profile) = args.stealth_profile {
+        Arc::new(crate::fetch::StealthHttpFetcher::with_policy(
+            profile,
+            args.client_policy,
+        )?)
+    } else {
+        Arc::new(HttpFetcher::with_policy(args.client, args.client_policy))
+    };
+
+    #[cfg(not(feature = "stealth"))]
+    let http_fetcher: Arc<dyn Fetcher> =
+        Arc::new(HttpFetcher::with_policy(args.client, args.client_policy));
+
+    #[cfg(feature = "browser")]
+    if let Some(cfg) = args.browser_fallback {
+        let (browser_cfg, should_fallback) = cfg.split();
+        let browser = Arc::new(BrowserFetcher::launch(browser_cfg, args.concurrency).await?);
+        return Ok(Arc::new(BrowserFallbackFetcher::from_parts(
+            http_fetcher,
+            browser,
+            should_fallback,
+        )));
+    }
+
+    Ok(http_fetcher)
 }
 
 struct ArcFetcher(Arc<dyn Fetcher>);
@@ -93,5 +109,9 @@ impl Fetcher for ArcFetcher {
         request: &crate::middleware::FetchRequest,
     ) -> Result<Response, KumoError> {
         self.0.fetch(request).await
+    }
+
+    fn stats(&self) -> FetchStatsSnapshot {
+        self.0.stats()
     }
 }

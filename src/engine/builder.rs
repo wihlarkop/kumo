@@ -11,7 +11,7 @@ use crate::{
 use super::erased::{ErasedSpider, SpiderErased};
 
 #[cfg(feature = "browser")]
-use crate::fetch::BrowserConfig;
+use crate::fetch::{BrowserConfig, BrowserFallbackConfig};
 
 type FrontierOverride = Option<Arc<dyn Frontier>>;
 
@@ -59,6 +59,8 @@ pub struct CrawlEngine {
     pub(super) stream_cancelled: Option<Arc<AtomicBool>>,
     #[cfg(feature = "browser")]
     pub(super) browser: Option<BrowserConfig>,
+    #[cfg(feature = "browser")]
+    pub(super) browser_fallback: Option<BrowserFallbackConfig>,
     #[cfg(feature = "stealth")]
     pub(super) stealth_profile: Option<crate::fetch::StealthProfile>,
 }
@@ -96,6 +98,8 @@ impl Default for CrawlEngine {
             stream_cancelled: None,
             #[cfg(feature = "browser")]
             browser: None,
+            #[cfg(feature = "browser")]
+            browser_fallback: None,
             #[cfg(feature = "stealth")]
             stealth_profile: None,
         }
@@ -331,6 +335,29 @@ impl CrawlEngine {
     #[cfg(feature = "browser")]
     pub fn browser(mut self, cfg: BrowserConfig) -> Self {
         self.browser = Some(cfg);
+        self.browser_fallback = None;
+        self
+    }
+
+    /// Fetch with plain HTTP first, then retry through a browser only when the
+    /// HTTP body appears to require client-side rendering.
+    ///
+    /// Requires the `browser` feature flag.
+    #[cfg(feature = "browser")]
+    pub fn browser_fallback(mut self, cfg: BrowserConfig) -> Self {
+        self.browser = None;
+        self.browser_fallback = Some(BrowserFallbackConfig::new(cfg));
+        self
+    }
+
+    /// Fetch with plain HTTP first, then retry through a browser when the
+    /// supplied fallback detector matches the HTTP response.
+    ///
+    /// Requires the `browser` feature flag.
+    #[cfg(feature = "browser")]
+    pub fn browser_fallback_on(mut self, cfg: BrowserFallbackConfig) -> Self {
+        self.browser = None;
+        self.browser_fallback = Some(cfg);
         self
     }
 
