@@ -264,6 +264,36 @@ CrawlEngine::builder()
 
 If you need a database store, prefer `SqliteStore` for single-process crawls and `PostgresStore` for distributed ones. Avoid using a database store as the primary bottleneck in a high-concurrency crawl.
 
+## Store Backpressure
+
+Direct store writes are simplest and remain the default. If item output is
+slower than fetching and parsing, direct writes make request tasks wait inside
+the store. That is correct, but it can hide whether the bottleneck is parsing,
+the store queue, or the backend itself.
+
+Use `.store_buffer(queue_capacity, batch_size)` when you want a bounded
+producer/consumer boundary between request tasks and item persistence:
+
+```rust
+CrawlEngine::builder()
+    .concurrency(64)
+    .store(JsonlStore::new("items.jsonl")?)
+    .store_buffer(10_000, 250)
+    .run(MySpider)
+    .await?;
+```
+
+Tune `queue_capacity` for the amount of burst you are willing to hold in memory.
+Tune `batch_size` for the downstream writer. Append-oriented stores such as
+`JsonlStore`, `JsonStore`, `CsvStore`, and `StdoutStore` implement batched
+`store_many()` paths. Other stores keep working through the default per-item
+implementation.
+
+Watch `report.store.queue_full_waits` and `report.store.queue_wait`. If they
+grow, the store writer is the limiting stage. Reduce crawl concurrency, increase
+batch size, switch to JSONL and bulk-load later, or improve the downstream
+store.
+
 ## Don't Stack AutoThrottle and RateLimiter
 
 `AutoThrottle` and `RateLimiter` both add delays — using both at the same time compounds them independently and will significantly reduce throughput. Pick one:

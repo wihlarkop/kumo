@@ -35,6 +35,11 @@ impl ItemStore for JsonStore {
         Ok(())
     }
 
+    async fn store_many(&self, items: &[serde_json::Value]) -> Result<(), KumoError> {
+        self.items.lock().unwrap().extend(items.iter().cloned());
+        Ok(())
+    }
+
     async fn flush(&self) -> Result<(), KumoError> {
         let items = self.items.lock().unwrap();
         let json =

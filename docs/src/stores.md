@@ -37,6 +37,50 @@ Prints each item as JSON to stdout — useful for debugging:
 // or just omit .store() — StdoutStore is the default
 ```
 
+## Store Buffering and Backpressure
+
+By default, request tasks write accepted items directly to the configured store.
+This preserves simple ordering and reports direct store time under
+`CrawlReport::timings.store`.
+
+For high-concurrency crawls or slow downstream stores, enable Kumo's bounded
+store buffer:
+
+```rust
+CrawlEngine::builder()
+    .concurrency(32)
+    .store(JsonlStore::new("items.jsonl")?)
+    .store_buffer(1_000, 100) // queue capacity, batch size
+    .run(MySpider)
+    .await?;
+```
+
+Accepted items are queued into a background writer. If the queue is full,
+request tasks wait for capacity, so store pressure is bounded instead of
+growing memory without limit. The writer passes up to `batch_size` items to
+`ItemStore::store_many()`.
+
+Custom stores do not need to change. `store_many()` defaults to calling
+`store()` for each item, while stores that support efficient batch writes can
+override it.
+
+Final reports include `report.store`:
+
+| Field | Meaning |
+|---|---|
+| `buffered` | Whether the bounded store buffer was enabled |
+| `queue_capacity` | Configured maximum queued items |
+| `batch_size` | Configured maximum write batch size |
+| `queued` | Items accepted into the queue |
+| `written` | Items written by the background writer |
+| `batches` | Non-empty `store_many()` calls |
+| `queue_full_waits` | Times an item observed a full queue before waiting |
+| `queue_wait` | Total time request tasks spent waiting to enqueue items |
+| `write` | Total time the writer spent inside store writes |
+
+For `run_all()`, the store is shared by all registered spiders, so each returned
+`CrawlStats` receives the same aggregate store-buffer counters.
+
 ## PostgreSQL
 
 Requires `features = ["postgres"]`.

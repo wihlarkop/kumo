@@ -24,7 +24,7 @@ pub mod scheduler;
 pub mod sitemap;
 pub mod spider;
 pub mod stats;
-pub use stats::{CrawlReport, CrawlStats, CrawlTimingStats, RetryReport, StopReason};
+pub use stats::{CrawlReport, CrawlStats, CrawlTimingStats, RetryReport, StopReason, StoreStats};
 pub mod store;
 
 /// Convenience re-exports for writing spiders with minimal `use` statements.
@@ -71,14 +71,14 @@ pub mod prelude {
     pub use crate::scheduler::{CrawlScheduler, DomainPolicy, FingerprintPolicy, PolitenessPolicy};
     pub use crate::sitemap::{SitemapEntry, SitemapSpider};
     pub use crate::spider::{Output, Spider};
-    pub use crate::stats::{CrawlReport, CrawlTimingStats, RetryReport, StopReason};
+    pub use crate::stats::{CrawlReport, CrawlTimingStats, RetryReport, StopReason, StoreStats};
     #[cfg(feature = "mysql")]
     pub use crate::store::MySqlStore;
     #[cfg(feature = "postgres")]
     pub use crate::store::PostgresStore;
     #[cfg(feature = "sqlite")]
     pub use crate::store::SqliteStore;
-    pub use crate::store::{CsvStore, JsonStore, JsonlStore, StdoutStore};
+    pub use crate::store::{CsvStore, JsonStore, JsonlStore, StdoutStore, StoreBufferConfig};
     #[cfg(feature = "derive")]
     pub use kumo_derive::Extract;
     pub use tokio_stream::StreamExt;

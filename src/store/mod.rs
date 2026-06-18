@@ -1,3 +1,4 @@
+mod buffer;
 #[cfg(feature = "cloud")]
 pub mod cloud;
 pub mod csv;
@@ -11,6 +12,8 @@ pub mod postgres;
 pub mod sqlite;
 pub mod stdout;
 
+pub(crate) use buffer::BufferedStore;
+pub use buffer::StoreBufferConfig;
 #[cfg(feature = "cloud")]
 pub use cloud::{CloudFormat, CloudStore, CloudStoreBuilder};
 pub use csv::CsvStore;
@@ -33,6 +36,18 @@ use crate::error::KumoError;
 #[async_trait::async_trait]
 pub trait ItemStore: Send + Sync {
     async fn store(&self, item: &serde_json::Value) -> Result<(), KumoError>;
+
+    /// Store a batch of items.
+    ///
+    /// The default implementation calls [`store`](Self::store) for each item.
+    /// Stores that can write batches more efficiently can override this method
+    /// without changing the engine or custom store API.
+    async fn store_many(&self, items: &[serde_json::Value]) -> Result<(), KumoError> {
+        for item in items {
+            self.store(item).await?;
+        }
+        Ok(())
+    }
 
     /// Flush any buffered writes. Called by the engine after the crawl finishes.
     async fn flush(&self) -> Result<(), KumoError> {
