@@ -159,6 +159,7 @@ jobs:
   stealth:
     name: Stealth feature (BoringSSL)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
 
@@ -166,7 +167,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install BoringSSL build deps
-        run: sudo apt-get update && sudo apt-get install -y cmake nasm
+        timeout-minutes: 5
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends cmake nasm
 
       - name: Cache cargo registry & build
         uses: actions/cache@v5
