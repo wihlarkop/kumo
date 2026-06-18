@@ -108,6 +108,8 @@ the request's domain in `domains[domain].failed` so production reports do not
 silently lose failed work.
 Use `retry_exhausted` when alerts need to distinguish "we retried and still
 failed" from one-off permanent failures.
+Use `CrawlReport::retry_summary()` when alerts need a compact production signal
+that separates retry pressure from retry exhaustion.
 Use `error_kinds` when alerts or dashboards need to separate parse failures,
 HTTP status failures, fetch failures, and other `KumoErrorKind` categories.
 Use `timings` to identify the largest successful-request phase. Timing totals
@@ -151,12 +153,14 @@ std::fs::write("crawl-report.json", report.to_json_string_pretty())?;
 | `error_rate()` | Failed requests divided by completed and failed requests |
 | `success_rate()` | Completed requests divided by completed and failed requests |
 | `retry_exhaustion_rate()` | Retry-exhausted requests divided by retry attempts |
+| `retry_summary()` | Retry attempts, exhausted retries, retry pressure, exhaustion, and exhausted-failure rates |
 
 Report JSON uses stable snake_case field names. `duration` is exported as
 `duration_ms` and `duration_secs`, derived helper values are exported as fields
 such as `pages_per_second` and `error_rate`, timing breakdowns are exported
-under `timings`, and `stop_reason` is exported as a snake_case string such as
-`"frontier_exhausted"` or `"max_pages"`.
+under `timings`, retry health is exported under `retry_summary`, and
+`stop_reason` is exported as a snake_case string such as `"frontier_exhausted"`
+or `"max_pages"`.
 
 ## Error Handling
 

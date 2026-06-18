@@ -122,8 +122,10 @@ async fn main() -> Result<(), KumoError> {
     )
     .map_err(|e| KumoError::store("write production crawl report", e))?;
 
+    let retry = report.retry_summary();
+
     println!(
-        "pages={} items={} scheduled={} errors={} error_rate={:.3} pages_per_second={:.2} items_per_second={:.2} retries={} retry_exhausted={} retry_exhaustion_rate={:.3} deduped={} robots_blocked={} error_kinds={:?} report=production-crawl-report.json",
+        "pages={} items={} scheduled={} errors={} error_rate={:.3} pages_per_second={:.2} items_per_second={:.2} retries={} retry_exhausted={} retry_pressure_rate={:.3} retry_exhaustion_rate={:.3} retry_exhausted_failure_rate={:.3} deduped={} robots_blocked={} error_kinds={:?} report=production-crawl-report.json",
         report.pages_crawled,
         report.items_scraped,
         report.scheduled,
@@ -131,9 +133,11 @@ async fn main() -> Result<(), KumoError> {
         report.error_rate(),
         report.pages_per_second(),
         report.items_per_second(),
-        report.retries,
-        report.retry_exhausted,
-        report.retry_exhaustion_rate(),
+        retry.attempts,
+        retry.exhausted,
+        retry.pressure_rate,
+        retry.exhaustion_rate,
+        retry.exhausted_failure_rate,
         report.deduped,
         report.robots_blocked,
         report.error_kinds
