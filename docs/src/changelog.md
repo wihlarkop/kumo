@@ -14,6 +14,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### 0.5.1 - 2026-06-04
 
+- Added `otel` production metrics for final crawl report counters, per-request
+  successful fetch latency histograms, and bounded store queue/write signals.
 - Added opt-in HTTP-first browser fallback with `browser_fallback(...)`,
   `browser_fallback_on(...)`, JavaScript-gated response detection, fallback
   failure recovery, and report JSON counters for fallback attempts, successes,

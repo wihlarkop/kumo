@@ -353,6 +353,12 @@ impl CrawlEngine {
                             stats.bytes_downloaded += output.bytes_downloaded;
                             stats.timings += output.timings;
                             stats.record_fetch_stats(output.fetch_stats);
+                            #[cfg(feature = "otel")]
+                            crate::otel::record_fetch_latency(
+                                spider.name(),
+                                None,
+                                output.timings.fetch,
+                            );
                             if is_cancelled(&stream_cancelled) {
                                 shutting_down = true;
                                 stats.interrupted = true;
@@ -705,12 +711,16 @@ impl CrawlEngine {
             "crawl.complete"
         );
 
+        let report = crate::stats::CrawlReport::from(stats.clone());
+        #[cfg(feature = "otel")]
+        crate::otel::record_crawl_report(spider.name(), None, &report);
+
         observer
             .notify_with(|| crate::events::CrawlEvent::CrawlFinished {
                 spider: spider.name().to_string(),
                 spider_index: None,
                 stop_reason: stats.stop_reason,
-                report: crate::stats::CrawlReport::from(stats.clone()),
+                report,
             })
             .await?;
 
