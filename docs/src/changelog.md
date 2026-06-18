@@ -26,6 +26,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   retry, error, and robots-blocked counter update.
 - Cached request-task observer enablement so item-scraped and item-dropped hot
   paths bypass event dispatch checks when events and hooks are disabled.
+- Reduced feature-matrix CI disk pressure by freeing unused hosted-tool caches
+  before the heavy LLM lane and avoiding `target` cache uploads for feature
+  permutations.
 - Added `CrawlTimingStats` and `CrawlReport::timings` for cumulative
   successful-request phase timings across request middleware, fetch, response
   middleware, parse, pipeline, and store work.

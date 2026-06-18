@@ -66,13 +66,19 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Free disk for heavy feature checks
+        if: matrix.features == 'llm'
+        run: |
+          df -h
+          sudo rm -rf /opt/hostedtoolcache /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h
+
       - name: Cache cargo registry & build
         uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
           key: ${{ runner.os }}-cargo-feat-${{ matrix.features || 'default' }}-${{
             hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-feat-
@@ -94,6 +100,10 @@ jobs:
           else
             cargo test --features "$FEATURES"
           fi
+
+      - name: Free feature build output before cache finalization
+        if: always()
+        run: rm -rf target
 
   broad-feature-check:
     name: Broad non-stealth feature check
