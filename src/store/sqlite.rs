@@ -33,6 +33,19 @@ impl SqliteStore {
             extra_columns: Vec::new(),
         }
     }
+
+    fn insert_sql(&self) -> String {
+        let col_list: String = self
+            .extra_columns
+            .iter()
+            .map(|n| format!(", \"{}\"", n))
+            .collect();
+        let param_list: String = self.extra_columns.iter().map(|_| ", ?").collect();
+        format!(
+            r#"INSERT INTO "{}" (data{}) VALUES (?{})"#,
+            self.table, col_list, param_list
+        )
+    }
 }
 
 impl SqliteStoreBuilder {
@@ -102,21 +115,38 @@ impl SqliteStoreBuilder {
 #[async_trait]
 impl ItemStore for SqliteStore {
     async fn store(&self, item: &serde_json::Value) -> Result<(), KumoError> {
-        let col_list: String = self
-            .extra_columns
-            .iter()
-            .map(|n| format!(", \"{}\"", n))
-            .collect();
-        let param_list: String = self.extra_columns.iter().map(|_| ", ?").collect();
-        let sql = format!(
-            r#"INSERT INTO "{}" (data{}) VALUES (?{})"#,
-            self.table, col_list, param_list
-        );
+        let sql = self.insert_sql();
         let mut q = sqlx::query(AssertSqlSafe(sql)).bind(item.to_string());
         for name in &self.extra_columns {
             q = q.bind(super::json_val_to_sql_string(item.get(name)));
         }
         q.execute(&self.pool)
+            .await
+            .map_err(|e| KumoError::store("sqlite store", e))?;
+        Ok(())
+    }
+
+    async fn store_many(&self, items: &[serde_json::Value]) -> Result<(), KumoError> {
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        let sql = self.insert_sql();
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| KumoError::store("sqlite store", e))?;
+        for item in items {
+            let mut q = sqlx::query(AssertSqlSafe(sql.clone())).bind(item.to_string());
+            for name in &self.extra_columns {
+                q = q.bind(super::json_val_to_sql_string(item.get(name)));
+            }
+            q.execute(&mut *tx)
+                .await
+                .map_err(|e| KumoError::store("sqlite store", e))?;
+        }
+        tx.commit()
             .await
             .map_err(|e| KumoError::store("sqlite store", e))?;
         Ok(())

@@ -286,8 +286,9 @@ CrawlEngine::builder()
 Tune `queue_capacity` for the amount of burst you are willing to hold in memory.
 Tune `batch_size` for the downstream writer. Append-oriented stores such as
 `JsonlStore`, `JsonStore`, `CsvStore`, and `StdoutStore` implement batched
-`store_many()` paths. Other stores keep working through the default per-item
-implementation.
+`store_many()` paths. SQL stores use one transaction per flushed batch, which
+reduces transaction overhead without building oversized dynamic SQL statements.
+Other custom stores keep working through the default per-item implementation.
 
 Watch `report.store.queue_full_waits` and `report.store.queue_wait`. If they
 grow, the store writer is the limiting stage. Reduce crawl concurrency, increase

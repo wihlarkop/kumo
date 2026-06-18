@@ -62,7 +62,8 @@ growing memory without limit. The writer passes up to `batch_size` items to
 
 Custom stores do not need to change. `store_many()` defaults to calling
 `store()` for each item, while stores that support efficient batch writes can
-override it.
+override it. Built-in file/stdout stores write batches under one lock, and SQL
+stores write buffered batches inside a transaction.
 
 Final reports include `report.store`:
 
@@ -99,6 +100,8 @@ let store = PostgresStore::builder("postgres://user:pass@localhost/mydb")
 ```
 
 The store creates the table if it does not exist. Each item is inserted as a JSONB row.
+When `store_buffer()` is enabled, each flushed batch is inserted in one
+transaction.
 
 ## SQLite
 
@@ -116,6 +119,9 @@ let store = SqliteStore::builder("sqlite://crawl.db")
 .store(store)
 ```
 
+When `store_buffer()` is enabled, each flushed batch is inserted in one
+transaction.
+
 ## MySQL
 
 Requires `features = ["mysql"]`.
@@ -132,6 +138,9 @@ let store = MySqlStore::builder("mysql://user:pass@localhost/mydb")
 
 .store(store)
 ```
+
+When `store_buffer()` is enabled, each flushed batch is inserted in one
+transaction.
 
 ## Cloud Storage
 
