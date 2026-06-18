@@ -21,12 +21,116 @@
 //! }
 //! ```
 
-use std::sync::{Mutex, OnceLock};
+use std::{
+    sync::{Mutex, OnceLock},
+    time::Duration,
+};
 
 use crate::error::KumoError;
 
 static TRACER_PROVIDER: OnceLock<Mutex<Option<opentelemetry_sdk::trace::SdkTracerProvider>>> =
     OnceLock::new();
+static METER_PROVIDER: OnceLock<Mutex<Option<opentelemetry_sdk::metrics::SdkMeterProvider>>> =
+    OnceLock::new();
+static PRODUCTION_METRICS: OnceLock<Mutex<Option<ProductionMetrics>>> = OnceLock::new();
+
+#[derive(Clone)]
+struct ProductionMetrics {
+    requests_scheduled: opentelemetry::metrics::Counter<u64>,
+    pages_crawled: opentelemetry::metrics::Counter<u64>,
+    items_scraped: opentelemetry::metrics::Counter<u64>,
+    errors: opentelemetry::metrics::Counter<u64>,
+    retries: opentelemetry::metrics::Counter<u64>,
+    retries_exhausted: opentelemetry::metrics::Counter<u64>,
+    fetch_latency: opentelemetry::metrics::Histogram<f64>,
+    store_queued: opentelemetry::metrics::Counter<u64>,
+    store_written: opentelemetry::metrics::Counter<u64>,
+    store_failed_writes: opentelemetry::metrics::Counter<u64>,
+    store_failed_batches: opentelemetry::metrics::Counter<u64>,
+    store_queue_full_waits: opentelemetry::metrics::Counter<u64>,
+    store_queue_wait: opentelemetry::metrics::Histogram<f64>,
+    store_write: opentelemetry::metrics::Histogram<f64>,
+}
+
+impl ProductionMetrics {
+    fn new(provider: &opentelemetry_sdk::metrics::SdkMeterProvider) -> Self {
+        use opentelemetry::metrics::MeterProvider as _;
+
+        let meter = provider.meter("kumo");
+        Self {
+            requests_scheduled: meter
+                .u64_counter("kumo.requests.scheduled")
+                .with_description("Requests accepted by the crawl scheduler")
+                .with_unit("{request}")
+                .build(),
+            pages_crawled: meter
+                .u64_counter("kumo.pages.crawled")
+                .with_description("Successful pages crawled")
+                .with_unit("{page}")
+                .build(),
+            items_scraped: meter
+                .u64_counter("kumo.items.scraped")
+                .with_description("Items scraped and accepted by the item store")
+                .with_unit("{item}")
+                .build(),
+            errors: meter
+                .u64_counter("kumo.errors")
+                .with_description("Permanent crawl errors")
+                .with_unit("{error}")
+                .build(),
+            retries: meter
+                .u64_counter("kumo.retries")
+                .with_description("Retry attempts scheduled")
+                .with_unit("{retry}")
+                .build(),
+            retries_exhausted: meter
+                .u64_counter("kumo.retries.exhausted")
+                .with_description("Requests that failed after retry capacity was exhausted")
+                .with_unit("{request}")
+                .build(),
+            fetch_latency: meter
+                .f64_histogram("kumo.fetch.latency")
+                .with_description("Successful request fetch latency")
+                .with_unit("s")
+                .build(),
+            store_queued: meter
+                .u64_counter("kumo.store.queued")
+                .with_description("Items accepted into the bounded store queue")
+                .with_unit("{item}")
+                .build(),
+            store_written: meter
+                .u64_counter("kumo.store.written")
+                .with_description("Items written by the store writer")
+                .with_unit("{item}")
+                .build(),
+            store_failed_writes: meter
+                .u64_counter("kumo.store.failed_writes")
+                .with_description("Items in store batches that returned an error")
+                .with_unit("{item}")
+                .build(),
+            store_failed_batches: meter
+                .u64_counter("kumo.store.failed_batches")
+                .with_description("Store batch writes that returned an error")
+                .with_unit("{batch}")
+                .build(),
+            store_queue_full_waits: meter
+                .u64_counter("kumo.store.queue_full_waits")
+                .with_description("Item sends that observed a full store queue")
+                .with_unit("{wait}")
+                .build(),
+            store_queue_wait: meter
+                .f64_histogram("kumo.store.queue_wait")
+                .with_description("Store queue wait time")
+                .with_unit("s")
+                .build(),
+            store_write: meter
+                .f64_histogram("kumo.store.write")
+                .with_description("Store batch write attempt time")
+                .with_unit("s")
+                .build(),
+        }
+    }
+}
 
 /// Initialise the OpenTelemetry OTLP pipeline and register it with the
 /// global `tracing` subscriber.
@@ -49,7 +153,7 @@ pub async fn init(
     use opentelemetry::KeyValue;
     use opentelemetry::trace::TracerProvider as _;
     use opentelemetry_otlp::WithExportConfig;
-    use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
+    use opentelemetry_sdk::{Resource, metrics::SdkMeterProvider, trace::SdkTracerProvider};
     use tracing_subscriber::prelude::*;
 
     let service_name = service_name.into();
@@ -74,6 +178,30 @@ pub async fn init(
     let provider_slot = TRACER_PROVIDER.get_or_init(|| Mutex::new(None));
     if let Ok(mut current) = provider_slot.lock() {
         *current = Some(provider.clone());
+    }
+
+    let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
+        .with_tonic()
+        .with_endpoint(&endpoint)
+        .build()
+        .map_err(|e| KumoError::store_msg(format!("otel metric exporter: {e}")))?;
+    let meter_provider = SdkMeterProvider::builder()
+        .with_periodic_exporter(metric_exporter)
+        .with_resource(
+            Resource::builder()
+                .with_attribute(KeyValue::new("service.name", service_name.clone()))
+                .build(),
+        )
+        .build();
+    opentelemetry::global::set_meter_provider(meter_provider.clone());
+    let metrics = ProductionMetrics::new(&meter_provider);
+    let provider_slot = METER_PROVIDER.get_or_init(|| Mutex::new(None));
+    if let Ok(mut current) = provider_slot.lock() {
+        *current = Some(meter_provider);
+    }
+    let metrics_slot = PRODUCTION_METRICS.get_or_init(|| Mutex::new(None));
+    if let Ok(mut current) = metrics_slot.lock() {
+        *current = Some(metrics);
     }
 
     let otel_layer = tracing_opentelemetry::layer().with_tracer(provider.tracer("kumo"));
@@ -104,4 +232,102 @@ pub fn shutdown() {
     {
         let _ = provider.shutdown();
     }
+    if let Some(metrics_slot) = PRODUCTION_METRICS.get()
+        && let Ok(mut metrics) = metrics_slot.lock()
+    {
+        *metrics = None;
+    }
+    if let Some(provider_slot) = METER_PROVIDER.get()
+        && let Ok(mut provider) = provider_slot.lock()
+        && let Some(provider) = provider.take()
+    {
+        let _ = provider.shutdown();
+    }
+}
+
+pub(crate) fn record_fetch_latency(spider: &str, spider_index: Option<usize>, latency: Duration) {
+    if let Some(metrics) = production_metrics() {
+        metrics.fetch_latency.record(
+            latency.as_secs_f64(),
+            &crawl_attributes(spider, spider_index),
+        );
+    }
+}
+
+pub(crate) fn record_crawl_report(
+    spider: &str,
+    spider_index: Option<usize>,
+    report: &crate::stats::CrawlReport,
+) {
+    let Some(metrics) = production_metrics() else {
+        return;
+    };
+    let attrs = final_report_attributes(spider, spider_index, report.stop_reason);
+
+    metrics.requests_scheduled.add(report.scheduled, &attrs);
+    metrics.pages_crawled.add(report.pages_crawled, &attrs);
+    metrics.items_scraped.add(report.items_scraped, &attrs);
+    metrics.retries.add(report.retries, &attrs);
+    metrics
+        .retries_exhausted
+        .add(report.retry_exhausted, &attrs);
+    metrics.store_queued.add(report.store.queued, &attrs);
+    metrics.store_written.add(report.store.written, &attrs);
+    metrics
+        .store_failed_writes
+        .add(report.store.failed_writes, &attrs);
+    metrics
+        .store_failed_batches
+        .add(report.store.failed_batches, &attrs);
+    metrics
+        .store_queue_full_waits
+        .add(report.store.queue_full_waits, &attrs);
+
+    if report.store.queued > 0 {
+        metrics.store_queue_wait.record(
+            report.store.average_queue_wait_per_item().as_secs_f64(),
+            &attrs,
+        );
+    }
+    if report.store.batches + report.store.failed_batches > 0 {
+        metrics
+            .store_write
+            .record(report.store.average_write_per_batch().as_secs_f64(), &attrs);
+    }
+
+    if report.error_kinds.is_empty() {
+        metrics.errors.add(report.errors, &attrs);
+    } else {
+        for (kind, count) in &report.error_kinds {
+            let mut error_attrs = attrs.clone();
+            error_attrs.push(opentelemetry::KeyValue::new("error.kind", kind.clone()));
+            metrics.errors.add(*count, &error_attrs);
+        }
+    }
+}
+
+fn production_metrics() -> Option<ProductionMetrics> {
+    PRODUCTION_METRICS
+        .get()
+        .and_then(|slot| slot.lock().ok().and_then(|metrics| metrics.clone()))
+}
+
+fn crawl_attributes(spider: &str, spider_index: Option<usize>) -> Vec<opentelemetry::KeyValue> {
+    let mut attrs = vec![opentelemetry::KeyValue::new("spider", spider.to_string())];
+    if let Some(index) = spider_index {
+        attrs.push(opentelemetry::KeyValue::new("spider.index", index as i64));
+    }
+    attrs
+}
+
+fn final_report_attributes(
+    spider: &str,
+    spider_index: Option<usize>,
+    stop_reason: Option<crate::stats::StopReason>,
+) -> Vec<opentelemetry::KeyValue> {
+    let mut attrs = crawl_attributes(spider, spider_index);
+    if let Some(reason) = stop_reason {
+        attrs.push(opentelemetry::KeyValue::new("stop.reason", reason.as_str()));
+    }
+    attrs
 }
