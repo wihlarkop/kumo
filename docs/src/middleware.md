@@ -89,6 +89,47 @@ HTTP client per proxy URL, so connections are reused without sharing cookies
 or connection pools between proxies. These clients inherit the engine's
 concurrency, request timeout, User-Agent, and TCP keepalive settings.
 
+`ProxyRotator` also tracks per-proxy successes, failures, consecutive failures,
+and cooldown state. By default, a proxy is skipped for 60 seconds after three
+consecutive failed request attempts:
+
+```rust
+use std::time::Duration;
+
+.middleware(
+    ProxyRotator::new(vec![
+        "http://proxy1:8080".into(),
+        "http://proxy2:8080".into(),
+    ])
+    .cooldown_after(2, Duration::from_secs(30))
+)
+```
+
+Use `.without_cooldown()` to keep health counters without skipping proxies.
+`ProxyRotator` clones share health state, so keep a clone before registering
+middleware when you want to inspect `ProxyHealthSnapshot` counters later:
+
+```rust
+let proxies = ProxyRotator::new(vec!["http://proxy1:8080".to_string()]);
+let proxy_health = proxies.clone();
+
+let report = CrawlEngine::builder()
+    .middleware(proxies)
+    .run(MySpider)
+    .await?;
+
+for proxy in proxy_health.health() {
+    println!(
+        "{} successes={} failures={}",
+        proxy.proxy, proxy.successes, proxy.failures
+    );
+}
+```
+
+When every configured proxy is cooling down, `ProxyRotator` leaves
+`request.proxy` unset for that request instead of forcing a known unhealthy
+proxy.
+
 ## UserAgentRotator
 
 Rotate User-Agent strings per request:
