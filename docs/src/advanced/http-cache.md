@@ -17,6 +17,11 @@ Only `GET` responses are cached. Requests with bodies or non-GET methods bypass
 the cache so one request variant cannot be accidentally replayed for another.
 Binary responses also bypass cache writes.
 
+When `browser_fallback(...)` is enabled, the cache wraps the full fetcher. If a
+URL falls back to the browser and returns rendered HTML, that rendered response
+is what later cache hits replay. Disable the cache for production crawls that
+must re-evaluate whether a page still needs browser rendering.
+
 ## TTL
 
 Set a maximum cache age:

@@ -32,6 +32,7 @@ pub(super) struct RequestTaskOutput {
     pub(super) item_count: u64,
     pub(super) bytes_downloaded: u64,
     pub(super) timings: CrawlTimingStats,
+    pub(super) fetch_stats: crate::fetch::FetchStatsSnapshot,
     pub(super) follows: Vec<(CrawlRequest, usize)>,
 }
 
@@ -67,6 +68,7 @@ async fn process_request(
     let phase_start = std::time::Instant::now();
     let mut response = ctx.fetcher.fetch(&request).await?;
     timings.fetch += phase_start.elapsed();
+    let fetch_stats = response.fetch_stats();
     let bytes_downloaded = response.bytes().len() as u64;
 
     let phase_start = std::time::Instant::now();
@@ -161,6 +163,7 @@ async fn process_request(
                 item_count,
                 bytes_downloaded,
                 timings,
+                fetch_stats,
                 follows: Vec::new(),
             });
         }
@@ -200,6 +203,7 @@ async fn process_request(
         item_count,
         bytes_downloaded,
         timings,
+        fetch_stats,
         follows,
     })
 }

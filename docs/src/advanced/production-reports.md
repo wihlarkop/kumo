@@ -29,6 +29,9 @@ write without duplicating rate math in every crawler.
 | `retries` | Retry attempts scheduled by retry policy or spider error policy |
 | `retry_exhausted` | Requests that still failed after retry capacity was used |
 | `retry_summary()` | Retry attempts, exhausted retries, retry pressure, exhaustion, and exhausted-failure rates |
+| `browser_fallbacks` | Requests retried through the browser fallback path |
+| `browser_fallback_successes` | Browser fallback attempts that returned a rendered response |
+| `browser_fallback_failures` | Browser fallback attempts that failed and kept the original HTTP response |
 | `robots_blocked` | Requests blocked by robots.txt |
 | `stop_reason` | Why the crawl stopped |
 | `pages_per_second()` | Crawl throughput |
@@ -43,6 +46,11 @@ write without duplicating rate math in every crawler.
 The JSON export uses the same names in snake_case, including derived fields such
 as `pages_per_second`, `error_rate`, `retry_exhaustion_rate`,
 `retry_summary`, `timings`, and `store`.
+
+When `browser_fallback(...)` is enabled, the browser fallback counters help show
+how much of the crawl required JavaScript rendering. A high fallback rate usually
+means browser rendering is part of the target's normal path and crawl
+concurrency should be sized for browser cost, not HTTP cost.
 
 ## Store Summary
 

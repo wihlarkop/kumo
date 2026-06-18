@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 
-use super::Fetcher;
+use super::{FetchStatsSnapshot, Fetcher};
 use crate::{
     error::KumoError,
     extract::{Response, response::ResponseBody},
@@ -171,5 +171,9 @@ impl Fetcher for CachingFetcher {
         }
 
         Ok(response)
+    }
+
+    fn stats(&self) -> FetchStatsSnapshot {
+        self.inner.stats()
     }
 }

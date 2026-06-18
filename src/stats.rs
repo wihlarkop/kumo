@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, ops::AddAssign, time::Duration};
 
-use crate::error::KumoErrorKind;
+use crate::{error::KumoErrorKind, fetch::FetchStatsSnapshot};
 
 /// Per-domain crawl counters collected while the engine runs.
 #[derive(Debug, Default, Clone)]
@@ -178,6 +178,9 @@ pub struct CrawlStats {
     pub domains: BTreeMap<String, DomainStats>,
     pub stop_reason: Option<StopReason>,
     pub store: StoreStats,
+    pub browser_fallbacks: u64,
+    pub browser_fallback_successes: u64,
+    pub browser_fallback_failures: u64,
 }
 
 impl CrawlStats {
@@ -230,6 +233,12 @@ impl CrawlStats {
         self.domain_mut(domain).robots_blocked += 1;
     }
 
+    pub(crate) fn record_fetch_stats(&mut self, stats: FetchStatsSnapshot) {
+        self.browser_fallbacks += stats.browser_fallbacks;
+        self.browser_fallback_successes += stats.browser_fallback_successes;
+        self.browser_fallback_failures += stats.browser_fallback_failures;
+    }
+
     fn domain_mut(&mut self, domain: &str) -> &mut DomainStats {
         self.domains.entry(domain.to_string()).or_default()
     }
@@ -268,6 +277,9 @@ pub struct CrawlReport {
     pub domains: BTreeMap<String, DomainStats>,
     pub stop_reason: Option<StopReason>,
     pub store: StoreStats,
+    pub browser_fallbacks: u64,
+    pub browser_fallback_successes: u64,
+    pub browser_fallback_failures: u64,
 }
 
 /// Retry health summary derived from [`CrawlReport`] counters.
@@ -304,6 +316,9 @@ impl From<CrawlStats> for CrawlReport {
             domains: stats.domains,
             stop_reason: stats.stop_reason,
             store: stats.store,
+            browser_fallbacks: stats.browser_fallbacks,
+            browser_fallback_successes: stats.browser_fallback_successes,
+            browser_fallback_failures: stats.browser_fallback_failures,
         }
     }
 }
@@ -406,6 +421,9 @@ impl CrawlReport {
             "success_rate": self.success_rate(),
             "retry_exhaustion_rate": self.retry_exhaustion_rate(),
             "robots_blocked": self.robots_blocked,
+            "browser_fallbacks": self.browser_fallbacks,
+            "browser_fallback_successes": self.browser_fallback_successes,
+            "browser_fallback_failures": self.browser_fallback_failures,
             "domains": domains,
             "stop_reason": self.stop_reason.map(StopReason::as_str),
         })

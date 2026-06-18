@@ -14,6 +14,10 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### 0.5.1 - 2026-06-04
 
+- Added opt-in HTTP-first browser fallback with `browser_fallback(...)`,
+  `browser_fallback_on(...)`, JavaScript-gated response detection, fallback
+  failure recovery, and report JSON counters for fallback attempts, successes,
+  and failures.
 - Applied Kumo's connection-pool size, request timeout, User-Agent, cookie, and
   TCP keepalive policy consistently to lazily created per-proxy HTTP clients
   while preserving isolated proxy cookie jars and pools.

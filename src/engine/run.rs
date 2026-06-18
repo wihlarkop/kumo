@@ -119,6 +119,8 @@ impl CrawlEngine {
             stealth_profile: self.stealth_profile,
             #[cfg(feature = "browser")]
             browser: self.browser,
+            #[cfg(feature = "browser")]
+            browser_fallback: self.browser_fallback,
         })
         .await?;
         let fetcher = wrap_with_cache(fetcher, self.cache_dir, self.cache_ttl)?;
@@ -350,6 +352,7 @@ impl CrawlEngine {
                             stats.items_scraped += output.item_count;
                             stats.bytes_downloaded += output.bytes_downloaded;
                             stats.timings += output.timings;
+                            stats.record_fetch_stats(output.fetch_stats);
                             if is_cancelled(&stream_cancelled) {
                                 shutting_down = true;
                                 stats.interrupted = true;
