@@ -39,6 +39,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   `ItemStore::store_many()` writes for built-in file/stdout stores.
 - Hardened the stealth CI job with explicit timeouts and retry-safe package
   installation so runner package-manager hangs cannot block PRs indefinitely.
+- Added transactional `store_many()` implementations for SQLite, Postgres, and
+  MySQL stores so buffered database writes commit one flushed batch per
+  transaction.
 - Added `CrawlTimingStats` and `CrawlReport::timings` for cumulative
   successful-request phase timings across request middleware, fetch, response
   middleware, parse, pipeline, and store work.
