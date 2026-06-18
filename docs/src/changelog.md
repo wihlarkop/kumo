@@ -29,6 +29,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - Reduced feature-matrix CI disk pressure by freeing unused hosted-tool caches
   before the heavy LLM lane and avoiding `target` cache uploads for feature
   permutations.
+- Updated GitHub Pages deployment actions to their Node 24-compatible major
+  versions.
 - Added `CrawlTimingStats` and `CrawlReport::timings` for cumulative
   successful-request phase timings across request middleware, fetch, response
   middleware, parse, pipeline, and store work.
