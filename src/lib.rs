@@ -78,7 +78,9 @@ pub mod prelude {
     pub use crate::store::PostgresStore;
     #[cfg(feature = "sqlite")]
     pub use crate::store::SqliteStore;
-    pub use crate::store::{CsvStore, JsonStore, JsonlStore, StdoutStore, StoreBufferConfig};
+    pub use crate::store::{
+        CsvStore, JsonStore, JsonlStore, StdoutStore, StoreBufferConfig, StoreFailurePolicy,
+    };
     #[cfg(feature = "derive")]
     pub use kumo_derive::Extract;
     pub use tokio_stream::StreamExt;

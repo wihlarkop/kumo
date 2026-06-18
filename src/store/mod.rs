@@ -13,7 +13,7 @@ pub mod sqlite;
 pub mod stdout;
 
 pub(crate) use buffer::BufferedStore;
-pub use buffer::StoreBufferConfig;
+pub use buffer::{StoreBufferConfig, StoreFailurePolicy};
 #[cfg(feature = "cloud")]
 pub use cloud::{CloudFormat, CloudStore, CloudStoreBuilder};
 pub use csv::CsvStore;

@@ -295,6 +295,20 @@ grow, the store writer is the limiting stage. Reduce crawl concurrency, increase
 batch size, switch to JSONL and bulk-load later, or improve the downstream
 store.
 
+Use `report.store.average_queue_wait_per_item()`,
+`report.store.average_write_per_batch()`, `report.store.queue_wait_max`, and
+`report.store.write_max` to distinguish steady pressure from short spikes. A
+high average queue wait means most request tasks are backpressured by item
+persistence. A high max with low averages usually points to bursty downstream
+latency.
+
+Buffered writes default to `StoreFailurePolicy::Abort`. If the background
+writer sees a store error, Kumo records `failed_writes` and `failed_batches`,
+stops the writer, and returns a store error instead of silently dropping later
+items. Continue/drop behavior is intentionally not exposed yet because it needs
+durable retry or explicit loss accounting before it is safe for production
+crawls.
+
 ## Don't Stack AutoThrottle and RateLimiter
 
 `AutoThrottle` and `RateLimiter` both add delays — using both at the same time compounds them independently and will significantly reduce throughput. Pick one:

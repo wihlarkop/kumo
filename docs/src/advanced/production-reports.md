@@ -56,13 +56,37 @@ shows how much item output moved through the bounded writer:
 | `queued` | Items accepted into the store queue |
 | `written` | Items written by the background writer |
 | `batches` | Non-empty batch write calls |
+| `failed_writes` | Items in batches that returned a store error |
+| `failed_batches` | Non-empty batch write calls that returned a store error |
 | `queue_full_waits` | Times request tasks observed a full store queue |
 | `queue_wait` | Total time request tasks spent waiting for queue capacity |
-| `write` | Total time the writer spent inside store writes |
+| `queue_wait_max` | Longest queue wait for one accepted item |
+| `average_queue_wait_per_item()` | Average queue wait per accepted item |
+| `write` | Total time the writer spent inside store write attempts |
+| `write_max` | Longest single batch write attempt |
+| `average_write_per_batch()` | Average write latency per batch attempt |
+| `average_write_per_item()` | Average write latency per written or failed item |
 
 If `queue_full_waits` or `queue_wait` is high, the item store is backpressuring
 the crawl. That is often better than unbounded memory growth, but it means
 throughput is now limited by item persistence.
+
+The JSON export includes millisecond and second fields for totals, averages,
+and maxes:
+
+| JSON field | Meaning |
+|------------|---------|
+| `queue_wait_ms`, `queue_wait_secs` | Total enqueue wait |
+| `queue_wait_avg_ms`, `queue_wait_avg_secs` | Average enqueue wait per item |
+| `queue_wait_max_ms`, `queue_wait_max_secs` | Maximum enqueue wait for one item |
+| `write_ms`, `write_secs` | Total backend write-attempt time |
+| `write_avg_batch_ms`, `write_avg_batch_secs` | Average backend write time per batch attempt |
+| `write_avg_item_ms`, `write_avg_item_secs` | Average backend write time per written or failed item |
+| `write_max_ms`, `write_max_secs` | Maximum backend write time for one batch attempt |
+
+Buffered stores use `StoreFailurePolicy::Abort` by default. On the first
+background store error, Kumo records the failed batch counters and reports the
+store error instead of continuing with possible item loss.
 
 ## Retry Summary
 
@@ -188,7 +212,10 @@ tracing::info!(
     store_buffered = report.store.buffered,
     store_queued = report.store.queued,
     store_written = report.store.written,
+    store_failed_writes = report.store.failed_writes,
     store_queue_full_waits = report.store.queue_full_waits,
+    store_queue_wait_avg_secs = report.store.average_queue_wait_per_item().as_secs_f64(),
+    store_write_avg_batch_secs = report.store.average_write_per_batch().as_secs_f64(),
     fetch_secs = report.timings.fetch.as_secs_f64(),
     parse_secs = report.timings.parse.as_secs_f64(),
     store_secs = report.timings.store.as_secs_f64(),

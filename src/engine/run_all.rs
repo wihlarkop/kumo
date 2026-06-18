@@ -649,7 +649,13 @@ impl CrawlEngine {
                 store_queued = stats_vec[i].store.queued,
                 store_written = stats_vec[i].store.written,
                 store_batches = stats_vec[i].store.batches,
+                store_failed_writes = stats_vec[i].store.failed_writes,
+                store_failed_batches = stats_vec[i].store.failed_batches,
                 store_queue_full_waits = stats_vec[i].store.queue_full_waits,
+                store_queue_wait_avg_secs =
+                    stats_vec[i].store.average_queue_wait_per_item().as_secs_f64(),
+                store_write_avg_batch_secs =
+                    stats_vec[i].store.average_write_per_batch().as_secs_f64(),
                 bytes = stats_vec[i].bytes_downloaded,
                 pages_per_sec = format!("{rps:.1}"),
                 stop_reason = stats_vec[i].stop_reason.map(crate::stats::StopReason::as_str),
