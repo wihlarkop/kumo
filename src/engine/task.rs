@@ -44,6 +44,7 @@ async fn process_request(
     let domain = queued.request.stats_domain();
     let started_at = std::time::Instant::now();
     let mut timings = CrawlTimingStats::default();
+    let observer_enabled = ctx.observer.is_enabled();
 
     ctx.observer
         .notify_with(|| CrawlEvent::RequestStarted {
@@ -91,16 +92,18 @@ async fn process_request(
                 Ok(Some(v)) => current = v,
                 Ok(None) => {
                     timings.pipeline += phase_start.elapsed();
-                    ctx.observer
-                        .notify_with(|| CrawlEvent::ItemDropped {
-                            spider: ctx.spider.name().to_string(),
-                            spider_index: ctx.spider_index,
-                            url: url.to_string(),
-                            depth,
-                            reason: ItemDropReason::PipelineFiltered,
-                            error_kind: None,
-                        })
-                        .await?;
+                    if observer_enabled {
+                        ctx.observer
+                            .notify(CrawlEvent::ItemDropped {
+                                spider: ctx.spider.name().to_string(),
+                                spider_index: ctx.spider_index,
+                                url: url.to_string(),
+                                depth,
+                                reason: ItemDropReason::PipelineFiltered,
+                                error_kind: None,
+                            })
+                            .await?;
+                    }
                     tracing::debug!(
                         target: target::ITEM,
                         event = event::ITEM_DROP,
@@ -113,16 +116,18 @@ async fn process_request(
                 }
                 Err(e) => {
                     timings.pipeline += phase_start.elapsed();
-                    ctx.observer
-                        .notify_with(|| CrawlEvent::ItemDropped {
-                            spider: ctx.spider.name().to_string(),
-                            spider_index: ctx.spider_index,
-                            url: url.to_string(),
-                            depth,
-                            reason: ItemDropReason::PipelineError,
-                            error_kind: Some(e.kind()),
-                        })
-                        .await?;
+                    if observer_enabled {
+                        ctx.observer
+                            .notify(CrawlEvent::ItemDropped {
+                                spider: ctx.spider.name().to_string(),
+                                spider_index: ctx.spider_index,
+                                url: url.to_string(),
+                                depth,
+                                reason: ItemDropReason::PipelineError,
+                                error_kind: Some(e.kind()),
+                            })
+                            .await?;
+                    }
                     tracing::warn!(
                         target: target::ITEM,
                         event = event::ITEM_DROP_PIPELINE_ERROR,
@@ -141,14 +146,16 @@ async fn process_request(
         let phase_start = std::time::Instant::now();
         ctx.store.store(&current).await?;
         timings.store += phase_start.elapsed();
-        ctx.observer
-            .notify_with(|| CrawlEvent::ItemScraped {
-                spider: ctx.spider.name().to_string(),
-                spider_index: ctx.spider_index,
-                url: url.to_string(),
-                depth,
-            })
-            .await?;
+        if observer_enabled {
+            ctx.observer
+                .notify(CrawlEvent::ItemScraped {
+                    spider: ctx.spider.name().to_string(),
+                    spider_index: ctx.spider_index,
+                    url: url.to_string(),
+                    depth,
+                })
+                .await?;
+        }
         if is_cancelled(&ctx.stream_cancelled) {
             return Ok(RequestTaskOutput {
                 item_count,
