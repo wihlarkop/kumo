@@ -74,6 +74,11 @@ payload strings only when events or hooks are enabled. Per-domain stats updates
 also use a single map-entry lookup, keeping large single-domain crawls from
 paying extra bookkeeping work on every counter update.
 
+Request tasks also cache whether events or hooks are enabled before entering the
+item loop. When observability is disabled, item-scraped and item-dropped hot
+paths bypass event dispatch checks and avoid owned event payload allocation
+entirely.
+
 ## Allocator: jemalloc
 
 For long-running crawls (minutes or longer), replacing the system allocator with [jemalloc](https://github.com/tikv/jemallocator) can improve throughput by reducing allocator fragmentation and contention under concurrent workloads.

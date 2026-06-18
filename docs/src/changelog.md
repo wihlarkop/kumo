@@ -24,6 +24,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   lifecycle event payloads are actually emitted.
 - Removed an extra per-domain stats map lookup from every scheduled, completed,
   retry, error, and robots-blocked counter update.
+- Cached request-task observer enablement so item-scraped and item-dropped hot
+  paths bypass event dispatch checks when events and hooks are disabled.
 - Added `CrawlTimingStats` and `CrawlReport::timings` for cumulative
   successful-request phase timings across request middleware, fetch, response
   middleware, parse, pipeline, and store work.
