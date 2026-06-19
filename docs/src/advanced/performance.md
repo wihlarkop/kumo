@@ -16,6 +16,32 @@ nested selection, text collection, and attribute copying independently. Use
 those focused measurements to identify the next bottleneck; do not infer a
 specific extraction cost from the end-to-end crawl time alone.
 
+## Interpreting Benchmark Output
+
+Treat Kumo benchmarks as workload-specific measurements, not universal speed
+guarantees. A benchmark result is useful only with its workload, target, feature
+flags, concurrency, store, machine, and validation criteria.
+
+Before comparing two runs, confirm that both completed the same work:
+
+| Check | Why it matters |
+|---|---|
+| Page and item counts match | Throughput is not meaningful if a crawler skipped work. |
+| Duplicate and malformed-output checks pass | Fast incorrect output is not a valid result. |
+| Retry, error, and HTTP status counters match expectations | Recovery behavior can change throughput and completeness. |
+| Store output is included or intentionally isolated | JSONL, database, and no-store runs measure different systems. |
+| Median and range are reported | One shared-runner sample can be dominated by runner noise. |
+
+Use local-server modes to study framework overhead and extraction cost with
+network variance reduced. Use realistic modes to exercise retry behavior,
+variable latency, response size variance, and output validation. Use real-site
+numbers only as a snapshot of that site and run environment; target behavior,
+network path, and rate limiting can change outside Kumo.
+
+Public claims should describe the exact benchmark mode and use medians and
+ranges from repeated, correctness-gated runs. Avoid generalizing a local-server
+or CI-runner result into expected production performance for unrelated sites.
+
 ## Reuse Compiled Selectors
 
 The regular `css(&str)` API uses a global compiled-selector cache, which avoids

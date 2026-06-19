@@ -14,6 +14,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ### 0.5.2 - 2026-06-19
 
+- Improved production crawling, failure diagnosis, and benchmark
+  interpretation documentation.
 - Added a backward-compatible frontier lease/dead-letter API foundation with
   `FrontierLease`, `FrontierLeaseId`, `DeadLetterReason`, and default
   `Frontier` lifecycle methods for future durable in-flight request recovery.

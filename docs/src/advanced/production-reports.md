@@ -166,6 +166,46 @@ run at the same time. Use the largest phase as a direction signal: high `fetch`
 usually points to target latency or politeness limits, high `parse` points to
 selector/extraction work, and high `store` points to output backpressure.
 
+## Failure Diagnosis Checklist
+
+Start with `stop_reason`, `errors`, `error_kinds`, and `domains`. Those fields
+tell you whether the crawl stopped because it finished normally, reached a
+configured budget, was interrupted, or failed because one stage could not make
+progress.
+
+Use the signals together instead of treating one counter as the full diagnosis:
+
+| Signal | Likely direction |
+|--------|------------------|
+| High `robots_blocked` | The target's robots policy excluded many URLs. Check user-agent and scope before disabling robots on authorized/internal crawls. |
+| High `deduped` | The spider is scheduling repeated URLs, or the fingerprint policy is intentionally collapsing variants. Check pagination and tracking parameters. |
+| High `retry_summary().pressure_rate` with low exhaustion | The target or network is noisy, but retries are recovering. Watch latency and politeness. |
+| High `retry_summary().exhaustion_rate` | Retry capacity is being spent without recovery. Check rate limits, blocking, credentials, target errors, or retry status filters. |
+| High `retry_summary().exhausted_failure_rate` | Permanent failures are mostly retry exhaustion rather than parse or store errors. |
+| High `timings.fetch` | Target latency, browser fallback, connection limits, proxy latency, or politeness delays may dominate the crawl. |
+| High `timings.parse` | Selector work, extraction logic, or item construction may dominate successful requests. |
+| High `timings.store` | Direct item writes are slowing request tasks. Consider a store buffer or a faster output path. |
+| High `store.queue_full_waits` or `store.queue_wait` | The bounded store writer is backpressuring the crawl. |
+| Nonzero `store.failed_writes` or `store.failed_batches` | The downstream store returned errors. With the default abort policy, Kumo reports the first store error instead of silently dropping items. |
+
+For one unhealthy domain in a multi-domain crawl, inspect
+`report.domains[domain]` before changing global settings. A global error rate
+can look acceptable while one domain has no successful pages.
+
+Use events or hooks when the final report is not enough. `RequestFailed`,
+`RequestRetried`, `RequestSkipped`, `ItemDropped`, and `TaskPanicked` include
+the crawl context needed to correlate a final counter with URLs, depths,
+attempts, and reasons observed during the run.
+
+When a durable frontier is enabled, inspect the frontier state alongside the
+report. `FileFrontier::state().await` shows recovered queued and seen counts
+after opening a frontier. Its persisted files also separate pending requests
+(`queue.json`), in-flight leases (`leases.json`), terminal dead letters
+(`dead_letters.json`), and deduplication state (`seen.json`). For Redis-backed
+frontiers, inspect the Redis keys derived from the configured queue key. Pending
+or leased work after an interrupted crawl can explain why a resumed job starts
+with existing state instead of only the spider's seed URLs.
+
 ## Alert Examples
 
 Use `error_rate()` for broad crawl health. A nonzero error rate is normal on the

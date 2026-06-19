@@ -35,7 +35,7 @@ crawls.
 | Single binary deploy | Yes | No | Yes |
 | Binary size / startup | Small / instant | Large / slow | Small / fast |
 
-**Benchmark results** - 1,000 books, concurrency 16, median of 3 runs:
+**Benchmark snapshot** - 1,000 books, concurrency 16, median of 3 runs:
 
 | | **kumo** | Colly (Go) | Scrapy (Python) |
 |---|---|---|---|
@@ -43,8 +43,9 @@ crawls.
 | Local server - Items/s | **12,346** | 4,098 | 180 |
 | Peak RSS | **12.5 MB** | 31.4 MB | 77.2 MB |
 
-On raw parsing throughput (local server, no network): **3.0x faster than Colly,
-69x faster than Scrapy**. Full methodology and reproduction steps in
+On this local-server parsing workload, Kumo measured **3.0x faster than Colly,
+69x faster than Scrapy**. Treat these as workload-specific results, not
+universal production guarantees. Full methodology and reproduction steps in
 [`benchmark/`](https://github.com/wihlarkop/kumo/tree/main/benchmark).
 
 ## Quick Install

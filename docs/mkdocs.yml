@@ -86,6 +86,7 @@ nav:
     - Feature Flags: feature-flags.md
   - Advanced:
     - Logging: advanced/logging.md
+    - Production Crawling: advanced/production-crawling.md
     - Production Reports: advanced/production-reports.md
     - Crawl Events: advanced/crawl-events.md
     - Crawl Hooks: advanced/crawl-hooks.md
