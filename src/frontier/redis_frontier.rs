@@ -16,11 +16,15 @@ use super::{DeadLetterReason, Frontier, FrontierLease, FrontierLeaseId};
 const REDIS_BATCH_LIMIT: usize = 128;
 
 const LEASE_SCRIPT: &str = r#"
-local raw = redis.call('LPOP', KEYS[1])
-if not raw then
+local members = redis.call('ZRANGE', KEYS[1], 0, 0)
+if #members == 0 then
   return nil
 end
 
+local member = members[1]
+redis.call('ZREM', KEYS[1], member)
+local decoded = cjson.decode(member)
+local raw = decoded.request
 local delivery = redis.call('HINCRBY', KEYS[4], raw, 1)
 local lease = cjson.encode({ request = raw, delivery_count = delivery })
 redis.call('HSET', KEYS[2], ARGV[1], lease)
@@ -49,7 +53,7 @@ end
 local decoded = cjson.decode(lease)
 redis.call('HDEL', KEYS[1], ARGV[1])
 redis.call('ZREM', KEYS[2], ARGV[1])
-redis.call('RPUSH', KEYS[3], decoded.request)
+redis.call('ZADD', KEYS[3], ARGV[2], ARGV[3])
 return 1
 "#;
 
@@ -81,7 +85,10 @@ for _, id in ipairs(ids) do
   local lease = redis.call('HGET', KEYS[1], id)
   if lease then
     local decoded = cjson.decode(lease)
-    redis.call('RPUSH', KEYS[3], decoded.request)
+    local request = cjson.decode(decoded.request)
+    local priority = request.request.priority or 0
+    local member = cjson.encode({ id = ARGV[3] .. '-' .. reclaimed, request = decoded.request })
+    redis.call('ZADD', KEYS[3], -priority, member)
     redis.call('HDEL', KEYS[1], id)
     reclaimed = reclaimed + 1
   end
@@ -96,11 +103,42 @@ local promoted = 0
 for _, member in ipairs(members) do
   if redis.call('ZREM', KEYS[1], member) == 1 then
     local decoded = cjson.decode(member)
-    redis.call('RPUSH', KEYS[2], decoded.request)
+    redis.call('ZADD', KEYS[2], decoded.priority_score, decoded.ready_member)
     promoted = promoted + 1
   end
 end
 return promoted
+"#;
+
+const MIGRATE_LEGACY_QUEUE_SCRIPT: &str = r#"
+if redis.call('TYPE', KEYS[1]).ok ~= 'list' then
+  return 0
+end
+
+local migrated = 0
+for _ = 1, tonumber(ARGV[1]) do
+  local raw = redis.call('LPOP', KEYS[1])
+  if not raw then
+    return migrated
+  end
+
+  local decoded = cjson.decode(raw)
+  local priority = decoded.request.priority or 0
+  local member = cjson.encode({ id = ARGV[2] .. '-' .. migrated, request = raw })
+  redis.call('ZADD', KEYS[2], -priority, member)
+  migrated = migrated + 1
+end
+return migrated
+"#;
+
+const POP_READY_SCRIPT: &str = r#"
+local members = redis.call('ZRANGE', KEYS[1], 0, 0)
+if #members == 0 then
+  return nil
+end
+local member = members[1]
+redis.call('ZREM', KEYS[1], member)
+return member
 "#;
 
 fn system_time_to_ms(time: SystemTime) -> Option<u64> {
@@ -120,6 +158,20 @@ fn system_time_from_ms(ms: u64) -> SystemTime {
 struct RedisDelayedRequest {
     id: String,
     request: String,
+    priority_score: i32,
+    ready_member: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RedisReadyRequest {
+    id: String,
+    request: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RedisLeaseValue {
+    request: String,
+    delivery_count: u32,
 }
 
 /// Frontier backed by Redis for multi-process distributed crawling.
@@ -146,6 +198,7 @@ struct RedisDelayedRequest {
 pub struct RedisFrontier {
     client: Client,
     queue_key: String,
+    ready_key: String,
     seen_key: String,
     delayed_key: String,
     leases_key: String,
@@ -178,6 +231,7 @@ impl RedisFrontier {
         Ok(Self {
             client,
             delayed_key: format!("{queue_key}:delayed"),
+            ready_key: format!("{queue_key}:ready"),
             leases_key: format!("{queue_key}:leases"),
             lease_deadlines_key: format!("{queue_key}:lease_deadlines"),
             delivery_counts_key: format!("{queue_key}:delivery_counts"),
@@ -193,6 +247,7 @@ impl RedisFrontier {
         let mut conn = self.conn().await?;
         redis::pipe()
             .del(&self.queue_key)
+            .del(&self.ready_key)
             .del(&self.seen_key)
             .del(&self.delayed_key)
             .del(&self.leases_key)
@@ -213,11 +268,28 @@ impl RedisFrontier {
 
     fn next_id(&self, prefix: &str) -> String {
         let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
-        format!("{prefix}-{}-{sequence}", now_ms())
+        format!("{prefix}-{}-{sequence:020}", now_ms())
     }
 
     fn serialize_request(queued: &FrontierRequest) -> Option<String> {
         serde_json::to_string(&StoredFrontierRequest::from(queued)).ok()
+    }
+
+    fn priority_score(queued: &FrontierRequest) -> i32 {
+        queued.request().priority_value().saturating_neg()
+    }
+
+    fn ready_member(&self, request: String) -> Option<String> {
+        serde_json::to_string(&RedisReadyRequest {
+            id: self.next_id("ready"),
+            request,
+        })
+        .ok()
+    }
+
+    fn request_from_ready_member(member: &str) -> Option<FrontierRequest> {
+        let ready: RedisReadyRequest = serde_json::from_str(member).ok()?;
+        Self::deserialize_request(&ready.request)
     }
 
     fn deserialize_request(raw: &str) -> Option<FrontierRequest> {
@@ -235,9 +307,10 @@ impl RedisFrontier {
             .arg(3)
             .arg(&self.leases_key)
             .arg(&self.lease_deadlines_key)
-            .arg(&self.queue_key)
+            .arg(&self.ready_key)
             .arg(now_ms())
             .arg(REDIS_BATCH_LIMIT)
+            .arg(self.next_id("ready-reclaim"))
             .query_async::<i64>(conn)
             .await
             .map(|_| ())
@@ -252,7 +325,7 @@ impl RedisFrontier {
             .arg(PROMOTE_DELAYED_SCRIPT)
             .arg(2)
             .arg(&self.delayed_key)
-            .arg(&self.queue_key)
+            .arg(&self.ready_key)
             .arg(now_ms())
             .arg(REDIS_BATCH_LIMIT)
             .query_async::<i64>(conn)
@@ -266,7 +339,34 @@ impl RedisFrontier {
         conn: &mut redis::aio::MultiplexedConnection,
     ) -> Result<(), KumoError> {
         self.reclaim_expired_leases(conn).await?;
-        self.promote_due_delayed(conn).await
+        self.promote_due_delayed(conn).await?;
+        self.migrate_legacy_queue(conn).await
+    }
+
+    async fn migrate_legacy_queue(
+        &self,
+        conn: &mut redis::aio::MultiplexedConnection,
+    ) -> Result<(), KumoError> {
+        redis::cmd("EVAL")
+            .arg(MIGRATE_LEGACY_QUEUE_SCRIPT)
+            .arg(2)
+            .arg(&self.queue_key)
+            .arg(&self.ready_key)
+            .arg(REDIS_BATCH_LIMIT)
+            .arg(self.next_id("ready-legacy"))
+            .query_async::<i64>(conn)
+            .await
+            .map(|_| ())
+            .map_err(|e| KumoError::store("redis migrate legacy queue", e))
+    }
+
+    async fn lease_payload(
+        &self,
+        lease_id: &FrontierLeaseId,
+        conn: &mut redis::aio::MultiplexedConnection,
+    ) -> Option<RedisLeaseValue> {
+        let raw: Option<String> = conn.hget(&self.leases_key, lease_id.as_str()).await.ok()?;
+        serde_json::from_str(&raw?).ok()
     }
 }
 
@@ -314,7 +414,13 @@ impl Frontier for RedisFrontier {
         let Some(entry) = Self::serialize_request(&queued) else {
             return false;
         };
-        let _: () = conn.rpush(&self.queue_key, entry).await.unwrap_or(());
+        let Some(member) = self.ready_member(entry) else {
+            return false;
+        };
+        let _: () = conn
+            .zadd(&self.ready_key, member, Self::priority_score(&queued))
+            .await
+            .unwrap_or(());
         true
     }
 
@@ -328,9 +434,14 @@ impl Frontier for RedisFrontier {
 
         let scheduled_at = queued.scheduled_at().and_then(system_time_to_ms);
         if scheduled_at.is_some_and(|scheduled_at| scheduled_at > now_ms()) {
+            let Some(ready_member) = self.ready_member(entry.clone()) else {
+                return;
+            };
             let delayed = RedisDelayedRequest {
                 id: self.next_id("delayed"),
                 request: entry,
+                priority_score: Self::priority_score(&queued),
+                ready_member,
             };
             if let (Some(score), Ok(member)) = (scheduled_at, serde_json::to_string(&delayed)) {
                 let _: () = conn
@@ -339,15 +450,27 @@ impl Frontier for RedisFrontier {
                     .unwrap_or(());
             }
         } else {
-            let _: () = conn.rpush(&self.queue_key, entry).await.unwrap_or(());
+            let Some(member) = self.ready_member(entry) else {
+                return;
+            };
+            let _: () = conn
+                .zadd(&self.ready_key, member, Self::priority_score(&queued))
+                .await
+                .unwrap_or(());
         }
     }
 
     async fn pop_request(&self) -> Option<FrontierRequest> {
         let mut conn = self.conn().await.ok()?;
         self.prepare_ready_queue(&mut conn).await.ok()?;
-        let raw: Option<String> = conn.lpop(&self.queue_key, None).await.ok()?;
-        Self::deserialize_request(&raw?)
+        let member: Option<String> = redis::cmd("EVAL")
+            .arg(POP_READY_SCRIPT)
+            .arg(1)
+            .arg(&self.ready_key)
+            .query_async(&mut conn)
+            .await
+            .ok()?;
+        Self::request_from_ready_member(&member?)
     }
 
     async fn lease_request(&self, ttl: Duration) -> Option<FrontierLease> {
@@ -360,7 +483,7 @@ impl Frontier for RedisFrontier {
         let result: Option<(String, u32)> = redis::cmd("EVAL")
             .arg(LEASE_SCRIPT)
             .arg(4)
-            .arg(&self.queue_key)
+            .arg(&self.ready_key)
             .arg(&self.leases_key)
             .arg(&self.lease_deadlines_key)
             .arg(&self.delivery_counts_key)
@@ -397,13 +520,27 @@ impl Frontier for RedisFrontier {
 
     async fn release_lease(&self, lease_id: &FrontierLeaseId) -> Result<(), KumoError> {
         let mut conn = self.conn().await?;
+        let Some(lease) = self
+            .lease_payload(lease_id, &mut conn)
+            .await
+            .and_then(|payload| {
+                Self::deserialize_request(&payload.request).map(|queued| (payload, queued))
+            })
+        else {
+            return Ok(());
+        };
+        let Some(member) = self.ready_member(lease.0.request) else {
+            return Ok(());
+        };
         redis::cmd("EVAL")
             .arg(RELEASE_SCRIPT)
             .arg(3)
             .arg(&self.leases_key)
             .arg(&self.lease_deadlines_key)
-            .arg(&self.queue_key)
+            .arg(&self.ready_key)
             .arg(lease_id.as_str())
+            .arg(Self::priority_score(&lease.1))
+            .arg(member)
             .query_async::<i64>(&mut conn)
             .await
             .map(|_| ())
@@ -453,7 +590,7 @@ impl Frontier for RedisFrontier {
             return 0;
         };
         self.prepare_ready_queue(&mut conn).await.ok();
-        let queued: usize = conn.llen(&self.queue_key).await.unwrap_or(0);
+        let queued: usize = conn.zcard(&self.ready_key).await.unwrap_or(0);
         let delayed: usize = conn.zcard(&self.delayed_key).await.unwrap_or(0);
         queued + delayed
     }
