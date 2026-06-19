@@ -48,6 +48,17 @@ pub struct ProxyRotator {
     cooldown: Option<ProxyCooldown>,
 }
 
+/// Circuit-breaker state for one proxy URL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProxyCircuitState {
+    /// The proxy circuit is closed and the proxy is selectable.
+    Healthy,
+    /// The proxy circuit is open and the proxy is skipped until recovery.
+    Open,
+    /// The recovery period elapsed and the next selection is a trial request.
+    Recovering,
+}
+
 /// Point-in-time health counters for one proxy URL.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProxyHealthSnapshot {
@@ -55,6 +66,7 @@ pub struct ProxyHealthSnapshot {
     pub successes: u64,
     pub failures: u64,
     pub consecutive_failures: u64,
+    pub circuit_state: ProxyCircuitState,
     pub cooling_down: bool,
     pub cooldown_remaining: Option<Duration>,
 }
@@ -140,6 +152,7 @@ impl ProxyRotator {
                     successes: state.map_or(0, |state| state.successes),
                     failures: state.map_or(0, |state| state.failures),
                     consecutive_failures: state.map_or(0, |state| state.consecutive_failures),
+                    circuit_state: circuit_state(state, now),
                     cooling_down: cooldown_remaining.is_some(),
                     cooldown_remaining,
                 }
@@ -249,4 +262,12 @@ fn is_cooling_down(state: Option<&ProxyHealthState>, now: Instant) -> bool {
     state
         .and_then(|state| state.cooldown_until)
         .is_some_and(|until| until > now)
+}
+
+fn circuit_state(state: Option<&ProxyHealthState>, now: Instant) -> ProxyCircuitState {
+    match state.and_then(|state| state.cooldown_until) {
+        Some(until) if until > now => ProxyCircuitState::Open,
+        Some(_) => ProxyCircuitState::Recovering,
+        None => ProxyCircuitState::Healthy,
+    }
 }

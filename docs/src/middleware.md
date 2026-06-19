@@ -90,8 +90,8 @@ or connection pools between proxies. These clients inherit the engine's
 concurrency, request timeout, User-Agent, and TCP keepalive settings.
 
 `ProxyRotator` also tracks per-proxy successes, failures, consecutive failures,
-and cooldown state. By default, a proxy is skipped for 60 seconds after three
-consecutive failed request attempts:
+and circuit-breaker state. By default, a proxy circuit opens for 60 seconds
+after three consecutive failed request attempts, and open proxies are skipped:
 
 ```rust
 use std::time::Duration;
@@ -120,15 +120,19 @@ let report = CrawlEngine::builder()
 
 for proxy in proxy_health.health() {
     println!(
-        "{} successes={} failures={}",
-        proxy.proxy, proxy.successes, proxy.failures
+        "{} state={:?} successes={} failures={}",
+        proxy.proxy, proxy.circuit_state, proxy.successes, proxy.failures
     );
 }
 ```
 
-When every configured proxy is cooling down, `ProxyRotator` leaves
-`request.proxy` unset for that request instead of forcing a known unhealthy
-proxy.
+`ProxyHealthSnapshot::circuit_state` is `Healthy` when the proxy is selectable
+with a closed circuit, `Open` while the proxy is cooling down, and `Recovering`
+after the cooldown has elapsed and the next selection is a trial request. The
+existing `cooling_down` and `cooldown_remaining` fields remain available for
+callers that only need the previous cooldown view. When every configured proxy
+is open, `ProxyRotator` leaves `request.proxy` unset for that request instead
+of forcing a known unhealthy proxy.
 
 ## UserAgentRotator
 

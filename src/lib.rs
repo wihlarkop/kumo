@@ -65,8 +65,8 @@ pub mod prelude {
     pub use crate::llm::ResponseExtractExt;
     pub use crate::llm::{LlmClient, TokenUsage};
     pub use crate::middleware::{
-        AutoThrottle, DefaultHeaders, FetchRequest, Middleware, ProxyHealthSnapshot, ProxyRotator,
-        RateLimiter, StatusRetry, UserAgentRotator,
+        AutoThrottle, DefaultHeaders, FetchRequest, Middleware, ProxyCircuitState,
+        ProxyHealthSnapshot, ProxyRotator, RateLimiter, StatusRetry, UserAgentRotator,
     };
     pub use crate::pipeline::{DropDuplicates, FilterPipeline, Pipeline, RequireFields};
     pub use crate::request::CrawlRequest;

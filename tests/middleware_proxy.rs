@@ -3,7 +3,7 @@ use std::time::Duration;
 use kumo::{
     error::KumoError,
     extract::Response,
-    middleware::{FetchRequest, Middleware, ProxyRotator},
+    middleware::{FetchRequest, Middleware, ProxyCircuitState, ProxyRotator},
 };
 
 fn make_request() -> FetchRequest {
@@ -110,6 +110,43 @@ async fn leaves_proxy_unset_when_all_proxies_are_cooling_down() {
     let mut next = make_request();
     rotator.before_request(&mut next).await.unwrap();
     assert!(next.proxy.is_none());
+}
+
+#[tokio::test]
+async fn reports_open_recovering_and_healthy_circuit_states() {
+    let rotator =
+        ProxyRotator::new(vec!["http://p1:8080"]).cooldown_after(1, Duration::from_millis(5));
+
+    let mut req = make_request();
+    rotator.before_request(&mut req).await.unwrap();
+    rotator
+        .on_error(
+            "https://example.com",
+            &KumoError::http_status(503, "https://example.com"),
+        )
+        .await;
+
+    let open = rotator.health();
+    assert_eq!(open[0].circuit_state, ProxyCircuitState::Open);
+    assert!(open[0].cooling_down);
+
+    tokio::time::sleep(Duration::from_millis(10)).await;
+
+    let recovering = rotator.health();
+    assert_eq!(recovering[0].circuit_state, ProxyCircuitState::Recovering);
+    assert!(!recovering[0].cooling_down);
+
+    let mut retry = make_request();
+    rotator.before_request(&mut retry).await.unwrap();
+    assert_eq!(retry.proxy.as_deref(), Some("http://p1:8080"));
+    rotator
+        .after_response(&mut Response::from_parts("https://example.com", 200, "ok"))
+        .await
+        .unwrap();
+
+    let healthy = rotator.health();
+    assert_eq!(healthy[0].circuit_state, ProxyCircuitState::Healthy);
+    assert_eq!(healthy[0].consecutive_failures, 0);
 }
 
 #[tokio::test]
