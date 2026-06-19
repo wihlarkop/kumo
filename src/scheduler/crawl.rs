@@ -215,7 +215,11 @@ impl CrawlScheduler {
     async fn poll_next(&self) -> SchedulerPoll {
         let queued_len = self.frontier.len().await;
         if queued_len == 0 {
-            return SchedulerPoll::Empty;
+            return self
+                .frontier
+                .next_ready_delay()
+                .await
+                .map_or(SchedulerPoll::Empty, SchedulerPoll::Pending);
         };
 
         let mut deferred = Vec::new();
@@ -240,7 +244,14 @@ impl CrawlScheduler {
 
         self.requeue_deferred(deferred).await;
 
-        shortest_wait.map_or(SchedulerPoll::Empty, SchedulerPoll::Pending)
+        if let Some(wait) = shortest_wait {
+            SchedulerPoll::Pending(wait)
+        } else {
+            self.frontier
+                .next_ready_delay()
+                .await
+                .map_or(SchedulerPoll::Empty, SchedulerPoll::Pending)
+        }
     }
 
     async fn next_candidate(&self) -> Option<ScheduledRequest> {

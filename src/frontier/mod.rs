@@ -229,6 +229,16 @@ pub trait Frontier: Send + Sync {
         false
     }
 
+    /// Duration until the next hidden/delayed request can become ready.
+    ///
+    /// Frontiers that keep delayed requests outside the normal pending queue
+    /// can override this so the scheduler sleeps instead of treating the
+    /// frontier as exhausted. Frontiers that store delayed requests in their
+    /// regular queue can keep the default.
+    async fn next_ready_delay(&self) -> Option<Duration> {
+        None
+    }
+
     /// Number of URLs waiting in the queue.
     async fn len(&self) -> usize;
 
