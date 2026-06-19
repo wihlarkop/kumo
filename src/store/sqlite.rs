@@ -46,6 +46,23 @@ impl SqliteStore {
             self.table, col_list, param_list
         )
     }
+
+    fn batch_insert_sql(&self, rows: usize) -> String {
+        let col_list: String = self
+            .extra_columns
+            .iter()
+            .map(|n| format!(", \"{}\"", n))
+            .collect();
+        let param_list: String = self.extra_columns.iter().map(|_| ", ?").collect();
+        let row_params = format!("(?{})", param_list);
+        let values = std::iter::repeat_n(row_params, rows)
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            r#"INSERT INTO "{}" (data{}) VALUES {}"#,
+            self.table, col_list, values
+        )
+    }
 }
 
 impl SqliteStoreBuilder {
@@ -131,21 +148,22 @@ impl ItemStore for SqliteStore {
             return Ok(());
         }
 
-        let sql = self.insert_sql();
+        let sql = self.batch_insert_sql(items.len());
         let mut tx = self
             .pool
             .begin()
             .await
             .map_err(|e| KumoError::store("sqlite store", e))?;
+        let mut q = sqlx::query(AssertSqlSafe(sql));
         for item in items {
-            let mut q = sqlx::query(AssertSqlSafe(sql.clone())).bind(item.to_string());
+            q = q.bind(item.to_string());
             for name in &self.extra_columns {
                 q = q.bind(super::json_val_to_sql_string(item.get(name)));
             }
-            q.execute(&mut *tx)
-                .await
-                .map_err(|e| KumoError::store("sqlite store", e))?;
         }
+        q.execute(&mut *tx)
+            .await
+            .map_err(|e| KumoError::store("sqlite store", e))?;
         tx.commit()
             .await
             .map_err(|e| KumoError::store("sqlite store", e))?;

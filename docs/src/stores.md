@@ -81,7 +81,8 @@ durable retry or drop accounting to avoid silent item loss.
 Custom stores do not need to change. `store_many()` defaults to calling
 `store()` for each item, while stores that support efficient batch writes can
 override it. Built-in file/stdout stores write batches under one lock, and SQL
-stores write buffered batches inside a transaction.
+stores write buffered batches with one transaction and one multi-row insert
+statement per flushed batch.
 
 Final reports include `report.store`:
 
