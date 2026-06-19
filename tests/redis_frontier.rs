@@ -98,6 +98,47 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
+    async fn priority_order_preserved() {
+        let (qk, sk) = unique_keys();
+        let f = RedisFrontier::new(&redis_url(), &qk, &sk).await.unwrap();
+
+        f.push_request(
+            CrawlRequest::get("https://low.example.com").priority(-10),
+            0,
+        )
+        .await;
+        f.push_request(CrawlRequest::get("https://normal-a.example.com"), 0)
+            .await;
+        f.push_request(
+            CrawlRequest::get("https://high.example.com").priority(25),
+            0,
+        )
+        .await;
+        f.push_request(CrawlRequest::get("https://normal-b.example.com"), 0)
+            .await;
+
+        assert_eq!(
+            f.pop_request().await.unwrap().request().url(),
+            "https://high.example.com"
+        );
+        assert_eq!(
+            f.pop_request().await.unwrap().request().url(),
+            "https://normal-a.example.com"
+        );
+        assert_eq!(
+            f.pop_request().await.unwrap().request().url(),
+            "https://normal-b.example.com"
+        );
+        assert_eq!(
+            f.pop_request().await.unwrap().request().url(),
+            "https://low.example.com"
+        );
+
+        f.clear().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore]
     async fn delayed_request_is_hidden_until_due() {
         let (qk, sk) = unique_keys();
         let f = RedisFrontier::new(&redis_url(), &qk, &sk).await.unwrap();

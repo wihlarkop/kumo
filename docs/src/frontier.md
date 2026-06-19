@@ -121,6 +121,12 @@ to the pending queue, `ack_lease(id)` removes completed work, `release_lease(id)
 returns in-flight work to the queue, and `dead_letter(id, reason)` records a
 terminal failure for audit.
 
+Ready Redis requests are stored in a derived priority sorted set. Higher
+`CrawlRequest::priority(...)` values are delivered first; requests with the same
+priority keep FIFO order. Older Redis frontiers that still have pending entries
+in the original list key are migrated into the priority set in small batches
+when workers poll the frontier.
+
 ## PolitenessPolicy
 
 Use `PolitenessPolicy` to limit pressure on each domain:

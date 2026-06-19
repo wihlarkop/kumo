@@ -25,6 +25,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   task panics.
 - Added Redis-backed delayed requests, in-progress leases, lease expiry reclaim,
   and dead-letter handling for distributed `RedisFrontier` crawls.
+- Added priority-aware Redis ready queues while preserving FIFO order for equal
+  priority requests and migrating older list-backed pending queues on poll.
 - Added proxy health tracking to `ProxyRotator`, including per-proxy success
   and failure counters, configurable cooldown after consecutive failed request
   attempts, shared health snapshots from cloned rotators, and a no-cooldown mode
