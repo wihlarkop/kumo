@@ -112,6 +112,15 @@ CrawlEngine::builder()
 Multiple processes can use the same Redis queue and seen keys. They share the
 queue and deduplication set.
 
+`RedisFrontier` also stores delayed requests, in-progress leases, lease
+deadlines, delivery counts, and dead letters in Redis keys derived from the
+queue key. Delayed retry requests are kept in a Redis sorted set until their
+scheduled time, so workers do not repeatedly pop and requeue future work.
+Leased requests are tracked with a deadline; expired leases are reclaimed back
+to the pending queue, `ack_lease(id)` removes completed work, `release_lease(id)`
+returns in-flight work to the queue, and `dead_letter(id, reason)` records a
+terminal failure for audit.
+
 ## PolitenessPolicy
 
 Use `PolitenessPolicy` to limit pressure on each domain:
@@ -184,11 +193,13 @@ current pop-only behavior until they explicitly override the lease methods.
 back to the pending queue, and `dead_letter(id, reason)` stores it in
 `dead_letters.json`.
 
+`RedisFrontier` overrides the same lease methods with Redis-backed
+in-progress, delayed, and dead-letter state for distributed crawls.
+
 `CrawlScheduler` uses leases only when a frontier reports durable lease support.
 The engine acks successfully completed or skipped leased requests after their
 lifecycle is terminal, releases aborting hook/error paths for recovery, and
 dead-letters leased task panics to avoid requeueing deterministic panic loops.
-Atomic Redis leases are planned as a later distributed frontier slice.
 
 ## Tuning the Bloom Filter
 
