@@ -46,6 +46,29 @@ impl PostgresStore {
             self.table, col_list, param_list
         )
     }
+
+    fn batch_insert_sql(&self, rows: usize) -> String {
+        let col_list: String = self
+            .extra_columns
+            .iter()
+            .map(|n| format!(", \"{}\"", n))
+            .collect();
+        let columns_per_row = self.extra_columns.len() + 1;
+        let values = (0..rows)
+            .map(|row| {
+                let params = (1..=columns_per_row)
+                    .map(|offset| format!("${}", row * columns_per_row + offset))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("({})", params)
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            r#"INSERT INTO "{}" (data{}) VALUES {}"#,
+            self.table, col_list, values
+        )
+    }
 }
 
 impl PostgresStoreBuilder {
@@ -132,21 +155,22 @@ impl ItemStore for PostgresStore {
             return Ok(());
         }
 
-        let sql = self.insert_sql();
+        let sql = self.batch_insert_sql(items.len());
         let mut tx = self
             .pool
             .begin()
             .await
             .map_err(|e| KumoError::store("postgres store", e))?;
+        let mut q = sqlx::query(AssertSqlSafe(sql));
         for item in items {
-            let mut q = sqlx::query(AssertSqlSafe(sql.clone())).bind(item);
+            q = q.bind(item);
             for name in &self.extra_columns {
                 q = q.bind(super::json_val_to_sql_string(item.get(name)));
             }
-            q.execute(&mut *tx)
-                .await
-                .map_err(|e| KumoError::store("postgres store", e))?;
         }
+        q.execute(&mut *tx)
+            .await
+            .map_err(|e| KumoError::store("postgres store", e))?;
         tx.commit()
             .await
             .map_err(|e| KumoError::store("postgres store", e))?;
