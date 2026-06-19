@@ -162,6 +162,26 @@ individual request. This is useful for deliberate revisits such as retrying a
 page after a state change or fetching the same endpoint with a different
 request body.
 
+## Lease API Foundation
+
+`Frontier` includes a lease/dead-letter API for durable frontier
+implementations:
+
+- `lease_request(ttl)` leases the next request for in-flight processing.
+- `ack_lease(id)` marks a leased request as complete.
+- `release_lease(id)` returns a leased request to the frontier.
+- `dead_letter(id, reason)` records a terminal request for audit or replay.
+
+The default implementation is compatibility-first: it wraps `pop_request()` in
+an ephemeral `FrontierLease` and treats ack, release, and dead-letter calls as
+no-ops. That means existing custom frontiers keep compiling and keep their
+current pop-only behavior until they explicitly override the lease methods.
+
+Durable lease persistence for `FileFrontier` and atomic Redis leases are planned
+as separate slices because they change crash-recovery guarantees. Until those
+implementations land, `FileFrontier` keeps its current graceful-shutdown resume
+behavior described above.
+
 ## Tuning the Bloom Filter
 
 `MemoryFrontier` uses a Bloom filter for deduplication. The default is sized for

@@ -12,8 +12,11 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
-### Unreleased
+### 0.5.2 - 2026-06-19
 
+- Added a backward-compatible frontier lease/dead-letter API foundation with
+  `FrontierLease`, `FrontierLeaseId`, `DeadLetterReason`, and default
+  `Frontier` lifecycle methods for future durable in-flight request recovery.
 - Added proxy health tracking to `ProxyRotator`, including per-proxy success
   and failure counters, configurable cooldown after consecutive failed request
   attempts, shared health snapshots from cloned rotators, and a no-cooldown mode
