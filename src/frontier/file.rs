@@ -452,7 +452,7 @@ impl Frontier for FileFrontier {
             self.queue
                 .lock()
                 .await
-                .push_front(lease.request().map_err(KumoError::store_msg)?);
+                .push_back(lease.request().map_err(KumoError::store_msg)?);
         }
         self.flush_to_disk().await
     }
@@ -472,6 +472,10 @@ impl Frontier for FileFrontier {
             });
         }
         self.flush_to_disk().await
+    }
+
+    fn supports_leases(&self) -> bool {
+        true
     }
 
     async fn len(&self) -> usize {

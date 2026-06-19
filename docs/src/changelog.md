@@ -20,6 +20,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - Added durable `FileFrontier` lease storage with `leases.json`, restart
   recovery back to the pending queue, lease ack/release handling, lease expiry
   reclaim, and `dead_letters.json` persistence.
+- Wired the scheduler and crawl engine to use durable frontier leases when a
+  frontier opts in, including acking terminal requests and dead-lettering leased
+  task panics.
 - Added proxy health tracking to `ProxyRotator`, including per-proxy success
   and failure counters, configurable cooldown after consecutive failed request
   attempts, shared health snapshots from cloned rotators, and a no-cooldown mode
