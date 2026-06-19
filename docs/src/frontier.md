@@ -205,7 +205,8 @@ in-progress, delayed, and dead-letter state for distributed crawls.
 `CrawlScheduler` uses leases only when a frontier reports durable lease support.
 The engine acks successfully completed or skipped leased requests after their
 lifecycle is terminal, releases aborting hook/error paths for recovery, and
-dead-letters leased task panics to avoid requeueing deterministic panic loops.
+dead-letters leased task panics and retry-exhausted requests to avoid losing
+terminal failures that should be audited or replayed deliberately.
 
 ## Tuning the Bloom Filter
 

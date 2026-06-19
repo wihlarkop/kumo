@@ -634,7 +634,16 @@ impl CrawlEngine {
                                     );
                                 }
                             }
-                            scheduler.ack(&scheduled).await?;
+                            if retry_exhausted_recorded {
+                                scheduler
+                                    .dead_letter(
+                                        &scheduled,
+                                        crate::frontier::DeadLetterReason::RetryExhausted,
+                                    )
+                                    .await?;
+                            } else {
+                                scheduler.ack(&scheduled).await?;
+                            }
                         }
                         Some(Err(join_err)) => {
                             if let Some(scheduled) = task_context.remove(&join_err.id()) {
