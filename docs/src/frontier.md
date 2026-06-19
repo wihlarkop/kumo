@@ -182,8 +182,13 @@ current pop-only behavior until they explicitly override the lease methods.
 `FileFrontier` overrides the lease methods and persists in-flight requests to
 `leases.json`. `ack_lease(id)` removes the lease, `release_lease(id)` moves it
 back to the pending queue, and `dead_letter(id, reason)` stores it in
-`dead_letters.json`. Atomic Redis leases are planned as a later distributed
-frontier slice.
+`dead_letters.json`.
+
+`CrawlScheduler` uses leases only when a frontier reports durable lease support.
+The engine acks successfully completed or skipped leased requests after their
+lifecycle is terminal, releases aborting hook/error paths for recovery, and
+dead-letters leased task panics to avoid requeueing deterministic panic loops.
+Atomic Redis leases are planned as a later distributed frontier slice.
 
 ## Tuning the Bloom Filter
 

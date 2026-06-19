@@ -220,6 +220,15 @@ pub trait Frontier: Send + Sync {
         Ok(())
     }
 
+    /// Whether this frontier persists leased in-flight requests.
+    ///
+    /// The scheduler only uses [`lease_request`](Self::lease_request) when this
+    /// returns `true`; otherwise it keeps the existing pop/requeue behavior so
+    /// legacy frontiers do not lose deferred requests.
+    fn supports_leases(&self) -> bool {
+        false
+    }
+
     /// Number of URLs waiting in the queue.
     async fn len(&self) -> usize;
 

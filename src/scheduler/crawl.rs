@@ -8,7 +8,7 @@ use rand::Rng;
 use tokio::sync::Mutex;
 
 use crate::{
-    frontier::Frontier,
+    frontier::{DeadLetterReason, Frontier, FrontierLeaseId},
     request::{CrawlRequest, FrontierRequest},
 };
 
@@ -28,8 +28,28 @@ pub struct CrawlScheduler {
     domains: Mutex<HashMap<String, DomainState>>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ScheduledRequest {
+    pub(crate) queued: FrontierRequest,
+    pub(crate) lease_id: Option<FrontierLeaseId>,
+}
+
+impl ScheduledRequest {
+    pub(crate) fn new(queued: FrontierRequest, lease_id: Option<FrontierLeaseId>) -> Self {
+        Self { queued, lease_id }
+    }
+
+    pub(crate) fn lease_id(&self) -> Option<&FrontierLeaseId> {
+        self.lease_id.as_ref()
+    }
+
+    fn into_request(self) -> FrontierRequest {
+        self.queued
+    }
+}
+
 pub(crate) enum SchedulerPoll {
-    Ready(Box<FrontierRequest>),
+    Ready(Box<ScheduledRequest>),
     Pending(Duration),
     Empty,
 }
@@ -102,7 +122,7 @@ impl CrawlScheduler {
 
     pub async fn try_next_ready(&self) -> Option<FrontierRequest> {
         match self.poll_next().await {
-            SchedulerPoll::Ready(queued) => Some(*queued),
+            SchedulerPoll::Ready(scheduled) => Some(scheduled.into_request()),
             SchedulerPoll::Pending(_) | SchedulerPoll::Empty => None,
         }
     }
@@ -114,7 +134,7 @@ impl CrawlScheduler {
     pub async fn next_ready(&self) -> Option<FrontierRequest> {
         loop {
             match self.poll_next().await {
-                SchedulerPoll::Ready(queued) => return Some(*queued),
+                SchedulerPoll::Ready(scheduled) => return Some(scheduled.into_request()),
                 SchedulerPoll::Pending(wait) => tokio::time::sleep(wait).await,
                 SchedulerPoll::Empty => return None,
             }
@@ -139,6 +159,37 @@ impl CrawlScheduler {
             let delay = delay_with_jitter(delay, self.policy.jitter_range());
             state.next_available_at = Some(Instant::now() + delay);
         }
+    }
+
+    pub(crate) async fn ack(
+        &self,
+        scheduled: &ScheduledRequest,
+    ) -> Result<(), crate::error::KumoError> {
+        if let Some(lease_id) = scheduled.lease_id() {
+            self.frontier.ack_lease(lease_id).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn release(
+        &self,
+        scheduled: &ScheduledRequest,
+    ) -> Result<(), crate::error::KumoError> {
+        if let Some(lease_id) = scheduled.lease_id() {
+            self.frontier.release_lease(lease_id).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn dead_letter(
+        &self,
+        scheduled: &ScheduledRequest,
+        reason: DeadLetterReason,
+    ) -> Result<(), crate::error::KumoError> {
+        if let Some(lease_id) = scheduled.lease_id() {
+            self.frontier.dead_letter(lease_id, reason).await?;
+        }
+        Ok(())
     }
 
     pub async fn observe_robots_crawl_delay(&self, url: &str, delay: Duration) {
@@ -171,29 +222,52 @@ impl CrawlScheduler {
         let mut shortest_wait: Option<Duration> = None;
 
         for _ in 0..queued_len {
-            let Some(queued) = self.frontier.pop_request().await else {
+            let Some(scheduled) = self.next_candidate().await else {
                 break;
             };
 
-            match self.classify_candidate(&queued).await {
+            match self.classify_candidate(&scheduled.queued).await {
                 CandidateState::Ready => {
-                    for item in deferred {
-                        self.frontier.push_request_force(item).await;
-                    }
-                    return SchedulerPoll::Ready(Box::new(queued));
+                    self.requeue_deferred(deferred).await;
+                    return SchedulerPoll::Ready(Box::new(scheduled));
                 }
                 CandidateState::Pending(wait) => {
                     shortest_wait = Some(shortest_wait.map_or(wait, |current| current.min(wait)));
-                    deferred.push(queued);
+                    deferred.push(scheduled);
                 }
             }
         }
 
-        for item in deferred {
-            self.frontier.push_request_force(item).await;
-        }
+        self.requeue_deferred(deferred).await;
 
         shortest_wait.map_or(SchedulerPoll::Empty, SchedulerPoll::Pending)
+    }
+
+    async fn next_candidate(&self) -> Option<ScheduledRequest> {
+        if self.frontier.supports_leases() {
+            self.frontier
+                .lease_request(Duration::from_secs(300))
+                .await
+                .map(|lease| {
+                    let lease_id = lease.id().clone();
+                    ScheduledRequest::new(lease.into_request(), Some(lease_id))
+                })
+        } else {
+            self.frontier
+                .pop_request()
+                .await
+                .map(|queued| ScheduledRequest::new(queued, None))
+        }
+    }
+
+    async fn requeue_deferred(&self, deferred: Vec<ScheduledRequest>) {
+        for scheduled in deferred {
+            if scheduled.lease_id().is_some() {
+                self.release(&scheduled).await.ok();
+            } else {
+                self.frontier.push_request_force(scheduled.queued).await;
+            }
+        }
     }
 
     async fn classify_candidate(&self, queued: &FrontierRequest) -> CandidateState {

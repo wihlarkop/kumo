@@ -10,7 +10,7 @@ use crate::{
     middleware::Middleware,
     pipeline::Pipeline,
     request::{CrawlRequest, FrontierRequest},
-    scheduler::{CrawlScheduler, SchedulerPoll},
+    scheduler::{CrawlScheduler, ScheduledRequest, SchedulerPoll},
     stats::CrawlStats,
     store::ItemStore,
 };
@@ -154,7 +154,11 @@ impl CrawlEngine {
             }
         }
 
-        type MultiTaskResult = (usize, FrontierRequest, Result<RequestTaskOutput, KumoError>);
+        type MultiTaskResult = (
+            usize,
+            ScheduledRequest,
+            Result<RequestTaskOutput, KumoError>,
+        );
         let mut join_set: JoinSet<MultiTaskResult> = JoinSet::new();
         let mut task_context = HashMap::new();
 
@@ -195,7 +199,8 @@ impl CrawlEngine {
                         let (spider, scheduler) = &spider_entries[idx];
                         match scheduler.poll_ready().await {
                             SchedulerPoll::Ready(queued) => {
-                                let queued = *queued;
+                                let scheduled = *queued;
+                                let queued = scheduled.queued.clone();
                                 if let Some(ref cache) = robots_cache
                                     && !cache.is_request_allowed(&client, queued.request()).await
                                 {
@@ -223,6 +228,7 @@ impl CrawlEngine {
                                     stats_vec[idx]
                                         .record_robots_blocked(queued.request.stats_domain());
                                     scheduler.finish(&queued).await;
+                                    scheduler.ack(&scheduled).await?;
                                     continue;
                                 }
                                 if let Some(ref cache) = robots_cache
@@ -243,14 +249,16 @@ impl CrawlEngine {
                                     observer: observer.clone(),
                                     stream_cancelled: None,
                                 };
-                                let task_queued = queued.clone();
+                                let task_scheduled = scheduled.clone();
                                 let task_id = join_set
                                     .spawn(async move {
-                                        let result = process_request_once(&task_queued, &ctx).await;
-                                        (idx, task_queued, result)
+                                        let result =
+                                            process_request_once(&task_scheduled.queued, &ctx)
+                                                .await;
+                                        (idx, task_scheduled, result)
                                     })
                                     .id();
-                                task_context.insert(task_id, (idx, queued));
+                                task_context.insert(task_id, (idx, scheduled));
                                 fill_cursor = idx + 1;
                                 any_popped = true;
                                 break;
@@ -320,8 +328,9 @@ impl CrawlEngine {
                 }
                 result = join_set.join_next_with_id() => {
                     match result {
-                        Some(Ok((task_id, (spider_idx, queued, Ok(output))))) => {
+                        Some(Ok((task_id, (spider_idx, scheduled, Ok(output))))) => {
                             task_context.remove(&task_id);
+                            let queued = scheduled.queued.clone();
                             let (_, scheduler) = &spider_entries[spider_idx];
                             scheduler.finish(&queued).await;
                             let stats = &mut stats_vec[spider_idx];
@@ -392,13 +401,16 @@ impl CrawlEngine {
                                     }
                                 }
                             }
+                            scheduler.ack(&scheduled).await?;
                         }
-                        Some(Ok((task_id, (spider_idx, queued, Err(e))))) => {
+                        Some(Ok((task_id, (spider_idx, scheduled, Err(e))))) => {
                             task_context.remove(&task_id);
+                            let queued = scheduled.queued.clone();
                             let (_, scheduler) = &spider_entries[spider_idx];
                             scheduler.finish(&queued).await;
                             let url = queued.request.url();
                             if e.kind() == crate::error::KumoErrorKind::Hook {
+                                scheduler.release(&scheduled).await?;
                                 return Err(e);
                             }
                             for mw in middleware.iter() {
@@ -449,13 +461,14 @@ impl CrawlEngine {
                                 scheduler
                                     .push_request_force(
                                         FrontierRequest::new(
-                                            queued.request,
+                                            queued.request.clone(),
                                             queued.depth,
                                             queued.retry_count + 1,
                                         )
                                         .scheduled_after(delay),
                                     )
                                     .await;
+                                scheduler.ack(&scheduled).await?;
                                 continue;
                             }
 
@@ -493,6 +506,7 @@ impl CrawlEngine {
                                         error_kind = e.kind().as_str(),
                                         "crawl.abort"
                                     );
+                                    scheduler.release(&scheduled).await?;
                                     return Err(e);
                                 }
                                 ErrorPolicy::Retry(max) if queued.retry_count < max => {
@@ -529,10 +543,12 @@ impl CrawlEngine {
                                     {
                                         stats_vec[spider_idx].record_retry(domain);
                                         scheduler.push_request_force(FrontierRequest::new(
-                                            queued.request,
+                                            queued.request.clone(),
                                             queued.depth,
                                             queued.retry_count + 1,
                                         )).await;
+                                        scheduler.ack(&scheduled).await?;
+                                        continue;
                                     }
                                 }
                                 ErrorPolicy::Retry(_) => {
@@ -570,21 +586,25 @@ impl CrawlEngine {
                                     );
                                 }
                             }
+                            scheduler.ack(&scheduled).await?;
                         }
                         Some(Err(join_err)) => {
                             if let Some((spider_idx, queued)) = task_context.remove(&join_err.id()) {
                                 let (_, scheduler) = &spider_entries[spider_idx];
-                                scheduler.finish(&queued).await;
+                                scheduler.finish(&queued.queued).await;
+                                scheduler
+                                    .dead_letter(&queued, crate::frontier::DeadLetterReason::Failed)
+                                    .await?;
                                 stats_vec[spider_idx]
-                                    .record_error(queued.request.stats_domain());
+                                    .record_error(queued.queued.request.stats_domain());
                                 let (spider, _) = &spider_entries[spider_idx];
                                 observer
                                     .notify_with(|| crate::events::CrawlEvent::TaskPanicked {
                                         spider: spider.name().to_string(),
                                         spider_index: Some(spider_idx),
-                                        domain: Some(queued.request.stats_domain().to_string()),
-                                        url: Some(queued.request.url().to_string()),
-                                        depth: Some(queued.depth),
+                                        domain: Some(queued.queued.request.stats_domain().to_string()),
+                                        url: Some(queued.queued.request.url().to_string()),
+                                        depth: Some(queued.queued.depth),
                                     })
                                     .await?;
                                 budgets.mark_if_reached(&mut stats_vec[spider_idx], start);

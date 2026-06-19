@@ -29,6 +29,7 @@ use super::{
         skip_reason,
     },
 };
+use crate::scheduler::ScheduledRequest;
 
 async fn update_live_stats(
     metrics_interval: Option<std::time::Duration>,
@@ -173,7 +174,7 @@ impl CrawlEngine {
             }
         }
 
-        type TaskResult = (FrontierRequest, Result<RequestTaskOutput, KumoError>);
+        type TaskResult = (ScheduledRequest, Result<RequestTaskOutput, KumoError>);
         let mut join_set: JoinSet<TaskResult> = JoinSet::new();
         let mut task_context = HashMap::new();
 
@@ -239,7 +240,8 @@ impl CrawlEngine {
                 while join_set.len() < concurrency {
                     match scheduler.poll_ready().await {
                         SchedulerPoll::Ready(queued) => {
-                            let queued = *queued;
+                            let scheduled = *queued;
+                            let queued = scheduled.queued.clone();
                             // Check robots.txt before dispatching.
                             if let Some(ref cache) = robots_cache
                                 && !cache.is_request_allowed(&client, queued.request()).await
@@ -268,6 +270,7 @@ impl CrawlEngine {
                                 update_live_stats(metrics_interval, &live_stats, &stats, start)
                                     .await;
                                 scheduler.finish(&queued).await;
+                                scheduler.ack(&scheduled).await?;
                                 continue;
                             }
                             if let Some(ref cache) = robots_cache
@@ -290,14 +293,15 @@ impl CrawlEngine {
                                 stream_cancelled: stream_cancelled.clone(),
                             };
 
-                            let task_queued = queued.clone();
+                            let task_scheduled = scheduled.clone();
                             let task_id = join_set
                                 .spawn(async move {
-                                    let result = process_request_once(&task_queued, &ctx).await;
-                                    (task_queued, result)
+                                    let result =
+                                        process_request_once(&task_scheduled.queued, &ctx).await;
+                                    (task_scheduled, result)
                                 })
                                 .id();
-                            task_context.insert(task_id, queued);
+                            task_context.insert(task_id, scheduled);
                         }
                         SchedulerPoll::Pending(wait) => {
                             next_scheduler_wait =
@@ -344,8 +348,9 @@ impl CrawlEngine {
                 }
                 result = join_set.join_next_with_id() => {
                     match result {
-                        Some(Ok((task_id, (queued, Ok(output))))) => {
+                        Some(Ok((task_id, (scheduled, Ok(output))))) => {
                             task_context.remove(&task_id);
+                            let queued = scheduled.queued.clone();
                             scheduler.finish(&queued).await;
                             stats.record_completed(queued.request.stats_domain());
                             stats.pages_crawled += 1;
@@ -422,12 +427,15 @@ impl CrawlEngine {
                                     }
                                 }
                             }
+                            scheduler.ack(&scheduled).await?;
                         }
-                        Some(Ok((task_id, (queued, Err(e))))) => {
+                        Some(Ok((task_id, (scheduled, Err(e))))) => {
                             task_context.remove(&task_id);
+                            let queued = scheduled.queued.clone();
                             scheduler.finish(&queued).await;
                             let url = queued.request.url();
                             if e.kind() == crate::error::KumoErrorKind::Hook {
+                                scheduler.release(&scheduled).await?;
                                 return Err(e);
                             }
                             // Notify all middleware of the permanent failure.
@@ -478,13 +486,14 @@ impl CrawlEngine {
                                 scheduler
                                     .push_request_force(
                                         FrontierRequest::new(
-                                            queued.request,
+                                            queued.request.clone(),
                                             queued.depth,
                                             queued.retry_count + 1,
                                         )
                                         .scheduled_after(delay),
                                     )
                                     .await;
+                                scheduler.ack(&scheduled).await?;
                                 continue;
                             }
 
@@ -524,6 +533,7 @@ impl CrawlEngine {
                                         error_kind = e.kind().as_str(),
                                         "crawl.abort"
                                     );
+                                    scheduler.release(&scheduled).await?;
                                     return Err(e);
                                 }
                                 ErrorPolicy::Retry(max) if queued.retry_count < max => {
@@ -558,10 +568,12 @@ impl CrawlEngine {
                                         stats.record_retry(domain);
                                         update_live_stats(metrics_interval, &live_stats, &stats, start).await;
                                         scheduler.push_request_force(FrontierRequest::new(
-                                            queued.request,
+                                            queued.request.clone(),
                                             queued.depth,
                                             queued.retry_count + 1,
                                         )).await;
+                                        scheduler.ack(&scheduled).await?;
+                                        continue;
                                     }
                                 }
                                 ErrorPolicy::Retry(_) => {
@@ -598,10 +610,18 @@ impl CrawlEngine {
                                     );
                                 }
                             }
+                            scheduler.ack(&scheduled).await?;
                         }
                         Some(Err(join_err)) => {
-                            if let Some(queued) = task_context.remove(&join_err.id()) {
+                            if let Some(scheduled) = task_context.remove(&join_err.id()) {
+                                let queued = scheduled.queued.clone();
                                 scheduler.finish(&queued).await;
+                                scheduler
+                                    .dead_letter(
+                                        &scheduled,
+                                        crate::frontier::DeadLetterReason::Failed,
+                                    )
+                                    .await?;
                                 stats.record_error(queued.request.stats_domain());
                                 observer
                                     .notify_with(|| crate::events::CrawlEvent::TaskPanicked {
