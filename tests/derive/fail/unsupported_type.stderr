@@ -1,5 +1,5 @@
-error: #[derive(Extract)] only supports String and Option<String> fields
+error: #[derive(Extract)] supports String, bool, numeric scalar types, Option<T>, and Vec<T>
  --> tests/derive/fail/unsupported_type.rs:6:12
   |
-6 |     price: f64,
-  |            ^^^
+6 |     price: std::time::Duration,
+  |            ^^^^^^^^^^^^^^^^^^^

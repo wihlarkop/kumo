@@ -419,6 +419,14 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo-derive
 
+### Unreleased
+
+- Added backward-compatible `#[derive(Extract)]` support for numeric scalar
+  fields, `bool`, `Option<T>`, and `Vec<T>` where `T` is `String`, `bool`, or a
+  supported numeric scalar.
+- Improved derived scalar parse failures so `KumoError` messages include the
+  field name, target type, raw value, and parse error.
+
 ### 0.1.3 - 2026-05-16
 
 - Added clear compile-time diagnostics for unsupported field types. The derive

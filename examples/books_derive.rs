@@ -8,10 +8,12 @@ use serde::Serialize;
 struct Book {
     #[extract(css = "h3 a", attr = "title")]
     title: String,
-    #[extract(css = ".price_color")]
-    price: String,
+    #[extract(css = ".price_color", re = r"[\d.]+")]
+    price_gbp: f64,
     #[extract(css = ".star-rating", attr = "class")]
     rating: Option<String>,
+    #[extract(css = ".badge")]
+    badges: Vec<String>,
     #[extract(css = "h3 a", attr = "href")]
     href: String,
 }

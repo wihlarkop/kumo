@@ -24,11 +24,14 @@ struct Book {
     #[extract(css = "h3 a", attr = "title")]
     title: String,
 
-    #[extract(css = ".price_color")]
-    price: String,
+    #[extract(css = ".price_color", re = r"[\d.]+")]
+    price: f64,
 
     #[extract(css = "h3 a", attr = "href")]
     href: Option<String>,
+
+    #[extract(css = ".tag")]
+    tags: Vec<String>,
 }
 ```
 
@@ -52,7 +55,7 @@ async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
 | `attr` | `attr = "href"` | Read an HTML attribute instead of text content. |
 | `re` | `re = r"\d+"` | Apply a regex and return the first match / capture group 1. |
 | `text` | `text` | Explicit text extraction (default; can be omitted). |
-| `default` | `default = "N/A"` | Fallback value for `String` fields when the selector returns empty. Ignored for `Option<String>`. |
+| `default` | `default = "N/A"` | Fallback value for required scalar fields when the selector returns empty. Ignored for `Option<T>` and `Vec<T>`. |
 | `transform` | `transform = "trim"` | Apply a named transform after extraction. Values: `trim`, `lowercase`, `uppercase`. Compile error if unknown. |
 | `llm_fallback` | `llm_fallback = "the price"` | Fall back to an LLM when the selector returns empty. Requires an LLM provider feature (`claude`, `openai`, etc.) and passing a client to `extract_from`. |
 | `llm_fallback` (bare) | `llm_fallback` | Same as above, using the field name as the extraction hint. |
@@ -60,10 +63,15 @@ async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
 ## Field types
 
 - `String` - uses `unwrap_or_default()` on missing matches (empty string when not found)
-- `Option<String>` - stays as `None` when not found
+- Numeric scalars - parses the extracted string with `FromStr`; missing or invalid values return `KumoError`
+- `bool` - parses `true` or `false` with `FromStr`
+- `Option<T>` - stays as `None` when not found and parses when present
+- `Vec<T>` - collects all selector matches and parses each value
 
-Other field types produce a compile error. Use manual extraction when a field
-needs parsing into numbers, booleans, dates, or custom types.
+Supported numeric scalars are `i8`, `i16`, `i32`, `i64`, `i128`, `isize`,
+`u8`, `u16`, `u32`, `u64`, `u128`, `usize`, `f32`, and `f64`. Other field
+types produce a compile error. Use manual extraction when a field needs parsing
+into dates or custom types.
 
 ## License
 

@@ -26,8 +26,8 @@ struct Book {
     #[extract(css = "h3 a", attr = "title")]
     title: String,
 
-    #[extract(css = ".price_color")]
-    price: String,
+    #[extract(css = ".price_color", re = r"[\d.]+")]
+    price: f64,
 
     #[extract(css = ".availability")]
     availability: String,
@@ -93,14 +93,14 @@ description: String,
 
 ### `default`
 
-Fallback value for `String` fields when the selector finds nothing.
+Fallback value for required scalar fields when the selector finds nothing.
 
 ```rust
 #[extract(css = ".badge", default = "N/A")]
 badge: String,
 ```
 
-Without `default`, missing `String` fields fall back to an empty string. `Option<String>` fields always use `None`.
+Without `default`, missing `String` fields fall back to an empty string. Missing required numeric or boolean fields return a `KumoError`. `Option<T>` fields always use `None`, and `Vec<T>` fields use an empty vector.
 
 ### `transform`
 
@@ -140,7 +140,16 @@ let book = Book::extract_from(&el, Some(&client)).await?;
 | Type | Behaviour when selector finds nothing |
 |------|--------------------------------------|
 | `String` | Returns `""` (or `default` value if set) |
-| `Option<String>` | Returns `None` |
+| numeric scalars (`u32`, `f64`, etc.) | Returns an extraction error unless `default` is set |
+| `bool` | Returns an extraction error unless `default` is set |
+| `Option<T>` | Returns `None` |
+| `Vec<T>` | Returns an empty vector |
+
+Supported numeric scalars are `i8`, `i16`, `i32`, `i64`, `i128`, `isize`,
+`u8`, `u16`, `u32`, `u64`, `u128`, `usize`, `f32`, and `f64`. For `Option<T>`
+and `Vec<T>`, `T` can be `String`, `bool`, or one of those numeric scalar
+types. Invalid scalar parses return `KumoError` messages that include the field
+name, target type, raw value, and parse failure.
 
 ## Combining Options
 
@@ -151,7 +160,7 @@ Options can be combined on a single field:
 struct Product {
     // attribute + regex + transform
     #[extract(css = "span.price", attr = "data-raw", re = r"[\d.]+", transform = "trim")]
-    price: String,
+    price: f64,
 
     // optional field with CSS fallback to LLM
     #[extract(css = "div.description", llm_fallback = "product description")]
@@ -160,6 +169,10 @@ struct Product {
     // attribute with default
     #[extract(css = "a.detail-link", attr = "href", default = "#")]
     detail_url: String,
+
+    // collects every matching label
+    #[extract(css = ".tag", transform = "lowercase")]
+    tags: Vec<String>,
 }
 ```
 
