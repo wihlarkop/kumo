@@ -603,6 +603,7 @@ impl CrawlEngine {
                                 ErrorPolicy::Retry(_) => {
                                     if !retry_exhausted_recorded {
                                         stats.record_retry_exhausted(domain);
+                                        retry_exhausted_recorded = true;
                                         update_live_stats(live_stats_enabled, &live_stats, &stats, start).await;
                                     }
                                     tracing::warn!(
@@ -634,7 +635,16 @@ impl CrawlEngine {
                                     );
                                 }
                             }
-                            scheduler.ack(&scheduled).await?;
+                            if retry_exhausted_recorded {
+                                scheduler
+                                    .dead_letter(
+                                        &scheduled,
+                                        crate::frontier::DeadLetterReason::RetryExhausted,
+                                    )
+                                    .await?;
+                            } else {
+                                scheduler.ack(&scheduled).await?;
+                            }
                         }
                         Some(Err(join_err)) => {
                             if let Some(scheduled) = task_context.remove(&join_err.id()) {

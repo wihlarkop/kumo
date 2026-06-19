@@ -555,6 +555,7 @@ impl CrawlEngine {
                                 ErrorPolicy::Retry(_) => {
                                     if !retry_exhausted_recorded {
                                         stats_vec[spider_idx].record_retry_exhausted(domain);
+                                        retry_exhausted_recorded = true;
                                     }
                                     tracing::warn!(
                                         target: target::REQUEST,
@@ -587,7 +588,16 @@ impl CrawlEngine {
                                     );
                                 }
                             }
-                            scheduler.ack(&scheduled).await?;
+                            if retry_exhausted_recorded {
+                                scheduler
+                                    .dead_letter(
+                                        &scheduled,
+                                        crate::frontier::DeadLetterReason::RetryExhausted,
+                                    )
+                                    .await?;
+                            } else {
+                                scheduler.ack(&scheduled).await?;
+                            }
                         }
                         Some(Err(join_err)) => {
                             if let Some((spider_idx, queued)) = task_context.remove(&join_err.id()) {

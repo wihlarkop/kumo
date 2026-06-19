@@ -10,7 +10,7 @@ use std::{
 use kumo::{
     CrawlRequest,
     engine::CrawlEngine,
-    error::KumoError,
+    error::{ErrorPolicy, KumoError},
     extract::Response,
     fetch::MockFetcher,
     frontier::{DeadLetterReason, Frontier, FrontierLease, FrontierLeaseId},
@@ -26,6 +26,7 @@ struct LeaseTrackingFrontier {
     acked: Arc<AtomicBool>,
     released: Arc<AtomicBool>,
     dead_lettered: Arc<AtomicBool>,
+    dead_letter_reason: Arc<Mutex<Option<DeadLetterReason>>>,
 }
 
 impl LeaseTrackingFrontier {
@@ -40,6 +41,23 @@ impl LeaseTrackingFrontier {
             acked,
             released,
             dead_lettered,
+            dead_letter_reason: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn with_dead_letter_reason(
+        acked: Arc<AtomicBool>,
+        released: Arc<AtomicBool>,
+        dead_lettered: Arc<AtomicBool>,
+        dead_letter_reason: Arc<Mutex<Option<DeadLetterReason>>>,
+    ) -> Self {
+        Self {
+            queue: Mutex::new(VecDeque::new()),
+            leased: Mutex::new(None),
+            acked,
+            released,
+            dead_lettered,
+            dead_letter_reason,
         }
     }
 }
@@ -113,9 +131,10 @@ impl Frontier for LeaseTrackingFrontier {
     async fn dead_letter(
         &self,
         _lease_id: &FrontierLeaseId,
-        _reason: DeadLetterReason,
+        reason: DeadLetterReason,
     ) -> Result<(), KumoError> {
         self.dead_lettered.store(true, Ordering::SeqCst);
+        *self.dead_letter_reason.lock().await = Some(reason);
         *self.leased.lock().await = None;
         Ok(())
     }
@@ -148,6 +167,29 @@ impl Spider for LeaseSpider {
     }
 }
 
+struct RetryExhaustedSpider;
+
+#[async_trait::async_trait]
+impl Spider for RetryExhaustedSpider {
+    type Item = serde_json::Value;
+
+    fn name(&self) -> &str {
+        "retry-exhausted-spider"
+    }
+
+    fn start_urls(&self) -> Vec<String> {
+        vec!["https://example.com/retry-exhausted".to_string()]
+    }
+
+    async fn parse(&self, _response: &Response) -> Result<Output<Self::Item>, KumoError> {
+        Err(KumoError::parse_msg("parse failed"))
+    }
+
+    fn on_error(&self, _url: &str, _err: &KumoError) -> ErrorPolicy {
+        ErrorPolicy::Retry(0)
+    }
+}
+
 #[tokio::test]
 async fn engine_acks_leased_request_after_success() {
     let acked = Arc::new(AtomicBool::new(false));
@@ -169,4 +211,38 @@ async fn engine_acks_leased_request_after_success() {
     assert!(acked.load(Ordering::SeqCst));
     assert!(!released.load(Ordering::SeqCst));
     assert!(!dead_lettered.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn engine_dead_letters_leased_request_after_retry_exhaustion() {
+    let acked = Arc::new(AtomicBool::new(false));
+    let released = Arc::new(AtomicBool::new(false));
+    let dead_lettered = Arc::new(AtomicBool::new(false));
+    let dead_letter_reason = Arc::new(Mutex::new(None));
+    let frontier = LeaseTrackingFrontier::with_dead_letter_reason(
+        acked.clone(),
+        released.clone(),
+        dead_lettered.clone(),
+        dead_letter_reason.clone(),
+    );
+    let url = "https://example.com/retry-exhausted";
+    let fetcher = MockFetcher::new().with_response(url, 200, "<h1>bad</h1>");
+
+    let stats = CrawlEngine::builder()
+        .frontier(frontier)
+        .fetcher(fetcher)
+        .respect_robots_txt(false)
+        .store(StdoutStore)
+        .run(RetryExhaustedSpider)
+        .await
+        .unwrap();
+
+    assert_eq!(stats.retry_exhausted, 1);
+    assert!(!acked.load(Ordering::SeqCst));
+    assert!(!released.load(Ordering::SeqCst));
+    assert!(dead_lettered.load(Ordering::SeqCst));
+    assert_eq!(
+        *dead_letter_reason.lock().await,
+        Some(DeadLetterReason::RetryExhausted)
+    );
 }

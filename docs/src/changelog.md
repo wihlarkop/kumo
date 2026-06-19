@@ -29,6 +29,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   priority requests and migrating older list-backed pending queues on poll.
 - Added opt-in stats checkpoints that periodically write `CrawlReport` JSON and
   refresh the file with the final crawl report at shutdown.
+- Durable frontiers now dead-letter leased requests when retry capacity is
+  exhausted instead of only acking the terminal failure.
 - Added proxy health tracking to `ProxyRotator`, including per-proxy success
   and failure counters, configurable cooldown after consecutive failed request
   attempts, shared health snapshots from cloned rotators, and a no-cooldown mode
