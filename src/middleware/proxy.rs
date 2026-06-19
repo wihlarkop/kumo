@@ -66,6 +66,17 @@ pub struct ProxyHealthSnapshot {
     pub successes: u64,
     pub failures: u64,
     pub consecutive_failures: u64,
+    pub cooling_down: bool,
+    pub cooldown_remaining: Option<Duration>,
+}
+
+/// Point-in-time circuit-breaker state for one proxy URL.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProxyCircuitSnapshot {
+    pub proxy: String,
+    pub successes: u64,
+    pub failures: u64,
+    pub consecutive_failures: u64,
     pub circuit_state: ProxyCircuitState,
     pub cooling_down: bool,
     pub cooldown_remaining: Option<Duration>,
@@ -148,6 +159,33 @@ impl ProxyRotator {
                 });
 
                 ProxyHealthSnapshot {
+                    proxy: proxy.clone(),
+                    successes: state.map_or(0, |state| state.successes),
+                    failures: state.map_or(0, |state| state.failures),
+                    consecutive_failures: state.map_or(0, |state| state.consecutive_failures),
+                    cooling_down: cooldown_remaining.is_some(),
+                    cooldown_remaining,
+                }
+            })
+            .collect()
+    }
+
+    /// Return circuit-breaker state and health counters for every configured proxy URL.
+    pub fn circuit_health(&self) -> Vec<ProxyCircuitSnapshot> {
+        let now = Instant::now();
+        let health = self.health.lock().expect("proxy health lock poisoned");
+
+        self.proxies
+            .iter()
+            .map(|proxy| {
+                let state = health.stats.get(proxy);
+                let cooldown_remaining = state.and_then(|state| {
+                    state
+                        .cooldown_until
+                        .and_then(|until| until.checked_duration_since(now))
+                });
+
+                ProxyCircuitSnapshot {
                     proxy: proxy.clone(),
                     successes: state.map_or(0, |state| state.successes),
                     failures: state.map_or(0, |state| state.failures),

@@ -118,7 +118,7 @@ let report = CrawlEngine::builder()
     .run(MySpider)
     .await?;
 
-for proxy in proxy_health.health() {
+for proxy in proxy_health.circuit_health() {
     println!(
         "{} state={:?} successes={} failures={}",
         proxy.proxy, proxy.circuit_state, proxy.successes, proxy.failures
@@ -126,13 +126,13 @@ for proxy in proxy_health.health() {
 }
 ```
 
-`ProxyHealthSnapshot::circuit_state` is `Healthy` when the proxy is selectable
+`ProxyCircuitSnapshot::circuit_state` is `Healthy` when the proxy is selectable
 with a closed circuit, `Open` while the proxy is cooling down, and `Recovering`
-after the cooldown has elapsed and the next selection is a trial request. The
-existing `cooling_down` and `cooldown_remaining` fields remain available for
-callers that only need the previous cooldown view. When every configured proxy
-is open, `ProxyRotator` leaves `request.proxy` unset for that request instead
-of forcing a known unhealthy proxy.
+after the cooldown has elapsed and the next selection is a trial request. Use
+`ProxyRotator::health()` when you only need the backward-compatible success,
+failure, and cooldown counters. When every configured proxy is open,
+`ProxyRotator` leaves `request.proxy` unset for that request instead of forcing
+a known unhealthy proxy.
 
 ## UserAgentRotator
 

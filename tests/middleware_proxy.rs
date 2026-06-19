@@ -126,13 +126,13 @@ async fn reports_open_recovering_and_healthy_circuit_states() {
         )
         .await;
 
-    let open = rotator.health();
+    let open = rotator.circuit_health();
     assert_eq!(open[0].circuit_state, ProxyCircuitState::Open);
     assert!(open[0].cooling_down);
 
     tokio::time::sleep(Duration::from_millis(10)).await;
 
-    let recovering = rotator.health();
+    let recovering = rotator.circuit_health();
     assert_eq!(recovering[0].circuit_state, ProxyCircuitState::Recovering);
     assert!(!recovering[0].cooling_down);
 
@@ -144,7 +144,7 @@ async fn reports_open_recovering_and_healthy_circuit_states() {
         .await
         .unwrap();
 
-    let healthy = rotator.health();
+    let healthy = rotator.circuit_health();
     assert_eq!(healthy[0].circuit_state, ProxyCircuitState::Healthy);
     assert_eq!(healthy[0].consecutive_failures, 0);
 }
