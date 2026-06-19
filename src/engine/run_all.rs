@@ -555,6 +555,7 @@ impl CrawlEngine {
                                 ErrorPolicy::Retry(_) => {
                                     if !retry_exhausted_recorded {
                                         stats_vec[spider_idx].record_retry_exhausted(domain);
+                                        retry_exhausted_recorded = true;
                                     }
                                     tracing::warn!(
                                         target: target::REQUEST,

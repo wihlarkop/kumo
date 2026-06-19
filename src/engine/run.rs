@@ -603,6 +603,7 @@ impl CrawlEngine {
                                 ErrorPolicy::Retry(_) => {
                                     if !retry_exhausted_recorded {
                                         stats.record_retry_exhausted(domain);
+                                        retry_exhausted_recorded = true;
                                         update_live_stats(live_stats_enabled, &live_stats, &stats, start).await;
                                     }
                                     tracing::warn!(
