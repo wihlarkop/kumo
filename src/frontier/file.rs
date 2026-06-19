@@ -2,10 +2,12 @@ use std::{
     collections::VecDeque,
     io::Write,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicU64, AtomicUsize, Ordering},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use bloomfilter::Bloom;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -13,10 +15,65 @@ use crate::{
     request::{CrawlRequest, FrontierRequest, StoredFrontierRequest},
 };
 
-use super::Frontier;
+use super::{DeadLetterReason, Frontier, FrontierLease, FrontierLeaseId};
 
 const DEFAULT_FLUSH_EVERY: usize = 100;
 const BLOOM_CAPACITY: usize = 1_000_000;
+
+fn system_time_to_ms(time: SystemTime) -> Option<u64> {
+    let duration = time.duration_since(UNIX_EPOCH).ok()?;
+    u64::try_from(duration.as_millis()).ok()
+}
+
+fn system_time_from_ms(ms: u64) -> SystemTime {
+    UNIX_EPOCH + Duration::from_millis(ms)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StoredFrontierLease {
+    id: String,
+    request: StoredFrontierRequest,
+    expires_at_ms: Option<u64>,
+    delivery_count: u32,
+}
+
+impl StoredFrontierLease {
+    fn new(
+        id: FrontierLeaseId,
+        request: &FrontierRequest,
+        expires_at: Option<SystemTime>,
+        delivery_count: u32,
+    ) -> Self {
+        Self {
+            id: id.to_string(),
+            request: StoredFrontierRequest::from(request),
+            expires_at_ms: expires_at.and_then(system_time_to_ms),
+            delivery_count,
+        }
+    }
+
+    fn lease(&self) -> Result<FrontierLease, &'static str> {
+        Ok(FrontierLease::new(
+            FrontierLeaseId::new(self.id.clone()),
+            FrontierRequest::try_from(self.request.clone())?,
+            self.expires_at_ms.map(system_time_from_ms),
+            self.delivery_count,
+        ))
+    }
+
+    fn request(&self) -> Result<FrontierRequest, &'static str> {
+        FrontierRequest::try_from(self.request.clone())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StoredDeadLetter {
+    id: String,
+    request: StoredFrontierRequest,
+    reason: String,
+    delivery_count: u32,
+    dead_lettered_at_ms: Option<u64>,
+}
 
 fn sync_parent_dir(path: &Path) -> Result<(), KumoError> {
     #[cfg(unix)]
@@ -94,12 +151,15 @@ fn atomic_write(path: &Path, contents: &str) -> Result<(), KumoError> {
 /// ```
 pub struct FileFrontier {
     queue: Mutex<VecDeque<FrontierRequest>>,
+    leases: Mutex<Vec<StoredFrontierLease>>,
+    dead_letters: Mutex<Vec<StoredDeadLetter>>,
     seen_bloom: Mutex<Bloom<String>>,
     /// Exact list of seen URLs — persisted so the Bloom filter can be rebuilt on resume.
     seen_exact: Mutex<Vec<String>>,
     dir: PathBuf,
     flush_every: usize,
     push_count: AtomicUsize,
+    lease_count: AtomicU64,
 }
 
 /// Snapshot of a [`FileFrontier`] in-memory state.
@@ -136,6 +196,8 @@ impl FileFrontier {
 
         let queue_path = dir.join("queue.json");
         let seen_path = dir.join("seen.json");
+        let leases_path = dir.join("leases.json");
+        let dead_letters_path = dir.join("dead_letters.json");
 
         let mut bloom =
             Bloom::new_for_fp_rate(BLOOM_CAPACITY, 0.001).expect("valid bloom filter parameters");
@@ -153,7 +215,7 @@ impl FileFrontier {
             Vec::new()
         };
 
-        let queue: VecDeque<FrontierRequest> = if queue_path.exists() {
+        let mut queue: VecDeque<FrontierRequest> = if queue_path.exists() {
             let data = std::fs::read_to_string(&queue_path)
                 .map_err(|e| KumoError::store("read queue.json", e))?;
             let stored: VecDeque<StoredFrontierRequest> =
@@ -167,13 +229,37 @@ impl FileFrontier {
             VecDeque::new()
         };
 
+        let leases: Vec<StoredFrontierLease> = if leases_path.exists() {
+            let data = std::fs::read_to_string(&leases_path)
+                .map_err(|e| KumoError::store("read leases.json", e))?;
+            serde_json::from_str(&data).map_err(|e| KumoError::store("parse leases.json", e))?
+        } else {
+            Vec::new()
+        };
+
+        for lease in leases.iter().rev() {
+            queue.push_front(lease.request().map_err(KumoError::store_msg)?);
+        }
+
+        let dead_letters: Vec<StoredDeadLetter> = if dead_letters_path.exists() {
+            let data = std::fs::read_to_string(&dead_letters_path)
+                .map_err(|e| KumoError::store("read dead_letters.json", e))?;
+            serde_json::from_str(&data)
+                .map_err(|e| KumoError::store("parse dead_letters.json", e))?
+        } else {
+            Vec::new()
+        };
+
         Ok(Self {
             queue: Mutex::new(queue),
+            leases: Mutex::new(Vec::new()),
+            dead_letters: Mutex::new(dead_letters),
             seen_bloom: Mutex::new(bloom),
             seen_exact: Mutex::new(seen_exact),
             dir,
             flush_every: DEFAULT_FLUSH_EVERY,
             push_count: AtomicUsize::new(0),
+            lease_count: AtomicU64::new(0),
         })
     }
 
@@ -203,19 +289,63 @@ impl FileFrontier {
 
     async fn flush_to_disk(&self) -> Result<(), KumoError> {
         let queue = self.queue.lock().await;
+        let leases = self.leases.lock().await;
+        let dead_letters = self.dead_letters.lock().await;
         let seen = self.seen_exact.lock().await;
 
         let stored_queue: VecDeque<StoredFrontierRequest> =
             queue.iter().map(StoredFrontierRequest::from).collect();
         let queue_json = serde_json::to_string(&stored_queue)
             .map_err(|e| KumoError::store("serialize queue", e))?;
+        let leases_json =
+            serde_json::to_string(&*leases).map_err(|e| KumoError::store("serialize leases", e))?;
+        let dead_letters_json = serde_json::to_string(&*dead_letters)
+            .map_err(|e| KumoError::store("serialize dead letters", e))?;
         let seen_json =
             serde_json::to_string(&*seen).map_err(|e| KumoError::store("serialize seen", e))?;
 
         atomic_write(&self.dir.join("queue.json"), &queue_json)?;
+        atomic_write(&self.dir.join("leases.json"), &leases_json)?;
+        atomic_write(&self.dir.join("dead_letters.json"), &dead_letters_json)?;
         atomic_write(&self.dir.join("seen.json"), &seen_json)?;
 
         Ok(())
+    }
+
+    async fn reclaim_expired_leases(&self) -> Result<(), KumoError> {
+        let now = SystemTime::now();
+        let mut queue = self.queue.lock().await;
+        let mut leases = self.leases.lock().await;
+        let mut retained = Vec::with_capacity(leases.len());
+
+        for lease in leases.drain(..) {
+            if lease
+                .expires_at_ms
+                .map(system_time_from_ms)
+                .is_some_and(|expires_at| expires_at <= now)
+            {
+                queue.push_back(lease.request().map_err(KumoError::store_msg)?);
+            } else {
+                retained.push(lease);
+            }
+        }
+
+        *leases = retained;
+        Ok(())
+    }
+
+    fn next_lease_id(&self) -> FrontierLeaseId {
+        let sequence = self.lease_count.fetch_add(1, Ordering::Relaxed);
+        let now_ms = system_time_to_ms(SystemTime::now()).unwrap_or(0);
+        FrontierLeaseId::new(format!("file-{now_ms}-{sequence}"))
+    }
+
+    async fn remove_lease(&self, lease_id: &FrontierLeaseId) -> Option<StoredFrontierLease> {
+        let mut leases = self.leases.lock().await;
+        let index = leases
+            .iter()
+            .position(|lease| lease.id == lease_id.as_str())?;
+        Some(leases.remove(index))
     }
 
     /// Flush current state to disk immediately. Call this before stopping the
@@ -290,10 +420,62 @@ impl Frontier for FileFrontier {
     }
 
     async fn pop_request(&self) -> Option<FrontierRequest> {
+        self.reclaim_expired_leases().await.ok();
         self.queue.lock().await.pop_front()
     }
 
+    async fn lease_request(&self, ttl: Duration) -> Option<FrontierLease> {
+        self.reclaim_expired_leases().await.ok();
+
+        let request = {
+            let mut queue = self.queue.lock().await;
+            queue.pop_front()?
+        };
+        let id = self.next_lease_id();
+        let expires_at = Some(SystemTime::now() + ttl);
+        let stored = StoredFrontierLease::new(id.clone(), &request, expires_at, 1);
+        let lease = stored.lease().ok()?;
+
+        self.leases.lock().await.push(stored);
+        self.flush_to_disk().await.ok();
+
+        Some(lease)
+    }
+
+    async fn ack_lease(&self, lease_id: &FrontierLeaseId) -> Result<(), KumoError> {
+        self.remove_lease(lease_id).await;
+        self.flush_to_disk().await
+    }
+
+    async fn release_lease(&self, lease_id: &FrontierLeaseId) -> Result<(), KumoError> {
+        if let Some(lease) = self.remove_lease(lease_id).await {
+            self.queue
+                .lock()
+                .await
+                .push_front(lease.request().map_err(KumoError::store_msg)?);
+        }
+        self.flush_to_disk().await
+    }
+
+    async fn dead_letter(
+        &self,
+        lease_id: &FrontierLeaseId,
+        reason: DeadLetterReason,
+    ) -> Result<(), KumoError> {
+        if let Some(lease) = self.remove_lease(lease_id).await {
+            self.dead_letters.lock().await.push(StoredDeadLetter {
+                id: lease.id,
+                request: lease.request,
+                reason: reason.as_str().to_string(),
+                delivery_count: lease.delivery_count,
+                dead_lettered_at_ms: system_time_to_ms(SystemTime::now()),
+            });
+        }
+        self.flush_to_disk().await
+    }
+
     async fn len(&self) -> usize {
+        self.reclaim_expired_leases().await.ok();
         self.queue.lock().await.len()
     }
 

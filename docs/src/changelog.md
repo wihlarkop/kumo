@@ -17,6 +17,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - Added a backward-compatible frontier lease/dead-letter API foundation with
   `FrontierLease`, `FrontierLeaseId`, `DeadLetterReason`, and default
   `Frontier` lifecycle methods for future durable in-flight request recovery.
+- Added durable `FileFrontier` lease storage with `leases.json`, restart
+  recovery back to the pending queue, lease ack/release handling, lease expiry
+  reclaim, and `dead_letters.json` persistence.
 - Added proxy health tracking to `ProxyRotator`, including per-proxy success
   and failure counters, configurable cooldown after consecutive failed request
   attempts, shared health snapshots from cloned rotators, and a no-cooldown mode
