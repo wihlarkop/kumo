@@ -16,6 +16,32 @@ Reports keep the raw counters and derived health signals together. The raw
 counters tell you what happened; the derived helpers make common alerts easy to
 write without duplicating rate math in every crawler.
 
+For long-running crawls, enable checkpointed reports so Kumo periodically writes
+the current report snapshot and overwrites it again when the crawl finishes:
+
+```rust
+let stats = CrawlEngine::builder()
+    .stats_checkpoint("crawl-report.checkpoint.json")
+    .run(MySpider)
+    .await?;
+```
+
+Use a custom interval when the default 30-second cadence is too frequent or too
+slow:
+
+```rust
+let stats = CrawlEngine::builder()
+    .stats_checkpoint_interval(
+        "crawl-report.checkpoint.json",
+        std::time::Duration::from_secs(300),
+    )
+    .run(MySpider)
+    .await?;
+```
+
+The checkpoint file uses the same JSON shape as `CrawlReport::to_json_value()`.
+For `run_all()`, Kumo writes a JSON array with one report per spider.
+
 ## Health Signals
 
 | Field or helper | Use it for |

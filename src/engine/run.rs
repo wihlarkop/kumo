@@ -32,12 +32,12 @@ use super::{
 use crate::scheduler::ScheduledRequest;
 
 async fn update_live_stats(
-    metrics_interval: Option<std::time::Duration>,
+    enabled: bool,
     live_stats: &Arc<tokio::sync::Mutex<CrawlStats>>,
     stats: &CrawlStats,
     start: std::time::Instant,
 ) {
-    if metrics_interval.is_some() {
+    if enabled {
         let mut snap = live_stats.lock().await;
         *snap = stats.clone();
         snap.duration = start.elapsed();
@@ -58,6 +58,8 @@ impl CrawlEngine {
             max_errors: self.max_errors,
         };
         let metrics_interval = self.metrics_interval;
+        let stats_checkpoint = self.stats_checkpoint;
+        let live_stats_enabled = metrics_interval.is_some() || stats_checkpoint.is_some();
         let observer = crate::hooks::CrawlObserver::new(
             self.events.clone(),
             crate::hooks::HookDispatcher::new(self.hooks, self.hook_error_policy),
@@ -205,6 +207,28 @@ impl CrawlEngine {
                 }
             })
         });
+        let checkpoint_task = stats_checkpoint.clone().map(|config| {
+            let live = live_stats.clone();
+            let checkpoint_start = start;
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(config.interval()).await;
+                    let mut stats = live.lock().await.clone();
+                    stats.duration = checkpoint_start.elapsed();
+                    if let Err(e) =
+                        crate::stats_checkpoint::write_stats_checkpoint(&config, stats).await
+                    {
+                        tracing::warn!(
+                            target: target::CRAWL,
+                            event = "crawl.stats_checkpoint_failed",
+                            path = %config.path().display(),
+                            error = %e,
+                            "crawl.stats_checkpoint_failed"
+                        );
+                    }
+                }
+            })
+        });
 
         let shutdown = async {
             #[cfg(not(target_arch = "wasm32"))]
@@ -267,7 +291,7 @@ impl CrawlEngine {
                                     "request.robots_blocked"
                                 );
                                 stats.record_robots_blocked(queued.request.stats_domain());
-                                update_live_stats(metrics_interval, &live_stats, &stats, start)
+                                update_live_stats(live_stats_enabled, &live_stats, &stats, start)
                                     .await;
                                 scheduler.finish(&queued).await;
                                 scheduler.ack(&scheduled).await?;
@@ -369,7 +393,7 @@ impl CrawlEngine {
                                 stats.interrupted = true;
                                 stats.stop_reason = Some(crate::stats::StopReason::Interrupted);
                             }
-                            update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                            update_live_stats(live_stats_enabled, &live_stats, &stats, start).await;
 
                             if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
                                 shutting_down = true;
@@ -410,7 +434,7 @@ impl CrawlEngine {
                                                 })
                                                 .await?;
                                         }
-                                        update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                                        update_live_stats(live_stats_enabled, &live_stats, &stats, start).await;
                                     } else if let Some(reason) =
                                         skip_reason(&follow_request, follow_depth, spider.as_ref())
                                     {
@@ -455,7 +479,7 @@ impl CrawlEngine {
                                 let delay = retry_policy
                                     .delay_for_with_hint(queued.retry_count, retry_delay_hint);
                                 stats.record_retry(domain);
-                                update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                                update_live_stats(live_stats_enabled, &live_stats, &stats, start).await;
                                 observer
                                     .notify_with(|| crate::events::CrawlEvent::RequestRetried {
                                         spider: spider.name().to_string(),
@@ -515,7 +539,7 @@ impl CrawlEngine {
                                     retry_exhausted: retry_policy_exhausted,
                                 })
                                 .await?;
-                            update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                            update_live_stats(live_stats_enabled, &live_stats, &stats, start).await;
                             if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
                                 shutting_down = true;
                             }
@@ -566,7 +590,7 @@ impl CrawlEngine {
                                     );
                                     if !shutting_down {
                                         stats.record_retry(domain);
-                                        update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                                        update_live_stats(live_stats_enabled, &live_stats, &stats, start).await;
                                         scheduler.push_request_force(FrontierRequest::new(
                                             queued.request.clone(),
                                             queued.depth,
@@ -579,7 +603,7 @@ impl CrawlEngine {
                                 ErrorPolicy::Retry(_) => {
                                     if !retry_exhausted_recorded {
                                         stats.record_retry_exhausted(domain);
-                                        update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                                        update_live_stats(live_stats_enabled, &live_stats, &stats, start).await;
                                     }
                                     tracing::warn!(
                                         target: target::REQUEST,
@@ -632,7 +656,7 @@ impl CrawlEngine {
                                         depth: Some(queued.depth),
                                     })
                                     .await?;
-                                update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                                update_live_stats(live_stats_enabled, &live_stats, &stats, start).await;
                                 if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
                                     shutting_down = true;
                                 }
@@ -647,7 +671,7 @@ impl CrawlEngine {
                                         depth: None,
                                     })
                                     .await?;
-                                update_live_stats(metrics_interval, &live_stats, &stats, start).await;
+                                update_live_stats(live_stats_enabled, &live_stats, &stats, start).await;
                                 if !shutting_down && budgets.mark_if_reached(&mut stats, start) {
                                     shutting_down = true;
                                 }
@@ -682,6 +706,12 @@ impl CrawlEngine {
             } else {
                 Some(crate::stats::StopReason::FrontierExhausted)
             };
+        }
+        if let Some(config) = &stats_checkpoint {
+            crate::stats_checkpoint::write_stats_checkpoint(config, stats.clone()).await?;
+        }
+        if let Some(task) = checkpoint_task {
+            task.abort();
         }
 
         // close() errors are intentionally not propagated â€” the crawl and store

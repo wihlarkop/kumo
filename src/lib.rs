@@ -24,7 +24,9 @@ pub mod scheduler;
 pub mod sitemap;
 pub mod spider;
 pub mod stats;
+mod stats_checkpoint;
 pub use stats::{CrawlReport, CrawlStats, CrawlTimingStats, RetryReport, StopReason, StoreStats};
+pub use stats_checkpoint::StatsCheckpointConfig;
 pub mod store;
 
 /// Convenience re-exports for writing spiders with minimal `use` statements.
@@ -33,6 +35,7 @@ pub mod store;
 /// use kumo::prelude::*;
 /// ```
 pub mod prelude {
+    pub use crate::StatsCheckpointConfig;
     pub use crate::engine::{CrawlEngine, CrawlStats, ItemStream};
     pub use crate::error::{ErrorPolicy, KumoError};
     pub use crate::events::{CrawlEvent, ItemDropReason, RequestSkipReason};

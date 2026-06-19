@@ -41,6 +41,7 @@ pub struct CrawlEngine {
     pub(super) max_urls: usize,
     pub(super) robots_ttl: Duration,
     pub(super) metrics_interval: Option<Duration>,
+    pub(super) stats_checkpoint: Option<crate::StatsCheckpointConfig>,
     pub(super) stream_buffer: usize,
     pub(super) events: Option<crate::events::EventEmitter>,
     pub(super) hooks: Vec<Arc<dyn crate::hooks::CrawlHook>>,
@@ -81,6 +82,7 @@ impl Default for CrawlEngine {
             max_urls: 1_000_000,
             robots_ttl: Duration::from_secs(24 * 60 * 60),
             metrics_interval: None,
+            stats_checkpoint: None,
             stream_buffer: 100,
             events: None,
             hooks: Vec::new(),
@@ -223,6 +225,26 @@ impl CrawlEngine {
     /// Useful for monitoring long-running crawls without an external metrics system.
     pub fn metrics_interval(mut self, interval: Duration) -> Self {
         self.metrics_interval = Some(interval);
+        self
+    }
+
+    /// Write `CrawlReport` JSON checkpoints during the crawl and at shutdown.
+    ///
+    /// The default interval is 30 seconds. Use
+    /// [`stats_checkpoint_interval`](Self::stats_checkpoint_interval) for a
+    /// custom cadence.
+    pub fn stats_checkpoint(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.stats_checkpoint = Some(crate::StatsCheckpointConfig::new(path));
+        self
+    }
+
+    /// Write `CrawlReport` JSON checkpoints at a custom interval.
+    pub fn stats_checkpoint_interval(
+        mut self,
+        path: impl Into<std::path::PathBuf>,
+        interval: Duration,
+    ) -> Self {
+        self.stats_checkpoint = Some(crate::StatsCheckpointConfig::with_interval(path, interval));
         self
     }
 
