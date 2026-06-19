@@ -50,6 +50,7 @@ impl CrawlEngine {
         let n = self.spiders.len();
         let politeness_policy = self.politeness_policy;
         let fingerprint_policy = self.fingerprint_policy;
+        let stats_checkpoint = self.stats_checkpoint;
 
         let spider_entries: Vec<(Arc<dyn ErasedSpider>, Arc<CrawlScheduler>)> = self
             .spiders
@@ -703,6 +704,10 @@ impl CrawlEngine {
                     report,
                 })
                 .await?;
+        }
+
+        if let Some(config) = &stats_checkpoint {
+            crate::stats_checkpoint::write_stats_checkpoints(config, stats_vec.clone()).await?;
         }
 
         Ok(stats_vec)
