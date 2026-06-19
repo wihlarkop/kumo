@@ -2,7 +2,7 @@
 
 use kumo::{
     CrawlRequest,
-    frontier::{FileFrontier, Frontier},
+    frontier::{DeadLetterReason, FileFrontier, Frontier},
     request::FrontierRequest,
     scheduler::{CrawlScheduler, FingerprintPolicy, PolitenessPolicy},
 };
@@ -256,4 +256,112 @@ async fn state_reports_loaded_queue_and_seen_counts() {
     assert_eq!(state.queued, 1);
     assert_eq!(state.seen, 2);
     assert_eq!(state.dir, dir.path());
+}
+
+#[tokio::test]
+async fn lease_request_moves_request_out_of_queue_until_ack() {
+    let dir = tempdir().unwrap();
+    let f = FileFrontier::open(dir.path()).unwrap();
+    f.push("https://example.com/leased".into(), 2).await;
+
+    let lease = f.lease_request(Duration::from_secs(60)).await.unwrap();
+    assert_eq!(
+        lease.request().request().url(),
+        "https://example.com/leased"
+    );
+    assert_eq!(lease.request().depth(), 2);
+
+    let state = f.state().await;
+    assert_eq!(state.queued, 0);
+    let leases = std::fs::read_to_string(dir.path().join("leases.json")).unwrap();
+    assert!(leases.contains("https://example.com/leased"));
+
+    f.ack_lease(lease.id()).await.unwrap();
+    let state = f.state().await;
+    assert_eq!(state.queued, 0);
+    let leases = std::fs::read_to_string(dir.path().join("leases.json")).unwrap();
+    assert_eq!(leases, "[]");
+
+    let reopened = FileFrontier::open(dir.path()).unwrap();
+    assert!(reopened.is_empty().await);
+}
+
+#[tokio::test]
+async fn release_lease_requeues_request() {
+    let dir = tempdir().unwrap();
+    let f = FileFrontier::open(dir.path()).unwrap();
+    f.push_request(
+        CrawlRequest::get("https://example.com/release").priority(5),
+        4,
+    )
+    .await;
+
+    let lease = f.lease_request(Duration::from_secs(60)).await.unwrap();
+    f.release_lease(lease.id()).await.unwrap();
+
+    let queued = f.pop_request().await.unwrap();
+    assert_eq!(queued.request().url(), "https://example.com/release");
+    assert_eq!(queued.request().priority_value(), 5);
+    assert_eq!(queued.depth(), 4);
+}
+
+#[tokio::test]
+async fn open_recovers_existing_leases_to_queue() {
+    let dir = tempdir().unwrap();
+    {
+        let f = FileFrontier::open(dir.path()).unwrap();
+        f.push("https://example.com/recover-lease".into(), 1).await;
+        let lease = f.lease_request(Duration::from_secs(60)).await.unwrap();
+        assert_eq!(
+            lease.request().request().url(),
+            "https://example.com/recover-lease"
+        );
+        f.flush().await.unwrap();
+    }
+
+    let reopened = FileFrontier::open(dir.path()).unwrap();
+    let state = reopened.state().await;
+    assert_eq!(state.queued, 1);
+
+    let queued = reopened.pop().await.unwrap();
+    assert_eq!(queued.0, "https://example.com/recover-lease");
+}
+
+#[tokio::test]
+async fn expired_lease_is_reclaimed_to_queue() {
+    let dir = tempdir().unwrap();
+    let f = FileFrontier::open(dir.path()).unwrap();
+    f.push("https://example.com/expired".into(), 0).await;
+
+    let lease = f.lease_request(Duration::ZERO).await.unwrap();
+    assert_eq!(
+        lease.request().request().url(),
+        "https://example.com/expired"
+    );
+
+    assert_eq!(f.len().await, 1);
+    let queued = f.pop().await.unwrap();
+    assert_eq!(queued.0, "https://example.com/expired");
+}
+
+#[tokio::test]
+async fn dead_letter_moves_lease_to_dead_letter_file() {
+    let dir = tempdir().unwrap();
+    let f = FileFrontier::open(dir.path()).unwrap();
+    f.push("https://example.com/dead".into(), 0).await;
+
+    let lease = f.lease_request(Duration::from_secs(60)).await.unwrap();
+    f.dead_letter(lease.id(), DeadLetterReason::Failed)
+        .await
+        .unwrap();
+
+    let state = f.state().await;
+    assert_eq!(state.queued, 0);
+
+    let dead_letters = std::fs::read_to_string(dir.path().join("dead_letters.json")).unwrap();
+    assert!(dead_letters.contains("https://example.com/dead"));
+    assert!(dead_letters.contains("failed"));
+
+    let reopened = FileFrontier::open(dir.path()).unwrap();
+    assert!(reopened.is_empty().await);
 }

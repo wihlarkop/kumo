@@ -54,10 +54,10 @@ temporary files, and then replaces `queue.json` and `seen.json` on flush. On
 Unix platforms it also best-effort syncs the frontier directory after each
 replace. Stale `*.tmp` files from an interrupted flush are ignored on resume.
 
-It is designed for normal resume after graceful shutdown. A request that has
-already been popped into an in-flight task is not checkpointed as pending; if
-the process crashes after dispatch and before completion, that request may need
-to be rescheduled by the application or a future lease-based frontier.
+`FileFrontier` also persists leased in-flight requests. If a process restarts
+with entries in `leases.json`, Kumo conservatively moves those requests back to
+the pending queue when the frontier opens. This gives at-least-once recovery:
+a recovered request may run again, but it is not silently lost.
 
 Use `FileFrontier::state().await` after opening a frontier when you want to
 verify what was recovered before resuming:
@@ -76,6 +76,8 @@ The persisted files contain:
 | File | Contents | Survives Resume |
 |------|----------|-----------------|
 | `queue.json` | Pending `CrawlRequest`s with method, headers, body, priority, metadata, depth, retry count, and scheduled retry time | Yes |
+| `leases.json` | In-flight leased requests with lease ID, expiry, delivery count, and full request metadata | Requeued on open |
+| `dead_letters.json` | Requests explicitly moved to the dead-letter set with reason and delivery metadata | Yes |
 | `seen.json` | Exact deduplication fingerprints used to rebuild the Bloom filter | Yes |
 
 Automatic flushing happens every 100 pushes by default. Use
@@ -177,10 +179,11 @@ an ephemeral `FrontierLease` and treats ack, release, and dead-letter calls as
 no-ops. That means existing custom frontiers keep compiling and keep their
 current pop-only behavior until they explicitly override the lease methods.
 
-Durable lease persistence for `FileFrontier` and atomic Redis leases are planned
-as separate slices because they change crash-recovery guarantees. Until those
-implementations land, `FileFrontier` keeps its current graceful-shutdown resume
-behavior described above.
+`FileFrontier` overrides the lease methods and persists in-flight requests to
+`leases.json`. `ack_lease(id)` removes the lease, `release_lease(id)` moves it
+back to the pending queue, and `dead_letter(id, reason)` stores it in
+`dead_letters.json`. Atomic Redis leases are planned as a later distributed
+frontier slice.
 
 ## Tuning the Bloom Filter
 
