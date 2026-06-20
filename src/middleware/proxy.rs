@@ -91,7 +91,13 @@ struct ProxyCooldown {
 #[derive(Debug, Default)]
 struct ProxyHealth {
     stats: HashMap<String, ProxyHealthState>,
-    assignments: HashMap<String, VecDeque<String>>,
+    assignments: HashMap<String, VecDeque<ProxyAssignment>>,
+}
+
+#[derive(Debug)]
+struct ProxyAssignment {
+    proxy: String,
+    trial_generation: Option<u64>,
 }
 
 #[derive(Debug, Default)]
@@ -100,7 +106,8 @@ struct ProxyHealthState {
     failures: u64,
     consecutive_failures: u64,
     cooldown_until: Option<Instant>,
-    trial_in_flight: bool,
+    trial_generation: u64,
+    active_trial: Option<u64>,
 }
 
 impl ProxyRotator {
@@ -199,7 +206,7 @@ impl ProxyRotator {
             .collect()
     }
 
-    fn pick(&self) -> Option<String> {
+    fn pick(&self) -> Option<ProxyAssignment> {
         if self.proxies.is_empty() {
             return None;
         }
@@ -225,24 +232,31 @@ impl ProxyRotator {
 
         let picked = eligible[self.strategy.pick_index(eligible.len())];
         let proxy = &self.proxies[picked];
-        if let Some(state) = health.stats.get_mut(proxy)
-            && state.cooldown_until.is_some_and(|until| until <= now)
-        {
-            state.trial_in_flight = true;
-        }
-        Some(proxy.clone())
+        let trial_generation = health.stats.get_mut(proxy).and_then(|state| {
+            if state.cooldown_until.is_some_and(|until| until <= now) {
+                state.trial_generation = state.trial_generation.wrapping_add(1);
+                state.active_trial = Some(state.trial_generation);
+                Some(state.trial_generation)
+            } else {
+                None
+            }
+        });
+        Some(ProxyAssignment {
+            proxy: proxy.clone(),
+            trial_generation,
+        })
     }
 
-    fn remember_assignment(&self, url: &str, proxy: &str) {
+    fn remember_assignment(&self, url: &str, assignment: ProxyAssignment) {
         let mut health = self.health.lock().expect("proxy health lock poisoned");
         health
             .assignments
             .entry(url.to_string())
             .or_default()
-            .push_back(proxy.to_string());
+            .push_back(assignment);
     }
 
-    fn take_assignment(&self, url: &str) -> Option<String> {
+    fn take_assignment(&self, url: &str) -> Option<ProxyAssignment> {
         let mut health = self.health.lock().expect("proxy health lock poisoned");
         let assigned = health
             .assignments
@@ -254,21 +268,27 @@ impl ProxyRotator {
         assigned
     }
 
-    fn record_success(&self, proxy: &str) {
+    fn record_success(&self, assignment: ProxyAssignment) {
         let mut health = self.health.lock().expect("proxy health lock poisoned");
-        let state = health.stats.entry(proxy.to_string()).or_default();
+        let state = health.stats.entry(assignment.proxy).or_default();
         state.successes += 1;
+        if !assignment_resolves_circuit(state, assignment.trial_generation) {
+            return;
+        }
         state.consecutive_failures = 0;
         state.cooldown_until = None;
-        state.trial_in_flight = false;
+        state.active_trial = None;
     }
 
-    fn record_failure(&self, proxy: &str) {
+    fn record_failure(&self, assignment: ProxyAssignment) {
         let mut health = self.health.lock().expect("proxy health lock poisoned");
-        let state = health.stats.entry(proxy.to_string()).or_default();
+        let state = health.stats.entry(assignment.proxy).or_default();
         state.failures += 1;
+        if !assignment_resolves_circuit(state, assignment.trial_generation) {
+            return;
+        }
         state.consecutive_failures += 1;
-        state.trial_in_flight = false;
+        state.active_trial = None;
 
         if let Some(cooldown) = self.cooldown
             && state.consecutive_failures >= cooldown.failure_threshold
@@ -281,9 +301,9 @@ impl ProxyRotator {
 #[async_trait]
 impl Middleware for ProxyRotator {
     async fn before_request(&self, request: &mut FetchRequest) -> Result<(), KumoError> {
-        if let Some(proxy) = self.pick() {
-            self.remember_assignment(request.url(), &proxy);
-            request.proxy = Some(proxy);
+        if let Some(assignment) = self.pick() {
+            request.proxy = Some(assignment.proxy.clone());
+            self.remember_assignment(request.url(), assignment);
         } else if !self.proxies.is_empty() {
             request.proxy = None;
         }
@@ -291,15 +311,15 @@ impl Middleware for ProxyRotator {
     }
 
     async fn after_response(&self, response: &mut Response) -> Result<(), KumoError> {
-        if let Some(proxy) = self.take_assignment(response.url()) {
-            self.record_success(&proxy);
+        if let Some(assignment) = self.take_assignment(response.url()) {
+            self.record_success(assignment);
         }
         Ok(())
     }
 
     async fn on_error(&self, url: &str, _error: &KumoError) {
-        if let Some(proxy) = self.take_assignment(url) {
-            self.record_failure(&proxy);
+        if let Some(assignment) = self.take_assignment(url) {
+            self.record_failure(assignment);
         }
     }
 }
@@ -311,7 +331,14 @@ fn is_cooling_down(state: Option<&ProxyHealthState>, now: Instant) -> bool {
 }
 
 fn is_unavailable(state: Option<&ProxyHealthState>, now: Instant) -> bool {
-    is_cooling_down(state, now) || state.is_some_and(|state| state.trial_in_flight)
+    is_cooling_down(state, now) || state.is_some_and(|state| state.active_trial.is_some())
+}
+
+fn assignment_resolves_circuit(state: &ProxyHealthState, trial_generation: Option<u64>) -> bool {
+    match trial_generation {
+        Some(generation) => state.active_trial == Some(generation),
+        None => state.active_trial.is_none(),
+    }
 }
 
 fn circuit_state(state: Option<&ProxyHealthState>, now: Instant) -> ProxyCircuitState {

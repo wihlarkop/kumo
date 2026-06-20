@@ -210,6 +210,42 @@ async fn recovering_proxy_allows_only_one_concurrent_trial() {
 }
 
 #[tokio::test]
+async fn stale_success_does_not_release_recovery_trial() {
+    let rotator = ProxyRotator::new(vec!["http://p1:8080"]).cooldown_after(1, Duration::ZERO);
+
+    let mut stale = FetchRequest::new("https://example.com/stale", 0);
+    rotator.before_request(&mut stale).await.unwrap();
+
+    let mut opener = FetchRequest::new("https://example.com/opener", 0);
+    rotator.before_request(&mut opener).await.unwrap();
+    rotator
+        .on_error(opener.url(), &KumoError::http_status(503, opener.url()))
+        .await;
+
+    let mut trial = FetchRequest::new("https://example.com/trial", 0);
+    rotator.before_request(&mut trial).await.unwrap();
+    assert_eq!(trial.proxy.as_deref(), Some("http://p1:8080"));
+
+    rotator
+        .after_response(&mut Response::from_parts(stale.url(), 200, "ok"))
+        .await
+        .unwrap();
+
+    let mut blocked = FetchRequest::new("https://example.com/blocked", 0);
+    rotator.before_request(&mut blocked).await.unwrap();
+    assert!(blocked.proxy.is_none());
+
+    rotator
+        .after_response(&mut Response::from_parts(trial.url(), 200, "ok"))
+        .await
+        .unwrap();
+    assert_eq!(
+        rotator.circuit_health()[0].circuit_state,
+        ProxyCircuitState::Healthy
+    );
+}
+
+#[tokio::test]
 async fn failed_recovery_trial_reopens_for_cooldown() {
     let recovering = ProxyRotator::new(vec!["http://p1:8080"]).cooldown_after(1, Duration::ZERO);
     let mut initial = FetchRequest::new("https://example.com/initial", 0);
