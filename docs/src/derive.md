@@ -135,6 +135,10 @@ let client = AnthropicClient::new(std::env::var("ANTHROPIC_API_KEY")?);
 let book = Book::extract_from(&el, Some(&client)).await?;
 ```
 
+`llm_fallback` only supports single-value fields. It is forbidden on `Vec<T>`
+fields and cannot be combined with `default`; fallback chains are not
+supported.
+
 ## Field Types
 
 | Type | Behaviour when selector finds nothing |
@@ -150,6 +154,11 @@ Supported numeric scalars are `i8`, `i16`, `i32`, `i64`, `i128`, `isize`,
 and `Vec<T>`, `T` can be `String`, `bool`, or one of those numeric scalar
 types. Invalid scalar parses return `KumoError` messages that include the field
 name, target type, raw value, and parse failure.
+
+Types may use their Rust prelude spelling or canonical `std`, `core`, and
+`alloc` paths, such as `String`, `std::string::String`, `u32`,
+`core::primitive::u32`, and `std::option::Option<T>`. Custom paths and nested
+containers such as `Option<Vec<T>>` are not supported.
 
 ## Combining Options
 

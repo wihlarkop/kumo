@@ -57,7 +57,7 @@ async fn parse(&self, res: &Response) -> Result<Output<Self::Item>, KumoError> {
 | `text` | `text` | Explicit text extraction (default; can be omitted). |
 | `default` | `default = "N/A"` | Fallback value for required scalar fields when the selector returns empty. Ignored for `Option<T>` and `Vec<T>`. |
 | `transform` | `transform = "trim"` | Apply a named transform after extraction. Values: `trim`, `lowercase`, `uppercase`. Compile error if unknown. |
-| `llm_fallback` | `llm_fallback = "the price"` | Fall back to an LLM when the selector returns empty. Requires an LLM provider feature (`claude`, `openai`, etc.) and passing a client to `extract_from`. |
+| `llm_fallback` | `llm_fallback = "the price"` | Fall back to an LLM when the selector returns empty. Single-value fields only; forbidden on `Vec<T>` and cannot be combined with `default`. Requires an LLM provider feature (`claude`, `openai`, etc.) and passing a client to `extract_from`. |
 | `llm_fallback` (bare) | `llm_fallback` | Same as above, using the field name as the extraction hint. |
 
 ## Field types
@@ -72,6 +72,11 @@ Supported numeric scalars are `i8`, `i16`, `i32`, `i64`, `i128`, `isize`,
 `u8`, `u16`, `u32`, `u64`, `u128`, `usize`, `f32`, and `f64`. Other field
 types produce a compile error. Use manual extraction when a field needs parsing
 into dates or custom types.
+
+Types may use their Rust prelude spelling or canonical `std`, `core`, and
+`alloc` paths. Custom paths and nested containers such as `Option<Vec<T>>` are
+not supported. `llm_fallback` is forbidden on `Vec<T>` and cannot be combined
+with `default`; fallback chains are not supported.
 
 ## License
 

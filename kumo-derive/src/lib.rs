@@ -2,7 +2,8 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{
-    Data, DeriveInput, Fields, GenericArgument, LitStr, PathArguments, Type, parse_macro_input,
+    Data, DeriveInput, Fields, GenericArgument, LitStr, Path, PathArguments, Type,
+    parse_macro_input,
 };
 
 /// Derive macro that generates an [`Extract`] implementation for a struct.
@@ -13,6 +14,8 @@ use syn::{
 /// - `text` - explicit text content (the default; can be omitted)
 /// - `llm_fallback = "hint"` - fall back to LLM when selector returns empty
 /// - `llm_fallback` - same, using field name as the extraction hint
+///
+/// `llm_fallback` is not supported on `Vec<T>` fields or together with `default`.
 ///
 /// `String` fields use `unwrap_or_default()` on missing matches.
 /// `Option<T>` fields stay as `Option` (no unwrap).
@@ -91,9 +94,13 @@ fn impl_extract(input: &DeriveInput) -> syn::Result<TokenStream2> {
         })
         .collect::<syn::Result<Vec<_>>>()?;
 
-    let has_llm_fallback = field_infos.iter().any(|f| f.args.llm_fallback.is_some());
-
     for fi in &field_infos {
+        if fi.args.llm_fallback.is_some() && fi.args.default_val.is_some() {
+            return Err(syn::Error::new(
+                fi.name.span(),
+                "llm_fallback cannot be combined with default; fallback chains are not supported",
+            ));
+        }
         if matches!(fi.kind, FieldKind::Vec(_)) && fi.args.llm_fallback.is_some() {
             return Err(syn::Error::new(
                 fi.name.span(),
@@ -101,6 +108,8 @@ fn impl_extract(input: &DeriveInput) -> syn::Result<TokenStream2> {
             ));
         }
     }
+
+    let has_llm_fallback = field_infos.iter().any(|f| f.args.llm_fallback.is_some());
 
     // Generate per-field sync extraction as raw strings.
     let sync_extraction: Vec<TokenStream2> = field_infos
@@ -442,33 +451,29 @@ fn field_kind(ty: &Type) -> syn::Result<FieldKind> {
         return Ok(FieldKind::Required(kind));
     }
 
-    if let Type::Path(tp) = ty
-        && tp.qself.is_none()
-        && let Some(seg) = tp.path.segments.last()
-        && seg.ident == "Option"
-        && let PathArguments::AngleBracketed(args) = &seg.arguments
-        && args.args.len() == 1
-        && let Some(GenericArgument::Type(inner)) = args.args.first()
-        && let Some(kind) = value_kind(inner)
+    if let Some(inner) = container_inner(
+        ty,
+        &[
+            &["Option"],
+            &["std", "option", "Option"],
+            &["core", "option", "Option"],
+        ],
+    ) && let Some(kind) = value_kind(inner)
     {
         return Ok(FieldKind::Optional(kind));
     }
 
-    if let Type::Path(tp) = ty
-        && tp.qself.is_none()
-        && let Some(seg) = tp.path.segments.last()
-        && seg.ident == "Vec"
-        && let PathArguments::AngleBracketed(args) = &seg.arguments
-        && args.args.len() == 1
-        && let Some(GenericArgument::Type(inner)) = args.args.first()
-        && let Some(kind) = value_kind(inner)
+    if let Some(inner) = container_inner(
+        ty,
+        &[&["Vec"], &["std", "vec", "Vec"], &["alloc", "vec", "Vec"]],
+    ) && let Some(kind) = value_kind(inner)
     {
         return Ok(FieldKind::Vec(kind));
     }
 
     Err(syn::Error::new_spanned(
         ty,
-        "#[derive(Extract)] supports String, bool, numeric scalar types, Option<T>, and Vec<T>",
+        "unsupported field type; #[derive(Extract)] supports String, bool, numeric primitives, Option<T>, and Vec<T> using Rust prelude or canonical std/core/alloc paths; nested and custom types are not supported",
     ))
 }
 
@@ -476,15 +481,28 @@ fn value_kind(ty: &Type) -> Option<ValueKind> {
     if let Type::Path(tp) = ty
         && tp.qself.is_none()
         && let Some(seg) = tp.path.segments.last()
+        && tp
+            .path
+            .segments
+            .iter()
+            .all(|seg| matches!(seg.arguments, PathArguments::None))
     {
-        if seg.ident == "String" {
+        let name = seg.ident.to_string();
+        if path_is_one_of(
+            &tp.path,
+            &[
+                &["String"],
+                &["std", "string", "String"],
+                &["alloc", "string", "String"],
+            ],
+        ) {
             return Some(ValueKind::String);
         }
-        if seg.ident == "bool" {
+        if name == "bool" && is_primitive_path(&tp.path, &name) {
             return Some(ValueKind::Scalar(ScalarKind::Bool));
         }
         if matches!(
-            seg.ident.to_string().as_str(),
+            name.as_str(),
             "i8" | "i16"
                 | "i32"
                 | "i64"
@@ -496,14 +514,67 @@ fn value_kind(ty: &Type) -> Option<ValueKind> {
                 | "u64"
                 | "u128"
                 | "usize"
-        ) {
+        ) && is_primitive_path(&tp.path, &name)
+        {
             return Some(ValueKind::Scalar(ScalarKind::Int));
         }
-        if matches!(seg.ident.to_string().as_str(), "f32" | "f64") {
+        if matches!(name.as_str(), "f32" | "f64") && is_primitive_path(&tp.path, &name) {
             return Some(ValueKind::Scalar(ScalarKind::Float));
         }
     }
     None
+}
+
+fn container_inner<'a>(ty: &'a Type, paths: &[&[&str]]) -> Option<&'a Type> {
+    let Type::Path(tp) = ty else {
+        return None;
+    };
+    if tp.qself.is_some() || !path_is_one_of(&tp.path, paths) {
+        return None;
+    }
+
+    let last = tp.path.segments.last()?;
+    if !tp
+        .path
+        .segments
+        .iter()
+        .take(tp.path.segments.len() - 1)
+        .all(|seg| matches!(seg.arguments, PathArguments::None))
+    {
+        return None;
+    }
+
+    let PathArguments::AngleBracketed(args) = &last.arguments else {
+        return None;
+    };
+    if args.args.len() != 1 {
+        return None;
+    }
+    match args.args.first()? {
+        GenericArgument::Type(inner) => Some(inner),
+        _ => None,
+    }
+}
+
+fn is_primitive_path(path: &Path, name: &str) -> bool {
+    path_has_segments(path, &[name])
+        || path_has_segments(path, &["std", "primitive", name])
+        || path_has_segments(path, &["core", "primitive", name])
+}
+
+fn path_is_one_of(path: &Path, candidates: &[&[&str]]) -> bool {
+    candidates
+        .iter()
+        .any(|segments| path_has_segments(path, segments))
+}
+
+fn path_has_segments(path: &Path, expected: &[&str]) -> bool {
+    path.segments.len() == expected.len()
+        && path
+            .segments
+            .iter()
+            .zip(expected)
+            .all(|(segment, expected)| segment.ident == *expected)
 }
 
 fn type_name(ty: &Type) -> String {
