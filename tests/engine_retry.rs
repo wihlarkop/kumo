@@ -5,7 +5,7 @@ use kumo::{
     error::{ErrorPolicy, KumoError},
     extract::Response,
     fetch::Fetcher,
-    middleware::{FetchRequest, StatusRetry},
+    middleware::{FetchRequest, Middleware, StatusRetry},
     retry::RetryPolicy,
     spider::{Output, Spider},
     store::StdoutStore,
@@ -192,6 +192,79 @@ async fn retry_policy_succeeds_on_later_attempt() {
         "2 failures + 1 success = 3 fetches"
     );
     assert_eq!(store.collected()[0]["title"], "ok");
+}
+
+#[tokio::test]
+async fn fetch_errors_notify_attempt_and_permanent_middleware_hooks() {
+    struct FailingFetcher;
+
+    #[async_trait::async_trait]
+    impl Fetcher for FailingFetcher {
+        async fn fetch(&self, req: &FetchRequest) -> Result<Response, KumoError> {
+            Err(KumoError::invalid_url(req.url()))
+        }
+    }
+
+    struct ErrorObserver {
+        attempts: Arc<AtomicU32>,
+        permanent: Arc<AtomicU32>,
+    }
+
+    #[async_trait::async_trait]
+    impl Middleware for ErrorObserver {
+        async fn before_request(&self, _request: &mut FetchRequest) -> Result<(), KumoError> {
+            Ok(())
+        }
+
+        async fn on_fetch_error(&self, request: &FetchRequest, error: &KumoError) {
+            assert_eq!(request.url(), "https://example.com/");
+            assert_eq!(error.kind(), kumo::error::KumoErrorKind::InvalidUrl);
+            self.attempts.fetch_add(1, Ordering::SeqCst);
+        }
+
+        async fn on_error(&self, url: &str, error: &KumoError) {
+            assert_eq!(url, "https://example.com/");
+            assert_eq!(error.kind(), kumo::error::KumoErrorKind::InvalidUrl);
+            self.permanent.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    struct S;
+
+    #[async_trait::async_trait]
+    impl Spider for S {
+        type Item = serde_json::Value;
+
+        fn name(&self) -> &str {
+            "fetch-error-hooks"
+        }
+
+        fn start_urls(&self) -> Vec<String> {
+            vec!["https://example.com/".into()]
+        }
+
+        async fn parse(&self, _response: &Response) -> Result<Output<Self::Item>, KumoError> {
+            Ok(Output::new())
+        }
+    }
+
+    let attempts = Arc::new(AtomicU32::new(0));
+    let permanent = Arc::new(AtomicU32::new(0));
+    let stats = CrawlEngine::builder()
+        .fetcher(FailingFetcher)
+        .middleware(ErrorObserver {
+            attempts: Arc::clone(&attempts),
+            permanent: Arc::clone(&permanent),
+        })
+        .respect_robots_txt(false)
+        .store(StdoutStore)
+        .run(S)
+        .await
+        .unwrap();
+
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(permanent.load(Ordering::SeqCst), 1);
+    assert_eq!(stats.errors, 1);
 }
 
 #[tokio::test]

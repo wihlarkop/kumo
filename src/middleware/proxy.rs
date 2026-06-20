@@ -1,6 +1,9 @@
 use std::{
-    collections::{HashMap, VecDeque},
-    sync::{Arc, Mutex},
+    collections::HashMap,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -45,6 +48,7 @@ pub struct ProxyRotator {
     proxies: Vec<String>,
     strategy: RotationStrategy,
     health: Arc<Mutex<ProxyHealth>>,
+    next_assignment_id: Arc<AtomicU64>,
     cooldown: Option<ProxyCooldown>,
 }
 
@@ -91,7 +95,7 @@ struct ProxyCooldown {
 #[derive(Debug, Default)]
 struct ProxyHealth {
     stats: HashMap<String, ProxyHealthState>,
-    assignments: HashMap<String, VecDeque<ProxyAssignment>>,
+    assignments: HashMap<u64, ProxyAssignment>,
 }
 
 #[derive(Debug)]
@@ -126,6 +130,7 @@ impl ProxyRotator {
             proxies: proxies.into_iter().map(Into::into).collect(),
             strategy,
             health: Arc::new(Mutex::new(ProxyHealth::default())),
+            next_assignment_id: Arc::new(AtomicU64::new(1)),
             cooldown: Some(ProxyCooldown {
                 failure_threshold: DEFAULT_FAILURE_THRESHOLD,
                 duration: DEFAULT_COOLDOWN,
@@ -247,25 +252,15 @@ impl ProxyRotator {
         })
     }
 
-    fn remember_assignment(&self, url: &str, assignment: ProxyAssignment) {
+    fn remember_assignment(&self, assignment_id: u64, assignment: ProxyAssignment) {
         let mut health = self.health.lock().expect("proxy health lock poisoned");
-        health
-            .assignments
-            .entry(url.to_string())
-            .or_default()
-            .push_back(assignment);
+        health.assignments.insert(assignment_id, assignment);
     }
 
-    fn take_assignment(&self, url: &str) -> Option<ProxyAssignment> {
+    fn take_assignment(&self, request: &FetchRequest) -> Option<ProxyAssignment> {
+        let assignment_id = request.proxy_assignment_id()?;
         let mut health = self.health.lock().expect("proxy health lock poisoned");
-        let assigned = health
-            .assignments
-            .get_mut(url)
-            .and_then(VecDeque::pop_front);
-        if health.assignments.get(url).is_some_and(VecDeque::is_empty) {
-            health.assignments.remove(url);
-        }
-        assigned
+        health.assignments.remove(&assignment_id)
     }
 
     fn record_success(&self, assignment: ProxyAssignment) {
@@ -301,24 +296,31 @@ impl ProxyRotator {
 #[async_trait]
 impl Middleware for ProxyRotator {
     async fn before_request(&self, request: &mut FetchRequest) -> Result<(), KumoError> {
+        request.set_proxy_assignment_id(None);
         if let Some(assignment) = self.pick() {
+            let assignment_id = self.next_assignment_id.fetch_add(1, Ordering::Relaxed);
             request.proxy = Some(assignment.proxy.clone());
-            self.remember_assignment(request.url(), assignment);
+            self.remember_assignment(assignment_id, assignment);
+            request.set_proxy_assignment_id(Some(assignment_id));
         } else if !self.proxies.is_empty() {
             request.proxy = None;
         }
         Ok(())
     }
 
-    async fn after_response(&self, response: &mut Response) -> Result<(), KumoError> {
-        if let Some(assignment) = self.take_assignment(response.url()) {
+    async fn after_response_with_request(
+        &self,
+        request: &FetchRequest,
+        _response: &mut Response,
+    ) -> Result<(), KumoError> {
+        if let Some(assignment) = self.take_assignment(request) {
             self.record_success(assignment);
         }
         Ok(())
     }
 
-    async fn on_error(&self, url: &str, _error: &KumoError) {
-        if let Some(assignment) = self.take_assignment(url) {
+    async fn on_fetch_error(&self, request: &FetchRequest, _error: &KumoError) {
+        if let Some(assignment) = self.take_assignment(request) {
             self.record_failure(assignment);
         }
     }

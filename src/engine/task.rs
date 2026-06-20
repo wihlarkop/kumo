@@ -66,14 +66,23 @@ async fn process_request(
     timings.middleware_request += phase_start.elapsed();
 
     let phase_start = std::time::Instant::now();
-    let mut response = ctx.fetcher.fetch(&request).await?;
+    let mut response = match ctx.fetcher.fetch(&request).await {
+        Ok(response) => response,
+        Err(error) => {
+            for mw in ctx.middleware.iter() {
+                mw.on_fetch_error(&request, &error).await;
+            }
+            return Err(error);
+        }
+    };
     timings.fetch += phase_start.elapsed();
     let fetch_stats = response.fetch_stats();
     let bytes_downloaded = response.bytes().len() as u64;
 
     let phase_start = std::time::Instant::now();
     for mw in ctx.middleware.iter() {
-        mw.after_response(&mut response).await?;
+        mw.after_response_with_request(&request, &mut response)
+            .await?;
     }
     timings.middleware_response += phase_start.elapsed();
 

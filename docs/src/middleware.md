@@ -133,7 +133,8 @@ proxy at a time; other requests skip it until the trial succeeds or fails. Use
 `ProxyRotator::health()` when you only need the backward-compatible success,
 failure, and cooldown counters. When every configured proxy is unavailable,
 `ProxyRotator` leaves `request.proxy` unset for that request instead of forcing
-a known unhealthy proxy.
+a known unhealthy proxy. Proxy outcomes are matched to their exact fetch
+attempt, so concurrent requests for the same URL may complete in any order.
 
 ## UserAgentRotator
 
@@ -197,4 +198,11 @@ impl Middleware for AddApiKey {
 // Register:
 .middleware(AddApiKey("secret-key".into()))
 ```
+
+`after_response_with_request()` receives both the originating `FetchRequest`
+and its successful response. Its default implementation delegates to
+`after_response()`, so existing middleware implementations do not need to
+change. `on_fetch_error()` runs once for each fetch attempt that fails before a
+response is produced, including attempts that will be retried. `on_error()`
+continues to run only after a URL permanently fails.
 
