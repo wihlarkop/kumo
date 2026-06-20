@@ -27,7 +27,7 @@ tracing::info!(
     "frontier recovered state"
 );
 
-let stats = CrawlEngine::builder()
+let result = CrawlEngine::builder()
     .concurrency(16)
     .respect_robots_txt(true)
     .politeness(
@@ -56,7 +56,15 @@ let stats = CrawlEngine::builder()
     .store(JsonlStore::new("items.jsonl")?)
     .store_buffer(1_000, 100)
     .run(MySpider)
-    .await?;
+    .await;
+
+let stats = match result {
+    Ok(stats) => stats,
+    Err(err) => {
+        tracing::error!(error = %err, "crawl failed before final report");
+        return Err(err);
+    }
+};
 
 let report = CrawlReport::from(stats);
 std::fs::write("crawl-report.json", report.to_json_string_pretty())
@@ -67,7 +75,8 @@ This is the same pattern used by the
 [`production_crawler.rs`](../examples.md)
 example: HTTP first, robots enabled, per-domain politeness, retry timing handled
 by the scheduler, a persistent frontier, JSONL output, a bounded store buffer,
-and a final `CrawlReport`.
+and a final `CrawlReport` after a successful run. A failed run returns its error
+instead; it does not provide the final `CrawlStats` needed to build a report.
 
 ## Scope The Spider
 
@@ -104,8 +113,10 @@ budget.
 Global concurrency is only useful when the scheduler can run enough eligible
 requests. For one public domain, the real limit is usually
 `PolitenessPolicy::per_domain_concurrency()` plus the per-domain delay and any
-robots crawl delay. Raise concurrency only after reports show the crawler is not
-limited by target latency, politeness, parsing, or storage.
+robots crawl delay. `timings.fetch` measures only the configured fetcher after a
+request becomes eligible; it does not include scheduler or politeness waiting.
+Use throughput, configured delays, and scheduler logs alongside reports before
+raising concurrency.
 
 Avoid sleeping inside `parse()` or middleware for crawl pacing. Let
 `PolitenessPolicy`, `RetryPolicy`, and `StatusRetry` control scheduling so
@@ -130,14 +141,20 @@ Keep these artifacts together for each production run:
 | Artifact | Why keep it |
 | --- | --- |
 | Scraped output | The data produced by the crawl |
-| `crawl-report.json` | Final counters, rates, retry summary, timings, store stats, and stop reason |
+| `crawl-report.json` | Final counters, rates, retry summary, timings, store stats, and stop reason for a successful run |
 | Checkpoint report | Last known state if the process is interrupted |
 | Frontier directory or Redis keys | Pending, seen, leased, delayed, and dead-letter request state for durable frontiers |
-| Structured logs or events | Request-level context for diagnosing specific URLs |
+| Returned error, structured logs, and backend telemetry | Failure context when the run cannot produce a final report |
 
 For short jobs, writing only the final report may be enough. For long-running
 jobs, `stats_checkpoint(...)` gives you a periodically refreshed report
 snapshot while the crawl is still running.
+
+If a buffered store fails during the final flush, `run()` returns the store
+error before buffered counters are copied into final stats. Diagnose that run
+from the returned error, any `store.buffer_error` log emitted for an earlier
+background batch failure, and the store backend's logs or telemetry. Do not
+expect a final `CrawlReport` for that failed run.
 
 ## Disable Development Helpers
 

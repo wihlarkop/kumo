@@ -154,6 +154,8 @@ Full documentation at **[kumo.wihlarkop.com](https://kumo.wihlarkop.com)**
 - [derive(Extract)](https://kumo.wihlarkop.com/derive/)
 - [Middleware](https://kumo.wihlarkop.com/middleware/)
 - [Stores](https://kumo.wihlarkop.com/stores/)
+- [Production Crawling](https://kumo.wihlarkop.com/advanced/production-crawling/) - baseline configuration, durable output, and recovery
+- [Production Reports and Diagnosis](https://kumo.wihlarkop.com/advanced/production-reports/) - health signals, timings, and failure diagnosis
 - [Advanced topics](https://kumo.wihlarkop.com/advanced/stream/) - item stream, OpenTelemetry, stealth, browser, and more
 - [Examples](https://kumo.wihlarkop.com/examples/)
 - [Feature Flags](https://kumo.wihlarkop.com/feature-flags/)

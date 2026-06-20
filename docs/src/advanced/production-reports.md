@@ -1,7 +1,7 @@
 # Production Reports
 
-Kumo returns `CrawlStats` from every crawl. Convert it into `CrawlReport` when a
-production job needs a stable summary for logs, dashboards, alerting, or files:
+A successful Kumo crawl returns `CrawlStats`. Convert it into `CrawlReport` when
+a production job needs a stable summary for logs, dashboards, alerting, or files:
 
 ```rust
 let stats = CrawlEngine::builder()
@@ -118,9 +118,15 @@ and maxes:
 | `write_avg_item_ms`, `write_avg_item_secs` | Average backend write time per written or failed item |
 | `write_max_ms`, `write_max_secs` | Maximum backend write time for one batch attempt |
 
-Buffered stores use `StoreFailurePolicy::Abort` by default. On the first
-background store error, Kumo records the failed batch counters and reports the
-store error instead of continuing with possible item loss.
+Buffered stores use `StoreFailurePolicy::Abort` by default. On the first store
+error, Kumo stops the buffered writer and `run()` returns that error instead of
+continuing with possible item loss. The final flush happens before buffered
+counters are copied into `CrawlStats`, so a failed flush produces no final
+`CrawlReport`; `failed_writes` and `failed_batches` cannot be used to diagnose
+that failed run from a final report. Capture and log the returned error. An
+error observed while writing a background batch is also logged as
+`store.buffer_error`; if the error first surfaces during final flush, use the
+returned error and the backend's logs or telemetry.
 
 ## Retry Summary
 
@@ -154,7 +160,7 @@ for compatibility.
 | Field | Measures |
 |-------|----------|
 | `middleware_request` | Time spent in `Middleware::before_request` |
-| `fetch` | Time spent waiting for the configured fetcher |
+| `fetch` | Time spent inside the configured fetcher's `fetch` call |
 | `middleware_response` | Time spent in `Middleware::after_response` |
 | `parse` | Time spent in the spider `parse` method |
 | `pipeline` | Time spent in item pipelines |
@@ -163,8 +169,12 @@ for compatibility.
 These are cumulative task timings, not exclusive wall-clock percentages. In a
 concurrent crawl, the sum can be higher than `duration` because many requests
 run at the same time. Use the largest phase as a direction signal: high `fetch`
-usually points to target latency or politeness limits, high `parse` points to
-selector/extraction work, and high `store` points to output backpressure.
+usually points to target, network, proxy, browser-fallback, connection-pool, or
+other fetcher latency; high `parse` points to selector/extraction work; and high
+`store` points to output backpressure. Scheduler eligibility and politeness
+waiting happen before the request task calls the fetcher, so they are not
+included in `timings.fetch`. Diagnose those waits from configured limits,
+throughput, and scheduler logs rather than fetch timing.
 
 ## Failure Diagnosis Checklist
 
@@ -182,11 +192,11 @@ Use the signals together instead of treating one counter as the full diagnosis:
 | High `retry_summary().pressure_rate` with low exhaustion | The target or network is noisy, but retries are recovering. Watch latency and politeness. |
 | High `retry_summary().exhaustion_rate` | Retry capacity is being spent without recovery. Check rate limits, blocking, credentials, target errors, or retry status filters. |
 | High `retry_summary().exhausted_failure_rate` | Permanent failures are mostly retry exhaustion rather than parse or store errors. |
-| High `timings.fetch` | Target latency, browser fallback, connection limits, proxy latency, or politeness delays may dominate the crawl. |
+| High `timings.fetch` | Target, network, proxy, browser-fallback, connection-pool, or other fetcher latency may dominate the crawl. This does not measure scheduler or politeness waiting. |
 | High `timings.parse` | Selector work, extraction logic, or item construction may dominate successful requests. |
 | High `timings.store` | Direct item writes are slowing request tasks. Consider a store buffer or a faster output path. |
 | High `store.queue_full_waits` or `store.queue_wait` | The bounded store writer is backpressuring the crawl. |
-| Nonzero `store.failed_writes` or `store.failed_batches` | The downstream store returned errors. With the default abort policy, Kumo reports the first store error instead of silently dropping items. |
+| `run()` returns a store error with buffering enabled | The buffered writer or final flush failed. No final report is returned; diagnose the returned error, `store.buffer_error` logs when present, and backend logs or telemetry. |
 
 For one unhealthy domain in a multi-domain crawl, inspect
 `report.domains[domain]` before changing global settings. A global error rate
