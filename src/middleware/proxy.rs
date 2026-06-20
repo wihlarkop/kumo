@@ -100,6 +100,7 @@ struct ProxyHealthState {
     failures: u64,
     consecutive_failures: u64,
     cooldown_until: Option<Instant>,
+    trial_in_flight: bool,
 }
 
 impl ProxyRotator {
@@ -203,28 +204,33 @@ impl ProxyRotator {
             return None;
         }
 
-        let health = self.health.lock().expect("proxy health lock poisoned");
+        let mut health = self.health.lock().expect("proxy health lock poisoned");
         let now = Instant::now();
         let eligible = self
             .proxies
             .iter()
             .enumerate()
             .filter_map(|(index, proxy)| {
-                if is_cooling_down(health.stats.get(proxy), now) {
+                if is_unavailable(health.stats.get(proxy), now) {
                     None
                 } else {
                     Some(index)
                 }
             })
             .collect::<Vec<_>>();
-        drop(health);
 
         if eligible.is_empty() {
             return None;
         }
 
         let picked = eligible[self.strategy.pick_index(eligible.len())];
-        Some(self.proxies[picked].clone())
+        let proxy = &self.proxies[picked];
+        if let Some(state) = health.stats.get_mut(proxy)
+            && state.cooldown_until.is_some_and(|until| until <= now)
+        {
+            state.trial_in_flight = true;
+        }
+        Some(proxy.clone())
     }
 
     fn remember_assignment(&self, url: &str, proxy: &str) {
@@ -254,6 +260,7 @@ impl ProxyRotator {
         state.successes += 1;
         state.consecutive_failures = 0;
         state.cooldown_until = None;
+        state.trial_in_flight = false;
     }
 
     fn record_failure(&self, proxy: &str) {
@@ -261,6 +268,7 @@ impl ProxyRotator {
         let state = health.stats.entry(proxy.to_string()).or_default();
         state.failures += 1;
         state.consecutive_failures += 1;
+        state.trial_in_flight = false;
 
         if let Some(cooldown) = self.cooldown
             && state.consecutive_failures >= cooldown.failure_threshold
@@ -300,6 +308,10 @@ fn is_cooling_down(state: Option<&ProxyHealthState>, now: Instant) -> bool {
     state
         .and_then(|state| state.cooldown_until)
         .is_some_and(|until| until > now)
+}
+
+fn is_unavailable(state: Option<&ProxyHealthState>, now: Instant) -> bool {
+    is_cooling_down(state, now) || state.is_some_and(|state| state.trial_in_flight)
 }
 
 fn circuit_state(state: Option<&ProxyHealthState>, now: Instant) -> ProxyCircuitState {

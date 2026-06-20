@@ -128,9 +128,10 @@ for proxy in proxy_health.circuit_health() {
 
 `ProxyCircuitSnapshot::circuit_state` is `Healthy` when the proxy is selectable
 with a closed circuit, `Open` while the proxy is cooling down, and `Recovering`
-after the cooldown has elapsed and the next selection is a trial request. Use
+after the cooldown has elapsed. Only one trial request may use a recovering
+proxy at a time; other requests skip it until the trial succeeds or fails. Use
 `ProxyRotator::health()` when you only need the backward-compatible success,
-failure, and cooldown counters. When every configured proxy is open,
+failure, and cooldown counters. When every configured proxy is unavailable,
 `ProxyRotator` leaves `request.proxy` unset for that request instead of forcing
 a known unhealthy proxy.
 

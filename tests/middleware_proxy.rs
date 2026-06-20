@@ -1,4 +1,6 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
+
+use tokio::sync::Barrier;
 
 use kumo::{
     error::KumoError,
@@ -114,9 +116,23 @@ async fn leaves_proxy_unset_when_all_proxies_are_cooling_down() {
 
 #[tokio::test]
 async fn reports_open_recovering_and_healthy_circuit_states() {
-    let rotator =
-        ProxyRotator::new(vec!["http://p1:8080"]).cooldown_after(1, Duration::from_millis(5));
+    let open_rotator =
+        ProxyRotator::new(vec!["http://p1:8080"]).cooldown_after(1, Duration::from_secs(60));
 
+    let mut req = make_request();
+    open_rotator.before_request(&mut req).await.unwrap();
+    open_rotator
+        .on_error(
+            "https://example.com",
+            &KumoError::http_status(503, "https://example.com"),
+        )
+        .await;
+
+    let open = open_rotator.circuit_health();
+    assert_eq!(open[0].circuit_state, ProxyCircuitState::Open);
+    assert!(open[0].cooling_down);
+
+    let rotator = ProxyRotator::new(vec!["http://p1:8080"]).cooldown_after(1, Duration::ZERO);
     let mut req = make_request();
     rotator.before_request(&mut req).await.unwrap();
     rotator
@@ -125,12 +141,6 @@ async fn reports_open_recovering_and_healthy_circuit_states() {
             &KumoError::http_status(503, "https://example.com"),
         )
         .await;
-
-    let open = rotator.circuit_health();
-    assert_eq!(open[0].circuit_state, ProxyCircuitState::Open);
-    assert!(open[0].cooling_down);
-
-    tokio::time::sleep(Duration::from_millis(10)).await;
 
     let recovering = rotator.circuit_health();
     assert_eq!(recovering[0].circuit_state, ProxyCircuitState::Recovering);
@@ -147,6 +157,82 @@ async fn reports_open_recovering_and_healthy_circuit_states() {
     let healthy = rotator.circuit_health();
     assert_eq!(healthy[0].circuit_state, ProxyCircuitState::Healthy);
     assert_eq!(healthy[0].consecutive_failures, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn recovering_proxy_allows_only_one_concurrent_trial() {
+    const ATTEMPTS: usize = 16;
+
+    let rotator = ProxyRotator::new(vec!["http://p1:8080"]).cooldown_after(1, Duration::ZERO);
+    let mut initial = FetchRequest::new("https://example.com/initial", 0);
+    rotator.before_request(&mut initial).await.unwrap();
+    rotator
+        .on_error(initial.url(), &KumoError::http_status(503, initial.url()))
+        .await;
+
+    let barrier = Arc::new(Barrier::new(ATTEMPTS + 1));
+    let mut attempts = Vec::with_capacity(ATTEMPTS);
+    for index in 0..ATTEMPTS {
+        let rotator = rotator.clone();
+        let barrier = Arc::clone(&barrier);
+        attempts.push(tokio::spawn(async move {
+            let url = format!("https://example.com/trial/{index}");
+            let mut request = FetchRequest::new(url.clone(), 0);
+            barrier.wait().await;
+            rotator.before_request(&mut request).await.unwrap();
+            (url, request.proxy)
+        }));
+    }
+
+    barrier.wait().await;
+    let mut selected = Vec::new();
+    for attempt in attempts {
+        let (url, proxy) = attempt.await.unwrap();
+        if proxy.is_some() {
+            selected.push(url);
+        }
+    }
+
+    assert_eq!(selected.len(), 1);
+
+    let mut blocked = FetchRequest::new("https://example.com/blocked", 0);
+    rotator.before_request(&mut blocked).await.unwrap();
+    assert!(blocked.proxy.is_none());
+
+    rotator
+        .after_response(&mut Response::from_parts(&selected[0], 200, "ok"))
+        .await
+        .unwrap();
+    assert_eq!(
+        rotator.circuit_health()[0].circuit_state,
+        ProxyCircuitState::Healthy
+    );
+}
+
+#[tokio::test]
+async fn failed_recovery_trial_reopens_for_cooldown() {
+    let recovering = ProxyRotator::new(vec!["http://p1:8080"]).cooldown_after(1, Duration::ZERO);
+    let mut initial = FetchRequest::new("https://example.com/initial", 0);
+    recovering.before_request(&mut initial).await.unwrap();
+    recovering
+        .on_error(initial.url(), &KumoError::http_status(503, initial.url()))
+        .await;
+
+    let rotator = recovering.cooldown_after(1, Duration::from_secs(60));
+    let mut trial = FetchRequest::new("https://example.com/trial", 0);
+    rotator.before_request(&mut trial).await.unwrap();
+    assert_eq!(trial.proxy.as_deref(), Some("http://p1:8080"));
+    rotator
+        .on_error(trial.url(), &KumoError::http_status(503, trial.url()))
+        .await;
+
+    let snapshot = rotator.circuit_health();
+    assert_eq!(snapshot[0].circuit_state, ProxyCircuitState::Open);
+    assert!(snapshot[0].cooling_down);
+
+    let mut blocked = FetchRequest::new("https://example.com/blocked", 0);
+    rotator.before_request(&mut blocked).await.unwrap();
+    assert!(blocked.proxy.is_none());
 }
 
 #[tokio::test]
