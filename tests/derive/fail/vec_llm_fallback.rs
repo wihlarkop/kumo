@@ -2,8 +2,8 @@ use kumo_derive::Extract;
 
 #[derive(Extract)]
 struct Product {
-    #[extract(css = ".price")]
-    price: std::time::Duration,
+    #[extract(css = ".tag", llm_fallback)]
+    tags: Vec<String>,
 }
 
 fn main() {}

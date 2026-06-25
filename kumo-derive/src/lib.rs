@@ -2,7 +2,8 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{
-    Data, DeriveInput, Fields, GenericArgument, LitStr, PathArguments, Type, parse_macro_input,
+    Data, DeriveInput, Fields, GenericArgument, LitStr, Path, PathArguments, Type,
+    parse_macro_input,
 };
 
 /// Derive macro that generates an [`Extract`] implementation for a struct.
@@ -14,8 +15,11 @@ use syn::{
 /// - `llm_fallback = "hint"` - fall back to LLM when selector returns empty
 /// - `llm_fallback` - same, using field name as the extraction hint
 ///
+/// `llm_fallback` is not supported on `Vec<T>` fields or together with `default`.
+///
 /// `String` fields use `unwrap_or_default()` on missing matches.
-/// `Option<String>` fields stay as `Option` (no unwrap).
+/// `Option<T>` fields stay as `Option` (no unwrap).
+/// `Vec<T>` fields collect all selector matches.
 ///
 /// ```rust,ignore
 /// #[derive(Extract, Serialize)]
@@ -37,14 +41,29 @@ pub fn derive_extract(input: TokenStream) -> TokenStream {
 
 struct FieldInfo {
     name: syn::Ident,
+    ty: Type,
     kind: FieldKind,
     args: ExtractArgs,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FieldKind {
+    Required(ValueKind),
+    Optional(ValueKind),
+    Vec(ValueKind),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ValueKind {
     String,
-    OptionString,
+    Scalar(ScalarKind),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScalarKind {
+    Bool,
+    Int,
+    Float,
 }
 
 fn impl_extract(input: &DeriveInput) -> syn::Result<TokenStream2> {
@@ -68,35 +87,50 @@ fn impl_extract(input: &DeriveInput) -> syn::Result<TokenStream2> {
         .map(|field| {
             Ok(FieldInfo {
                 name: field.ident.as_ref().unwrap().clone(),
+                ty: field.ty.clone(),
                 kind: field_kind(&field.ty)?,
                 args: parse_extract_args(field)?,
             })
         })
         .collect::<syn::Result<Vec<_>>>()?;
 
+    for fi in &field_infos {
+        if fi.args.llm_fallback.is_some() && fi.args.default_val.is_some() {
+            return Err(syn::Error::new(
+                fi.name.span(),
+                "llm_fallback cannot be combined with default; fallback chains are not supported",
+            ));
+        }
+        if matches!(fi.kind, FieldKind::Vec(_)) && fi.args.llm_fallback.is_some() {
+            return Err(syn::Error::new(
+                fi.name.span(),
+                "llm_fallback is not supported for Vec<T> fields",
+            ));
+        }
+    }
+
     let has_llm_fallback = field_infos.iter().any(|f| f.args.llm_fallback.is_some());
 
-    // Generate per-field sync extraction (as Option<String> for everything).
+    // Generate per-field sync extraction as raw strings.
     let sync_extraction: Vec<TokenStream2> = field_infos
         .iter()
         .map(|fi| {
             let field_name = &fi.name;
             let css = &fi.args.css;
-            let base = quote! { element.css(#css).first() };
-            let raw_value = match &fi.args.attr {
-                Some(attr) => quote! { #base.and_then(|e| e.attr(#attr)) },
-                None => quote! { #base.map(|e| e.text()) },
+            let raw_for_element = match &fi.args.attr {
+                Some(attr) => quote! { __el.attr(#attr) },
+                None => quote! { ::std::option::Option::Some(__el.text()) },
             };
-            let valued = match &fi.args.re {
+            let valued_for_element = match &fi.args.re {
                 Some(re) => quote! {
-                    (#raw_value).and_then(|s| {
+                    (#raw_for_element).and_then(|s| {
                         <::kumo::extract::RegexExtractor as ::kumo::extract::ValueExtractor>
                             ::extract_values(&::kumo::extract::RegexExtractor, &s, #re)
                             .ok()
                             .and_then(|values| values.into_iter().next())
                     })
                 },
-                None => raw_value,
+                None => raw_for_element,
             };
             let transform_expr = match fi.args.transform.as_ref().map(|t| t.value()) {
                 Some(ref t) if t == "trim" => {
@@ -111,7 +145,33 @@ fn impl_extract(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 _ => quote! {},
             };
             let var = quote::format_ident!("__field_{}", field_name);
-            quote! { let mut #var: Option<String> = (#valued)#transform_expr; }
+            match fi.kind {
+                FieldKind::Vec(_) => quote! {
+                    let #var: ::std::vec::Vec<String> = element
+                        .css(#css)
+                        .iter()
+                        .filter_map(|__el| (#valued_for_element)#transform_expr)
+                        .collect();
+                },
+                FieldKind::Required(_) | FieldKind::Optional(_)
+                    if fi.args.llm_fallback.is_some() =>
+                {
+                    quote! {
+                        let mut #var: ::std::option::Option<String> = element
+                            .css(#css)
+                            .first()
+                            .and_then(|__el| (#valued_for_element))
+                            #transform_expr;
+                    }
+                }
+                FieldKind::Required(_) | FieldKind::Optional(_) => quote! {
+                    let #var: ::std::option::Option<String> = element
+                        .css(#css)
+                        .first()
+                        .and_then(|__el| (#valued_for_element))
+                        #transform_expr;
+                },
+            }
         })
         .collect();
 
@@ -197,12 +257,82 @@ fn impl_extract(input: &DeriveInput) -> syn::Result<TokenStream2> {
         .map(|fi| {
             let field_name = &fi.name;
             let var = quote::format_ident!("__field_{}", field_name);
-            if fi.kind == FieldKind::OptionString {
-                quote! { #field_name: #var }
-            } else if let Some(default) = &fi.args.default_val {
-                quote! { #field_name: #var.unwrap_or_else(|| #default.to_string()) }
-            } else {
-                quote! { #field_name: #var.unwrap_or_default() }
+            match fi.kind {
+                FieldKind::Required(ValueKind::String) => {
+                    if let Some(default) = &fi.args.default_val {
+                        quote! { #field_name: #var.unwrap_or_else(|| #default.to_string()) }
+                    } else {
+                        quote! { #field_name: #var.unwrap_or_default() }
+                    }
+                }
+                FieldKind::Optional(ValueKind::String) => quote! { #field_name: #var },
+                FieldKind::Vec(ValueKind::String) => quote! { #field_name: #var },
+                FieldKind::Required(ValueKind::Scalar(_)) => {
+                    let type_name = type_name(&fi.ty);
+                    let default = fi.args.default_val.as_ref().map(|default| {
+                        quote! { .or_else(|| ::std::option::Option::Some(#default.to_string())) }
+                    });
+                    quote! {
+                        #field_name: {
+                            let __raw = #var
+                                #default
+                                .ok_or_else(|| ::kumo::error::KumoError::parse_msg(
+                                    ::std::format!(
+                                        "missing required field `{}` for {}",
+                                        ::std::stringify!(#field_name),
+                                        #type_name,
+                                    )
+                                ))?;
+                            __raw.parse().map_err(|__err| {
+                                ::kumo::error::KumoError::parse_msg(::std::format!(
+                                    "failed to parse field `{}` as {} from {:?}: {}",
+                                    ::std::stringify!(#field_name),
+                                    #type_name,
+                                    __raw,
+                                    __err,
+                                ))
+                            })?
+                        }
+                    }
+                }
+                FieldKind::Optional(ValueKind::Scalar(_)) => {
+                    let type_name = option_inner_type_name(&fi.ty);
+                    quote! {
+                        #field_name: match #var {
+                            ::std::option::Option::Some(__raw) => {
+                                ::std::option::Option::Some(__raw.parse().map_err(|__err| {
+                                    ::kumo::error::KumoError::parse_msg(::std::format!(
+                                        "failed to parse field `{}` as {} from {:?}: {}",
+                                        ::std::stringify!(#field_name),
+                                        #type_name,
+                                        __raw,
+                                        __err,
+                                    ))
+                                })?)
+                            }
+                            ::std::option::Option::None => ::std::option::Option::None,
+                        }
+                    }
+                }
+                FieldKind::Vec(ValueKind::Scalar(_)) => {
+                    let type_name = vec_inner_type_name(&fi.ty);
+                    quote! {
+                        #field_name: #var
+                            .into_iter()
+                            .map(|__raw| {
+                                __raw.parse().map_err(|__err| {
+                                    ::kumo::error::KumoError::parse_msg(::std::format!(
+                                        "failed to parse field `{}` as {} from {:?}: {}",
+                                        ::std::stringify!(#field_name),
+                                        #type_name,
+                                        __raw,
+                                        __err,
+                                    ))
+                                })
+                            })
+                            .collect::<::std::result::Result<_, ::kumo::error::KumoError>>()?
+                    }
+                }
             }
         })
         .collect();
@@ -317,34 +447,164 @@ fn parse_extract_args(field: &syn::Field) -> syn::Result<ExtractArgs> {
 }
 
 fn field_kind(ty: &Type) -> syn::Result<FieldKind> {
-    if is_string_type(ty) {
-        return Ok(FieldKind::String);
+    if let Some(kind) = value_kind(ty) {
+        return Ok(FieldKind::Required(kind));
     }
 
-    if let Type::Path(tp) = ty
-        && tp.qself.is_none()
-        && let Some(seg) = tp.path.segments.last()
-        && seg.ident == "Option"
-        && let PathArguments::AngleBracketed(args) = &seg.arguments
-        && args.args.len() == 1
-        && let Some(GenericArgument::Type(inner)) = args.args.first()
-        && is_string_type(inner)
+    if let Some(inner) = container_inner(
+        ty,
+        &[
+            &["Option"],
+            &["std", "option", "Option"],
+            &["core", "option", "Option"],
+        ],
+    ) && let Some(kind) = value_kind(inner)
     {
-        return Ok(FieldKind::OptionString);
+        return Ok(FieldKind::Optional(kind));
+    }
+
+    if let Some(inner) = container_inner(
+        ty,
+        &[&["Vec"], &["std", "vec", "Vec"], &["alloc", "vec", "Vec"]],
+    ) && let Some(kind) = value_kind(inner)
+    {
+        return Ok(FieldKind::Vec(kind));
     }
 
     Err(syn::Error::new_spanned(
         ty,
-        "#[derive(Extract)] only supports String and Option<String> fields",
+        "unsupported field type; #[derive(Extract)] supports String, bool, numeric primitives, Option<T>, and Vec<T> using Rust prelude or canonical std/core/alloc paths; nested and custom types are not supported",
     ))
 }
 
-fn is_string_type(ty: &Type) -> bool {
+fn value_kind(ty: &Type) -> Option<ValueKind> {
+    if let Type::Path(tp) = ty
+        && tp.qself.is_none()
+        && let Some(seg) = tp.path.segments.last()
+        && tp
+            .path
+            .segments
+            .iter()
+            .all(|seg| matches!(seg.arguments, PathArguments::None))
+    {
+        let name = seg.ident.to_string();
+        if path_is_one_of(
+            &tp.path,
+            &[
+                &["String"],
+                &["std", "string", "String"],
+                &["alloc", "string", "String"],
+            ],
+        ) {
+            return Some(ValueKind::String);
+        }
+        if name == "bool" && is_primitive_path(&tp.path, &name) {
+            return Some(ValueKind::Scalar(ScalarKind::Bool));
+        }
+        if matches!(
+            name.as_str(),
+            "i8" | "i16"
+                | "i32"
+                | "i64"
+                | "i128"
+                | "isize"
+                | "u8"
+                | "u16"
+                | "u32"
+                | "u64"
+                | "u128"
+                | "usize"
+        ) && is_primitive_path(&tp.path, &name)
+        {
+            return Some(ValueKind::Scalar(ScalarKind::Int));
+        }
+        if matches!(name.as_str(), "f32" | "f64") && is_primitive_path(&tp.path, &name) {
+            return Some(ValueKind::Scalar(ScalarKind::Float));
+        }
+    }
+    None
+}
+
+fn container_inner<'a>(ty: &'a Type, paths: &[&[&str]]) -> Option<&'a Type> {
+    let Type::Path(tp) = ty else {
+        return None;
+    };
+    if tp.qself.is_some() || !path_is_one_of(&tp.path, paths) {
+        return None;
+    }
+
+    let last = tp.path.segments.last()?;
+    if !tp
+        .path
+        .segments
+        .iter()
+        .take(tp.path.segments.len() - 1)
+        .all(|seg| matches!(seg.arguments, PathArguments::None))
+    {
+        return None;
+    }
+
+    let PathArguments::AngleBracketed(args) = &last.arguments else {
+        return None;
+    };
+    if args.args.len() != 1 {
+        return None;
+    }
+    match args.args.first()? {
+        GenericArgument::Type(inner) => Some(inner),
+        _ => None,
+    }
+}
+
+fn is_primitive_path(path: &Path, name: &str) -> bool {
+    path_has_segments(path, &[name])
+        || path_has_segments(path, &["std", "primitive", name])
+        || path_has_segments(path, &["core", "primitive", name])
+}
+
+fn path_is_one_of(path: &Path, candidates: &[&[&str]]) -> bool {
+    candidates
+        .iter()
+        .any(|segments| path_has_segments(path, segments))
+}
+
+fn path_has_segments(path: &Path, expected: &[&str]) -> bool {
+    path.segments.len() == expected.len()
+        && path
+            .segments
+            .iter()
+            .zip(expected)
+            .all(|(segment, expected)| segment.ident == *expected)
+}
+
+fn type_name(ty: &Type) -> String {
     if let Type::Path(tp) = ty
         && tp.qself.is_none()
         && let Some(seg) = tp.path.segments.last()
     {
-        return seg.ident == "String";
+        return seg.ident.to_string();
     }
-    false
+    quote!(#ty).to_string()
+}
+
+fn option_inner_type_name(ty: &Type) -> String {
+    type_argument_name(ty, "Option").unwrap_or_else(|| type_name(ty))
+}
+
+fn vec_inner_type_name(ty: &Type) -> String {
+    type_argument_name(ty, "Vec").unwrap_or_else(|| type_name(ty))
+}
+
+fn type_argument_name(ty: &Type, container: &str) -> Option<String> {
+    if let Type::Path(tp) = ty
+        && tp.qself.is_none()
+        && let Some(seg) = tp.path.segments.last()
+        && seg.ident == container
+        && let PathArguments::AngleBracketed(args) = &seg.arguments
+        && args.args.len() == 1
+        && let Some(GenericArgument::Type(inner)) = args.args.first()
+    {
+        return Some(type_name(inner));
+    }
+    None
 }

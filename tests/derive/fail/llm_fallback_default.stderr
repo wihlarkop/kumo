@@ -1,0 +1,5 @@
+error: llm_fallback cannot be combined with default; fallback chains are not supported
+ --> tests/derive/fail/llm_fallback_default.rs:6:5
+  |
+6 |     price: String,
+  |     ^^^^^

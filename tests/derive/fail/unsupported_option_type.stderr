@@ -1,5 +1,5 @@
-error: #[derive(Extract)] only supports String and Option<String> fields
+error: unsupported field type; #[derive(Extract)] supports String, bool, numeric primitives, Option<T>, and Vec<T> using Rust prelude or canonical std/core/alloc paths; nested and custom types are not supported
  --> tests/derive/fail/unsupported_option_type.rs:6:12
   |
-6 |     stock: Option<u32>,
-  |            ^^^^^^^^^^^
+6 |     stock: Option<std::time::Duration>,
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^

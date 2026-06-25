@@ -1,5 +1,5 @@
 error: unsupported field type; #[derive(Extract)] supports String, bool, numeric primitives, Option<T>, and Vec<T> using Rust prelude or canonical std/core/alloc paths; nested and custom types are not supported
- --> tests/derive/fail/unsupported_type.rs:6:12
+ --> tests/derive/fail/nested_container_type.rs:6:11
   |
-6 |     price: std::time::Duration,
-  |            ^^^^^^^^^^^^^^^^^^^
+6 |     tags: Option<Vec<String>>,
+  |           ^^^^^^^^^^^^^^^^^^^

@@ -102,17 +102,20 @@ struct Product {
     name: String,
 
     #[extract(css = "span.price", attr = "data-amount")]
-    price: String,
+    price: f64,
 
     #[extract(css = "div.description")]
     description: Option<String>,  // None if selector finds nothing
+
+    #[extract(css = ".tag")]
+    tags: Vec<String>,
 }
 
 // In parse():
 let product = Product::extract_from(el, None).await?;
 ```
 
-The derive macro calls `.text()` by default; use `attr = "..."` to extract an HTML attribute instead.
+The derive macro calls `.text()` by default; use `attr = "..."` to extract an HTML attribute instead. It supports `String`, numeric scalars, `bool`, `Option<T>`, and `Vec<T>` for those scalar types.
 
 ## LLM Extraction
 

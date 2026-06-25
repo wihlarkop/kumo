@@ -1,0 +1,5 @@
+error: llm_fallback is not supported for Vec<T> fields
+ --> tests/derive/fail/vec_llm_fallback.rs:6:5
+  |
+6 |     tags: Vec<String>,
+  |     ^^^^

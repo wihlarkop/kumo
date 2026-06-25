@@ -28,7 +28,8 @@ cargo run --example books
 
 ### `books_derive.rs` - derive-based extraction
 
-Uses `#[derive(Extract)]` instead of manual CSS selector code.
+Uses `#[derive(Extract)]` instead of manual CSS selector code, including
+numeric parsing and list fields.
 
 ```bash
 cargo run --example books_derive --features derive
