@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -96,10 +96,12 @@ struct ProxyCooldown {
 struct ProxyHealth {
     stats: HashMap<String, ProxyHealthState>,
     assignments: HashMap<u64, ProxyAssignment>,
+    assignment_order: VecDeque<u64>,
 }
 
 #[derive(Debug)]
 struct ProxyAssignment {
+    url: String,
     proxy: String,
     trial_generation: Option<u64>,
 }
@@ -247,6 +249,7 @@ impl ProxyRotator {
             }
         });
         Some(ProxyAssignment {
+            url: String::new(),
             proxy: proxy.clone(),
             trial_generation,
         })
@@ -255,12 +258,33 @@ impl ProxyRotator {
     fn remember_assignment(&self, assignment_id: u64, assignment: ProxyAssignment) {
         let mut health = self.health.lock().expect("proxy health lock poisoned");
         health.assignments.insert(assignment_id, assignment);
+        health.assignment_order.push_back(assignment_id);
     }
 
     fn take_assignment(&self, request: &FetchRequest) -> Option<ProxyAssignment> {
         let assignment_id = request.proxy_assignment_id()?;
         let mut health = self.health.lock().expect("proxy health lock poisoned");
-        health.assignments.remove(&assignment_id)
+        remove_assignment(&mut health, assignment_id)
+    }
+
+    fn take_assignment_by_url(&self, url: &str) -> Option<ProxyAssignment> {
+        let mut health = self.health.lock().expect("proxy health lock poisoned");
+        while let Some(position) = health.assignment_order.iter().position(|assignment_id| {
+            health
+                .assignments
+                .get(assignment_id)
+                .is_none_or(|assignment| assignment.url == url)
+        }) {
+            let Some(assignment_id) = health.assignment_order.remove(position) else {
+                continue;
+            };
+            if let Some(assignment) = health.assignments.remove(&assignment_id)
+                && assignment.url == url
+            {
+                return Some(assignment);
+            }
+        }
+        None
     }
 
     fn record_success(&self, assignment: ProxyAssignment) {
@@ -296,14 +320,23 @@ impl ProxyRotator {
 #[async_trait]
 impl Middleware for ProxyRotator {
     async fn before_request(&self, request: &mut FetchRequest) -> Result<(), KumoError> {
+        let _ = self.take_assignment(request);
         request.set_proxy_assignment_id(None);
-        if let Some(assignment) = self.pick() {
+        if let Some(mut assignment) = self.pick() {
             let assignment_id = self.next_assignment_id.fetch_add(1, Ordering::Relaxed);
             request.proxy = Some(assignment.proxy.clone());
+            assignment.url = request.url().to_string();
             self.remember_assignment(assignment_id, assignment);
             request.set_proxy_assignment_id(Some(assignment_id));
         } else if !self.proxies.is_empty() {
             request.proxy = None;
+        }
+        Ok(())
+    }
+
+    async fn after_response(&self, response: &mut Response) -> Result<(), KumoError> {
+        if let Some(assignment) = self.take_assignment_by_url(response.url()) {
+            self.record_success(assignment);
         }
         Ok(())
     }
@@ -324,6 +357,23 @@ impl Middleware for ProxyRotator {
             self.record_failure(assignment);
         }
     }
+
+    async fn on_error(&self, url: &str, _error: &KumoError) {
+        if let Some(assignment) = self.take_assignment_by_url(url) {
+            self.record_failure(assignment);
+        }
+    }
+}
+
+fn remove_assignment(health: &mut ProxyHealth, assignment_id: u64) -> Option<ProxyAssignment> {
+    if let Some(position) = health
+        .assignment_order
+        .iter()
+        .position(|queued_id| *queued_id == assignment_id)
+    {
+        health.assignment_order.remove(position);
+    }
+    health.assignments.remove(&assignment_id)
 }
 
 fn is_cooling_down(state: Option<&ProxyHealthState>, now: Instant) -> bool {

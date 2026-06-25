@@ -82,6 +82,46 @@ async fn records_proxy_successes_and_failures() {
 }
 
 #[tokio::test]
+async fn legacy_response_and_error_hooks_still_update_health() {
+    let rotator = ProxyRotator::new(vec!["http://p1:8080"]);
+    let mut req = make_request();
+
+    rotator.before_request(&mut req).await.unwrap();
+    rotator
+        .after_response(&mut Response::from_parts("https://example.com", 200, "ok"))
+        .await
+        .unwrap();
+
+    rotator.before_request(&mut req).await.unwrap();
+    rotator
+        .on_error(
+            "https://example.com",
+            &KumoError::http_status(503, "https://example.com"),
+        )
+        .await;
+
+    let snapshot = rotator.health();
+    assert_eq!(snapshot[0].successes, 1);
+    assert_eq!(snapshot[0].failures, 1);
+}
+
+#[tokio::test]
+async fn reusing_request_replaces_unfinished_assignment() {
+    let rotator = ProxyRotator::new(vec!["http://p1:8080", "http://p2:8080"]);
+    let mut req = make_request();
+
+    rotator.before_request(&mut req).await.unwrap();
+    assert_eq!(req.proxy.as_deref(), Some("http://p1:8080"));
+    rotator.before_request(&mut req).await.unwrap();
+    assert_eq!(req.proxy.as_deref(), Some("http://p2:8080"));
+    record_success(&rotator, &req).await;
+
+    let snapshot = rotator.health();
+    assert_eq!(snapshot[0].successes, 0);
+    assert_eq!(snapshot[1].successes, 1);
+}
+
+#[tokio::test]
 async fn skips_proxy_while_cooling_down_after_repeated_failures() {
     let rotator = ProxyRotator::new(vec!["http://p1:8080", "http://p2:8080"])
         .cooldown_after(1, Duration::from_secs(60));
