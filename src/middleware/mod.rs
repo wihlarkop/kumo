@@ -7,7 +7,7 @@ pub mod user_agent;
 
 pub use autothrottle::AutoThrottle;
 pub use default_headers::DefaultHeaders;
-pub use proxy::{ProxyHealthSnapshot, ProxyRotator};
+pub use proxy::{ProxyCircuitSnapshot, ProxyCircuitState, ProxyHealthSnapshot, ProxyRotator};
 pub use rate_limit::RateLimiter;
 pub use status_retry::StatusRetry;
 pub use user_agent::UserAgentRotator;
@@ -73,6 +73,7 @@ impl RotationStrategy {
 /// A fetch-time HTTP request, passed through middleware before fetching.
 pub struct FetchRequest {
     url: String,
+    proxy_assignment_id: Option<u64>,
     pub method: Method,
     pub headers: HeaderMap,
     pub body: Option<Vec<u8>>,
@@ -86,6 +87,7 @@ impl FetchRequest {
     pub fn new(url: impl Into<String>, depth: usize) -> Self {
         Self {
             url: url.into(),
+            proxy_assignment_id: None,
             method: Method::GET,
             headers: HeaderMap::new(),
             body: None,
@@ -97,6 +99,14 @@ impl FetchRequest {
     /// The URL this request will fetch.
     pub fn url(&self) -> &str {
         &self.url
+    }
+
+    pub(super) fn proxy_assignment_id(&self) -> Option<u64> {
+        self.proxy_assignment_id
+    }
+
+    pub(super) fn set_proxy_assignment_id(&mut self, id: Option<u64>) {
+        self.proxy_assignment_id = id;
     }
 
     /// Mutable access to headers before the request is fetched.
@@ -113,6 +123,7 @@ impl FetchRequest {
     pub(crate) fn from_crawl_request(request: &crate::request::CrawlRequest, depth: usize) -> Self {
         Self {
             url: request.url().to_string(),
+            proxy_assignment_id: None,
             method: request.method_ref().clone(),
             headers: request.headers().clone(),
             body: request.body_bytes().map(ToOwned::to_owned),
@@ -135,6 +146,24 @@ pub trait Middleware: Send + Sync {
     async fn after_response(&self, _response: &mut Response) -> Result<(), KumoError> {
         Ok(())
     }
+
+    /// Called after a successful HTTP response with its originating request.
+    ///
+    /// The default delegates to [`Middleware::after_response`] so existing
+    /// middleware implementations remain compatible.
+    async fn after_response_with_request(
+        &self,
+        _request: &FetchRequest,
+        response: &mut Response,
+    ) -> Result<(), KumoError> {
+        self.after_response(response).await
+    }
+
+    /// Called when one fetch attempt fails before producing a response.
+    ///
+    /// Unlike [`Middleware::on_error`], this runs for each failed fetch attempt,
+    /// including attempts that the engine may retry. The default does nothing.
+    async fn on_fetch_error(&self, _request: &FetchRequest, _error: &KumoError) {}
 
     /// Called when a URL permanently fails (after all retries are exhausted).
     /// Use this to log failures, mark proxies as bad, emit metrics, etc.

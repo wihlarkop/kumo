@@ -90,8 +90,8 @@ or connection pools between proxies. These clients inherit the engine's
 concurrency, request timeout, User-Agent, and TCP keepalive settings.
 
 `ProxyRotator` also tracks per-proxy successes, failures, consecutive failures,
-and cooldown state. By default, a proxy is skipped for 60 seconds after three
-consecutive failed request attempts:
+and circuit-breaker state. By default, a proxy circuit opens for 60 seconds
+after three consecutive failed request attempts, and open proxies are skipped:
 
 ```rust
 use std::time::Duration;
@@ -118,17 +118,23 @@ let report = CrawlEngine::builder()
     .run(MySpider)
     .await?;
 
-for proxy in proxy_health.health() {
+for proxy in proxy_health.circuit_health() {
     println!(
-        "{} successes={} failures={}",
-        proxy.proxy, proxy.successes, proxy.failures
+        "{} state={:?} successes={} failures={}",
+        proxy.proxy, proxy.circuit_state, proxy.successes, proxy.failures
     );
 }
 ```
 
-When every configured proxy is cooling down, `ProxyRotator` leaves
-`request.proxy` unset for that request instead of forcing a known unhealthy
-proxy.
+`ProxyCircuitSnapshot::circuit_state` is `Healthy` when the proxy is selectable
+with a closed circuit, `Open` while the proxy is cooling down, and `Recovering`
+after the cooldown has elapsed. Only one trial request may use a recovering
+proxy at a time; other requests skip it until the trial succeeds or fails. Use
+`ProxyRotator::health()` when you only need the backward-compatible success,
+failure, and cooldown counters. When every configured proxy is unavailable,
+`ProxyRotator` leaves `request.proxy` unset for that request instead of forcing
+a known unhealthy proxy. Proxy outcomes are matched to their exact fetch
+attempt, so concurrent requests for the same URL may complete in any order.
 
 ## UserAgentRotator
 
@@ -192,4 +198,11 @@ impl Middleware for AddApiKey {
 // Register:
 .middleware(AddApiKey("secret-key".into()))
 ```
+
+`after_response_with_request()` receives both the originating `FetchRequest`
+and its successful response. Its default implementation delegates to
+`after_response()`, so existing middleware implementations do not need to
+change. `on_fetch_error()` runs once for each fetch attempt that fails before a
+response is produced, including attempts that will be retried. `on_error()`
+continues to run only after a URL permanently fails.
 

@@ -37,6 +37,9 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
   and failure counters, configurable cooldown after consecutive failed request
   attempts, shared health snapshots from cloned rotators, and a no-cooldown mode
   that preserves the existing rotation API while retaining counters.
+- Added explicit per-proxy circuit-breaker reporting to `ProxyRotator` health
+  snapshots with `ProxyCircuitState::{Healthy, Open, Recovering}` so callers can
+  distinguish closed, cooling-down, and trial-recovery proxies.
 - SQL stores now write `store_many()` batches with one multi-row insert
   statement per transaction for SQLite, Postgres, and MySQL.
 

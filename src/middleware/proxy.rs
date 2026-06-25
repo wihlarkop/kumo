@@ -1,6 +1,9 @@
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -45,7 +48,19 @@ pub struct ProxyRotator {
     proxies: Vec<String>,
     strategy: RotationStrategy,
     health: Arc<Mutex<ProxyHealth>>,
+    next_assignment_id: Arc<AtomicU64>,
     cooldown: Option<ProxyCooldown>,
+}
+
+/// Circuit-breaker state for one proxy URL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProxyCircuitState {
+    /// The proxy circuit is closed and the proxy is selectable.
+    Healthy,
+    /// The proxy circuit is open and the proxy is skipped until recovery.
+    Open,
+    /// The recovery period elapsed and the next selection is a trial request.
+    Recovering,
 }
 
 /// Point-in-time health counters for one proxy URL.
@@ -59,6 +74,18 @@ pub struct ProxyHealthSnapshot {
     pub cooldown_remaining: Option<Duration>,
 }
 
+/// Point-in-time circuit-breaker state for one proxy URL.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProxyCircuitSnapshot {
+    pub proxy: String,
+    pub successes: u64,
+    pub failures: u64,
+    pub consecutive_failures: u64,
+    pub circuit_state: ProxyCircuitState,
+    pub cooling_down: bool,
+    pub cooldown_remaining: Option<Duration>,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct ProxyCooldown {
     failure_threshold: u64,
@@ -68,7 +95,15 @@ struct ProxyCooldown {
 #[derive(Debug, Default)]
 struct ProxyHealth {
     stats: HashMap<String, ProxyHealthState>,
-    assignments: HashMap<String, VecDeque<String>>,
+    assignments: HashMap<u64, ProxyAssignment>,
+    assignment_order: VecDeque<u64>,
+}
+
+#[derive(Debug)]
+struct ProxyAssignment {
+    url: String,
+    proxy: String,
+    trial_generation: Option<u64>,
 }
 
 #[derive(Debug, Default)]
@@ -77,6 +112,8 @@ struct ProxyHealthState {
     failures: u64,
     consecutive_failures: u64,
     cooldown_until: Option<Instant>,
+    trial_generation: u64,
+    active_trial: Option<u64>,
 }
 
 impl ProxyRotator {
@@ -95,6 +132,7 @@ impl ProxyRotator {
             proxies: proxies.into_iter().map(Into::into).collect(),
             strategy,
             health: Arc::new(Mutex::new(ProxyHealth::default())),
+            next_assignment_id: Arc::new(AtomicU64::new(1)),
             cooldown: Some(ProxyCooldown {
                 failure_threshold: DEFAULT_FAILURE_THRESHOLD,
                 duration: DEFAULT_COOLDOWN,
@@ -147,69 +185,129 @@ impl ProxyRotator {
             .collect()
     }
 
-    fn pick(&self) -> Option<String> {
+    /// Return circuit-breaker state and health counters for every configured proxy URL.
+    pub fn circuit_health(&self) -> Vec<ProxyCircuitSnapshot> {
+        let now = Instant::now();
+        let health = self.health.lock().expect("proxy health lock poisoned");
+
+        self.proxies
+            .iter()
+            .map(|proxy| {
+                let state = health.stats.get(proxy);
+                let cooldown_remaining = state.and_then(|state| {
+                    state
+                        .cooldown_until
+                        .and_then(|until| until.checked_duration_since(now))
+                });
+
+                ProxyCircuitSnapshot {
+                    proxy: proxy.clone(),
+                    successes: state.map_or(0, |state| state.successes),
+                    failures: state.map_or(0, |state| state.failures),
+                    consecutive_failures: state.map_or(0, |state| state.consecutive_failures),
+                    circuit_state: circuit_state(state, now),
+                    cooling_down: cooldown_remaining.is_some(),
+                    cooldown_remaining,
+                }
+            })
+            .collect()
+    }
+
+    fn pick(&self) -> Option<ProxyAssignment> {
         if self.proxies.is_empty() {
             return None;
         }
 
-        let health = self.health.lock().expect("proxy health lock poisoned");
+        let mut health = self.health.lock().expect("proxy health lock poisoned");
         let now = Instant::now();
         let eligible = self
             .proxies
             .iter()
             .enumerate()
             .filter_map(|(index, proxy)| {
-                if is_cooling_down(health.stats.get(proxy), now) {
+                if is_unavailable(health.stats.get(proxy), now) {
                     None
                 } else {
                     Some(index)
                 }
             })
             .collect::<Vec<_>>();
-        drop(health);
 
         if eligible.is_empty() {
             return None;
         }
 
         let picked = eligible[self.strategy.pick_index(eligible.len())];
-        Some(self.proxies[picked].clone())
+        let proxy = &self.proxies[picked];
+        let trial_generation = health.stats.get_mut(proxy).and_then(|state| {
+            if state.cooldown_until.is_some_and(|until| until <= now) {
+                state.trial_generation = state.trial_generation.wrapping_add(1);
+                state.active_trial = Some(state.trial_generation);
+                Some(state.trial_generation)
+            } else {
+                None
+            }
+        });
+        Some(ProxyAssignment {
+            url: String::new(),
+            proxy: proxy.clone(),
+            trial_generation,
+        })
     }
 
-    fn remember_assignment(&self, url: &str, proxy: &str) {
+    fn remember_assignment(&self, assignment_id: u64, assignment: ProxyAssignment) {
         let mut health = self.health.lock().expect("proxy health lock poisoned");
-        health
-            .assignments
-            .entry(url.to_string())
-            .or_default()
-            .push_back(proxy.to_string());
+        health.assignments.insert(assignment_id, assignment);
+        health.assignment_order.push_back(assignment_id);
     }
 
-    fn take_assignment(&self, url: &str) -> Option<String> {
+    fn take_assignment(&self, request: &FetchRequest) -> Option<ProxyAssignment> {
+        let assignment_id = request.proxy_assignment_id()?;
         let mut health = self.health.lock().expect("proxy health lock poisoned");
-        let assigned = health
-            .assignments
-            .get_mut(url)
-            .and_then(VecDeque::pop_front);
-        if health.assignments.get(url).is_some_and(VecDeque::is_empty) {
-            health.assignments.remove(url);
+        remove_assignment(&mut health, assignment_id)
+    }
+
+    fn take_assignment_by_url(&self, url: &str) -> Option<ProxyAssignment> {
+        let mut health = self.health.lock().expect("proxy health lock poisoned");
+        while let Some(position) = health.assignment_order.iter().position(|assignment_id| {
+            health
+                .assignments
+                .get(assignment_id)
+                .is_none_or(|assignment| assignment.url == url)
+        }) {
+            let Some(assignment_id) = health.assignment_order.remove(position) else {
+                continue;
+            };
+            if let Some(assignment) = health.assignments.remove(&assignment_id)
+                && assignment.url == url
+            {
+                return Some(assignment);
+            }
         }
-        assigned
+        None
     }
 
-    fn record_success(&self, proxy: &str) {
+    fn record_success(&self, assignment: ProxyAssignment) {
         let mut health = self.health.lock().expect("proxy health lock poisoned");
-        let state = health.stats.entry(proxy.to_string()).or_default();
+        let state = health.stats.entry(assignment.proxy).or_default();
         state.successes += 1;
+        if !assignment_resolves_circuit(state, assignment.trial_generation) {
+            return;
+        }
         state.consecutive_failures = 0;
         state.cooldown_until = None;
+        state.active_trial = None;
     }
 
-    fn record_failure(&self, proxy: &str) {
+    fn record_failure(&self, assignment: ProxyAssignment) {
         let mut health = self.health.lock().expect("proxy health lock poisoned");
-        let state = health.stats.entry(proxy.to_string()).or_default();
+        let state = health.stats.entry(assignment.proxy).or_default();
         state.failures += 1;
+        if !assignment_resolves_circuit(state, assignment.trial_generation) {
+            return;
+        }
         state.consecutive_failures += 1;
+        state.active_trial = None;
 
         if let Some(cooldown) = self.cooldown
             && state.consecutive_failures >= cooldown.failure_threshold
@@ -222,9 +320,14 @@ impl ProxyRotator {
 #[async_trait]
 impl Middleware for ProxyRotator {
     async fn before_request(&self, request: &mut FetchRequest) -> Result<(), KumoError> {
-        if let Some(proxy) = self.pick() {
-            self.remember_assignment(request.url(), &proxy);
-            request.proxy = Some(proxy);
+        let _ = self.take_assignment(request);
+        request.set_proxy_assignment_id(None);
+        if let Some(mut assignment) = self.pick() {
+            let assignment_id = self.next_assignment_id.fetch_add(1, Ordering::Relaxed);
+            request.proxy = Some(assignment.proxy.clone());
+            assignment.url = request.url().to_string();
+            self.remember_assignment(assignment_id, assignment);
+            request.set_proxy_assignment_id(Some(assignment_id));
         } else if !self.proxies.is_empty() {
             request.proxy = None;
         }
@@ -232,21 +335,68 @@ impl Middleware for ProxyRotator {
     }
 
     async fn after_response(&self, response: &mut Response) -> Result<(), KumoError> {
-        if let Some(proxy) = self.take_assignment(response.url()) {
-            self.record_success(&proxy);
+        if let Some(assignment) = self.take_assignment_by_url(response.url()) {
+            self.record_success(assignment);
         }
         Ok(())
     }
 
-    async fn on_error(&self, url: &str, _error: &KumoError) {
-        if let Some(proxy) = self.take_assignment(url) {
-            self.record_failure(&proxy);
+    async fn after_response_with_request(
+        &self,
+        request: &FetchRequest,
+        _response: &mut Response,
+    ) -> Result<(), KumoError> {
+        if let Some(assignment) = self.take_assignment(request) {
+            self.record_success(assignment);
+        }
+        Ok(())
+    }
+
+    async fn on_fetch_error(&self, request: &FetchRequest, _error: &KumoError) {
+        if let Some(assignment) = self.take_assignment(request) {
+            self.record_failure(assignment);
         }
     }
+
+    async fn on_error(&self, url: &str, _error: &KumoError) {
+        if let Some(assignment) = self.take_assignment_by_url(url) {
+            self.record_failure(assignment);
+        }
+    }
+}
+
+fn remove_assignment(health: &mut ProxyHealth, assignment_id: u64) -> Option<ProxyAssignment> {
+    if let Some(position) = health
+        .assignment_order
+        .iter()
+        .position(|queued_id| *queued_id == assignment_id)
+    {
+        health.assignment_order.remove(position);
+    }
+    health.assignments.remove(&assignment_id)
 }
 
 fn is_cooling_down(state: Option<&ProxyHealthState>, now: Instant) -> bool {
     state
         .and_then(|state| state.cooldown_until)
         .is_some_and(|until| until > now)
+}
+
+fn is_unavailable(state: Option<&ProxyHealthState>, now: Instant) -> bool {
+    is_cooling_down(state, now) || state.is_some_and(|state| state.active_trial.is_some())
+}
+
+fn assignment_resolves_circuit(state: &ProxyHealthState, trial_generation: Option<u64>) -> bool {
+    match trial_generation {
+        Some(generation) => state.active_trial == Some(generation),
+        None => state.active_trial.is_none(),
+    }
+}
+
+fn circuit_state(state: Option<&ProxyHealthState>, now: Instant) -> ProxyCircuitState {
+    match state.and_then(|state| state.cooldown_until) {
+        Some(until) if until > now => ProxyCircuitState::Open,
+        Some(_) => ProxyCircuitState::Recovering,
+        None => ProxyCircuitState::Healthy,
+    }
 }
