@@ -130,6 +130,8 @@ impl CrawlEngine {
                 let stats = &mut stats_vec[idx];
                 if scheduler.push_request(request, 0).await {
                     stats.record_scheduled(&domain);
+                    #[cfg(feature = "otel")]
+                    crate::otel::record_request_scheduled(spider.name(), Some(idx), &domain);
                     observer
                         .notify_with(|| crate::events::CrawlEvent::RequestScheduled {
                             spider: spider.name().to_string(),
@@ -141,6 +143,16 @@ impl CrawlEngine {
                         .await?;
                 } else {
                     stats.record_deduped(&domain);
+                    #[cfg(feature = "otel")]
+                    {
+                        crate::otel::record_request_deduped(spider.name(), Some(idx), &domain);
+                        crate::otel::record_request_skipped(
+                            spider.name(),
+                            Some(idx),
+                            &domain,
+                            crate::events::RequestSkipReason::Duplicate,
+                        );
+                    }
                     observer
                         .notify_with(|| crate::events::CrawlEvent::RequestSkipped {
                             spider: spider.name().to_string(),
@@ -228,6 +240,12 @@ impl CrawlEngine {
                                     );
                                     stats_vec[idx]
                                         .record_robots_blocked(queued.request.stats_domain());
+                                    #[cfg(feature = "otel")]
+                                    crate::otel::record_robots_blocked(
+                                        spider.name(),
+                                        Some(idx),
+                                        queued.request.stats_domain(),
+                                    );
                                     scheduler.finish(&queued).await;
                                     scheduler.ack(&scheduled).await?;
                                     continue;
@@ -359,6 +377,12 @@ impl CrawlEngine {
                                                 .then(|| follow_request.url().to_string());
                                             if scheduler.push_request(follow_request, follow_depth).await {
                                                 stats.record_scheduled(&domain);
+                                                #[cfg(feature = "otel")]
+                                                crate::otel::record_request_scheduled(
+                                                    spider.name(),
+                                                    Some(spider_idx),
+                                                    &domain,
+                                                );
                                                 observer
                                                     .notify_with(|| crate::events::CrawlEvent::RequestScheduled {
                                                         spider: spider.name().to_string(),
@@ -372,6 +396,20 @@ impl CrawlEngine {
                                                     .await?;
                                             } else {
                                                 stats.record_deduped(&domain);
+                                                #[cfg(feature = "otel")]
+                                                {
+                                                    crate::otel::record_request_deduped(
+                                                        spider.name(),
+                                                        Some(spider_idx),
+                                                        &domain,
+                                                    );
+                                                    crate::otel::record_request_skipped(
+                                                        spider.name(),
+                                                        Some(spider_idx),
+                                                        &domain,
+                                                        crate::events::RequestSkipReason::Duplicate,
+                                                    );
+                                                }
                                                 observer
                                                     .notify_with(|| crate::events::CrawlEvent::RequestSkipped {
                                                         spider: spider.name().to_string(),
@@ -398,6 +436,13 @@ impl CrawlEngine {
                                                 reason,
                                             })
                                                 .await?;
+                                            #[cfg(feature = "otel")]
+                                            crate::otel::record_request_skipped(
+                                                spider.name(),
+                                                Some(spider_idx),
+                                                follow_request.stats_domain(),
+                                                reason,
+                                            );
                                         }
                                     }
                                 }
@@ -431,6 +476,12 @@ impl CrawlEngine {
                                 let delay = retry_policy
                                     .delay_for_with_hint(queued.retry_count, retry_delay_hint);
                                 stats_vec[spider_idx].record_retry(domain);
+                                #[cfg(feature = "otel")]
+                                crate::otel::record_retry_scheduled(
+                                    spider.name(),
+                                    Some(spider_idx),
+                                    domain,
+                                );
                                 observer
                                     .notify_with(|| crate::events::CrawlEvent::RequestRetried {
                                         spider: spider.name().to_string(),
@@ -476,9 +527,22 @@ impl CrawlEngine {
                             let mut retry_exhausted_recorded = false;
                             if retry_policy_exhausted {
                                 stats_vec[spider_idx].record_retry_exhausted(domain);
+                                #[cfg(feature = "otel")]
+                                crate::otel::record_retry_exhausted(
+                                    spider.name(),
+                                    Some(spider_idx),
+                                    domain,
+                                );
                                 retry_exhausted_recorded = true;
                             }
                             stats_vec[spider_idx].record_error_kind(domain, e.kind());
+                            #[cfg(feature = "otel")]
+                            crate::otel::record_request_failed(
+                                spider.name(),
+                                Some(spider_idx),
+                                domain,
+                                e.kind().as_str(),
+                            );
                             observer
                                 .notify_with(|| crate::events::CrawlEvent::RequestFailed {
                                     spider: spider.name().to_string(),
@@ -543,6 +607,12 @@ impl CrawlEngine {
                                         && stats_vec[spider_idx].stop_reason.is_none()
                                     {
                                         stats_vec[spider_idx].record_retry(domain);
+                                        #[cfg(feature = "otel")]
+                                        crate::otel::record_retry_scheduled(
+                                            spider.name(),
+                                            Some(spider_idx),
+                                            domain,
+                                        );
                                         scheduler.push_request_force(FrontierRequest::new(
                                             queued.request.clone(),
                                             queued.depth,
@@ -555,6 +625,12 @@ impl CrawlEngine {
                                 ErrorPolicy::Retry(_) => {
                                     if !retry_exhausted_recorded {
                                         stats_vec[spider_idx].record_retry_exhausted(domain);
+                                        #[cfg(feature = "otel")]
+                                        crate::otel::record_retry_exhausted(
+                                            spider.name(),
+                                            Some(spider_idx),
+                                            domain,
+                                        );
                                         retry_exhausted_recorded = true;
                                     }
                                     tracing::warn!(
@@ -606,9 +682,16 @@ impl CrawlEngine {
                                 scheduler
                                     .dead_letter(&queued, crate::frontier::DeadLetterReason::Failed)
                                     .await?;
+                                let (spider, _) = &spider_entries[spider_idx];
                                 stats_vec[spider_idx]
                                     .record_error(queued.queued.request.stats_domain());
-                                let (spider, _) = &spider_entries[spider_idx];
+                                #[cfg(feature = "otel")]
+                                crate::otel::record_request_failed(
+                                    spider.name(),
+                                    Some(spider_idx),
+                                    queued.queued.request.stats_domain(),
+                                    "task_panic",
+                                );
                                 observer
                                     .notify_with(|| crate::events::CrawlEvent::TaskPanicked {
                                         spider: spider.name().to_string(),

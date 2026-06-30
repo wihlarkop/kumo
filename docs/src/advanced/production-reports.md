@@ -314,6 +314,8 @@ Keep the JSON report as the durable audit record. Use structured logs for live
 operations and OpenTelemetry when you need centralized metrics or traces.
 
 With the `otel` feature enabled and `kumo::otel::init()` active, Kumo records
-the same production report counters as OTLP metrics at crawl completion. It also
-records successful request fetch latency as a histogram during the crawl. See
+request, retry, item, robots, skip, and error counters as live OTLP metrics
+while the crawl runs. It also records successful request fetch latency and total
+request duration as histograms. Buffered store summary metrics are exported at
+crawl completion after final flush. See
 [OpenTelemetry](otel.md#production-metrics) for metric names and attributes.

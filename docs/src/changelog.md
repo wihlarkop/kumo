@@ -12,6 +12,13 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 
 ## kumo
 
+### Unreleased
+
+- Expanded `otel` production metrics from final-report-only request counters to
+  live crawl counters for scheduled, deduped, skipped, completed, retried,
+  retry-exhausted, robots-blocked, failed, scraped-item, and dropped-item
+  events, plus a successful request duration histogram.
+
 ### 0.5.2 - 2026-06-19
 
 - Improved production crawling, failure diagnosis, and benchmark

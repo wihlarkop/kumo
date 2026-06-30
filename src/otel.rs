@@ -37,12 +37,17 @@ static PRODUCTION_METRICS: OnceLock<Mutex<Option<ProductionMetrics>>> = OnceLock
 #[derive(Clone)]
 struct ProductionMetrics {
     requests_scheduled: opentelemetry::metrics::Counter<u64>,
+    requests_deduped: opentelemetry::metrics::Counter<u64>,
+    requests_skipped: opentelemetry::metrics::Counter<u64>,
     pages_crawled: opentelemetry::metrics::Counter<u64>,
     items_scraped: opentelemetry::metrics::Counter<u64>,
+    items_dropped: opentelemetry::metrics::Counter<u64>,
     errors: opentelemetry::metrics::Counter<u64>,
     retries: opentelemetry::metrics::Counter<u64>,
     retries_exhausted: opentelemetry::metrics::Counter<u64>,
+    robots_blocked: opentelemetry::metrics::Counter<u64>,
     fetch_latency: opentelemetry::metrics::Histogram<f64>,
+    request_duration: opentelemetry::metrics::Histogram<f64>,
     store_queued: opentelemetry::metrics::Counter<u64>,
     store_written: opentelemetry::metrics::Counter<u64>,
     store_failed_writes: opentelemetry::metrics::Counter<u64>,
@@ -63,6 +68,16 @@ impl ProductionMetrics {
                 .with_description("Requests accepted by the crawl scheduler")
                 .with_unit("{request}")
                 .build(),
+            requests_deduped: meter
+                .u64_counter("kumo.requests.deduped")
+                .with_description("Requests skipped because their fingerprint was already seen")
+                .with_unit("{request}")
+                .build(),
+            requests_skipped: meter
+                .u64_counter("kumo.requests.skipped")
+                .with_description("Requests skipped before fetching")
+                .with_unit("{request}")
+                .build(),
             pages_crawled: meter
                 .u64_counter("kumo.pages.crawled")
                 .with_description("Successful pages crawled")
@@ -71,6 +86,11 @@ impl ProductionMetrics {
             items_scraped: meter
                 .u64_counter("kumo.items.scraped")
                 .with_description("Items scraped and accepted by the item store")
+                .with_unit("{item}")
+                .build(),
+            items_dropped: meter
+                .u64_counter("kumo.items.dropped")
+                .with_description("Items dropped by pipelines")
                 .with_unit("{item}")
                 .build(),
             errors: meter
@@ -88,9 +108,19 @@ impl ProductionMetrics {
                 .with_description("Requests that failed after retry capacity was exhausted")
                 .with_unit("{request}")
                 .build(),
+            robots_blocked: meter
+                .u64_counter("kumo.robots.blocked")
+                .with_description("Requests blocked by robots.txt")
+                .with_unit("{request}")
+                .build(),
             fetch_latency: meter
                 .f64_histogram("kumo.fetch.latency")
                 .with_description("Successful request fetch latency")
+                .with_unit("s")
+                .build(),
+            request_duration: meter
+                .f64_histogram("kumo.request.duration")
+                .with_description("Successful request processing duration")
                 .with_unit("s")
                 .build(),
             store_queued: meter
@@ -254,6 +284,116 @@ pub(crate) fn record_fetch_latency(spider: &str, spider_index: Option<usize>, la
     }
 }
 
+pub(crate) fn record_request_scheduled(spider: &str, spider_index: Option<usize>, domain: &str) {
+    if let Some(metrics) = production_metrics() {
+        metrics
+            .requests_scheduled
+            .add(1, &domain_attributes(spider, spider_index, domain));
+    }
+}
+
+pub(crate) fn record_request_deduped(spider: &str, spider_index: Option<usize>, domain: &str) {
+    if let Some(metrics) = production_metrics() {
+        metrics
+            .requests_deduped
+            .add(1, &domain_attributes(spider, spider_index, domain));
+    }
+}
+
+pub(crate) fn record_request_skipped(
+    spider: &str,
+    spider_index: Option<usize>,
+    domain: &str,
+    reason: crate::events::RequestSkipReason,
+) {
+    if let Some(metrics) = production_metrics() {
+        metrics.requests_skipped.add(
+            1,
+            &skip_attributes(spider, spider_index, domain, reason.as_str()),
+        );
+    }
+}
+
+pub(crate) fn record_robots_blocked(spider: &str, spider_index: Option<usize>, domain: &str) {
+    if let Some(metrics) = production_metrics() {
+        let attrs = skip_attributes(
+            spider,
+            spider_index,
+            domain,
+            crate::events::RequestSkipReason::RobotsTxt.as_str(),
+        );
+        metrics.robots_blocked.add(1, &attrs);
+        metrics.requests_skipped.add(1, &attrs);
+    }
+}
+
+pub(crate) fn record_request_completed(
+    spider: &str,
+    spider_index: Option<usize>,
+    domain: &str,
+    elapsed: Duration,
+) {
+    if let Some(metrics) = production_metrics() {
+        let attrs = domain_attributes(spider, spider_index, domain);
+        metrics.pages_crawled.add(1, &attrs);
+        metrics
+            .request_duration
+            .record(elapsed.as_secs_f64(), &attrs);
+    }
+}
+
+pub(crate) fn record_item_scraped(spider: &str, spider_index: Option<usize>, domain: &str) {
+    if let Some(metrics) = production_metrics() {
+        metrics
+            .items_scraped
+            .add(1, &domain_attributes(spider, spider_index, domain));
+    }
+}
+
+pub(crate) fn record_item_dropped(
+    spider: &str,
+    spider_index: Option<usize>,
+    reason: crate::events::ItemDropReason,
+    error_kind: Option<crate::error::KumoErrorKind>,
+) {
+    if let Some(metrics) = production_metrics() {
+        metrics.items_dropped.add(
+            1,
+            &item_drop_attributes(spider, spider_index, reason.as_str(), error_kind),
+        );
+    }
+}
+
+pub(crate) fn record_retry_scheduled(spider: &str, spider_index: Option<usize>, domain: &str) {
+    if let Some(metrics) = production_metrics() {
+        metrics
+            .retries
+            .add(1, &domain_attributes(spider, spider_index, domain));
+    }
+}
+
+pub(crate) fn record_retry_exhausted(spider: &str, spider_index: Option<usize>, domain: &str) {
+    if let Some(metrics) = production_metrics() {
+        metrics
+            .retries_exhausted
+            .add(1, &domain_attributes(spider, spider_index, domain));
+    }
+}
+
+pub(crate) fn record_request_failed(
+    spider: &str,
+    spider_index: Option<usize>,
+    domain: &str,
+    error_kind: impl Into<String>,
+) {
+    if let Some(metrics) = production_metrics() {
+        metrics.errors.add(
+            1,
+            &error_attributes(spider, spider_index, domain, error_kind.into()),
+        );
+    }
+}
+
 pub(crate) fn record_crawl_report(
     spider: &str,
     spider_index: Option<usize>,
@@ -264,13 +404,6 @@ pub(crate) fn record_crawl_report(
     };
     let attrs = final_report_attributes(spider, spider_index, report.stop_reason);
 
-    metrics.requests_scheduled.add(report.scheduled, &attrs);
-    metrics.pages_crawled.add(report.pages_crawled, &attrs);
-    metrics.items_scraped.add(report.items_scraped, &attrs);
-    metrics.retries.add(report.retries, &attrs);
-    metrics
-        .retries_exhausted
-        .add(report.retry_exhausted, &attrs);
     metrics.store_queued.add(report.store.queued, &attrs);
     metrics.store_written.add(report.store.written, &attrs);
     metrics
@@ -294,16 +427,6 @@ pub(crate) fn record_crawl_report(
             .store_write
             .record(report.store.average_write_per_batch().as_secs_f64(), &attrs);
     }
-
-    if report.error_kinds.is_empty() {
-        metrics.errors.add(report.errors, &attrs);
-    } else {
-        for (kind, count) in &report.error_kinds {
-            let mut error_attrs = attrs.clone();
-            error_attrs.push(opentelemetry::KeyValue::new("error.kind", kind.clone()));
-            metrics.errors.add(*count, &error_attrs);
-        }
-    }
 }
 
 fn production_metrics() -> Option<ProductionMetrics> {
@@ -320,6 +443,52 @@ fn crawl_attributes(spider: &str, spider_index: Option<usize>) -> Vec<openteleme
     attrs
 }
 
+fn domain_attributes(
+    spider: &str,
+    spider_index: Option<usize>,
+    domain: &str,
+) -> Vec<opentelemetry::KeyValue> {
+    let mut attrs = crawl_attributes(spider, spider_index);
+    attrs.push(opentelemetry::KeyValue::new("domain", domain.to_string()));
+    attrs
+}
+
+fn skip_attributes(
+    spider: &str,
+    spider_index: Option<usize>,
+    domain: &str,
+    reason: &'static str,
+) -> Vec<opentelemetry::KeyValue> {
+    let mut attrs = domain_attributes(spider, spider_index, domain);
+    attrs.push(opentelemetry::KeyValue::new("skip.reason", reason));
+    attrs
+}
+
+fn error_attributes(
+    spider: &str,
+    spider_index: Option<usize>,
+    domain: &str,
+    error_kind: String,
+) -> Vec<opentelemetry::KeyValue> {
+    let mut attrs = domain_attributes(spider, spider_index, domain);
+    attrs.push(opentelemetry::KeyValue::new("error.kind", error_kind));
+    attrs
+}
+
+fn item_drop_attributes(
+    spider: &str,
+    spider_index: Option<usize>,
+    reason: &'static str,
+    error_kind: Option<crate::error::KumoErrorKind>,
+) -> Vec<opentelemetry::KeyValue> {
+    let mut attrs = crawl_attributes(spider, spider_index);
+    attrs.push(opentelemetry::KeyValue::new("drop.reason", reason));
+    if let Some(kind) = error_kind {
+        attrs.push(opentelemetry::KeyValue::new("error.kind", kind.as_str()));
+    }
+    attrs
+}
+
 fn final_report_attributes(
     spider: &str,
     spider_index: Option<usize>,
@@ -330,4 +499,48 @@ fn final_report_attributes(
         attrs.push(opentelemetry::KeyValue::new("stop.reason", reason.as_str()));
     }
     attrs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn labels(attrs: &[opentelemetry::KeyValue]) -> Vec<(String, String)> {
+        attrs
+            .iter()
+            .map(|attr| (attr.key.as_str().to_string(), attr.value.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn domain_attributes_include_spider_index_and_domain() {
+        let attrs = domain_attributes("books", Some(2), "example.com");
+        let labels = labels(&attrs);
+
+        assert!(labels.contains(&("spider".to_string(), "books".to_string())));
+        assert!(labels.contains(&("spider.index".to_string(), "2".to_string())));
+        assert!(labels.contains(&("domain".to_string(), "example.com".to_string())));
+    }
+
+    #[test]
+    fn skip_attributes_include_stable_reason() {
+        let attrs = skip_attributes("books", None, "example.com", "robots_txt");
+        let labels = labels(&attrs);
+
+        assert!(labels.contains(&("skip.reason".to_string(), "robots_txt".to_string())));
+    }
+
+    #[test]
+    fn item_drop_attributes_include_optional_error_kind() {
+        let attrs = item_drop_attributes(
+            "books",
+            None,
+            "pipeline_error",
+            Some(crate::error::KumoErrorKind::Parse),
+        );
+        let labels = labels(&attrs);
+
+        assert!(labels.contains(&("drop.reason".to_string(), "pipeline_error".to_string())));
+        assert!(labels.contains(&("error.kind".to_string(), "parse".to_string())));
+    }
 }
