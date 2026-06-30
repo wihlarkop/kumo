@@ -51,6 +51,9 @@ enum FieldKind {
     Required(ValueKind),
     Optional(ValueKind),
     Vec(ValueKind),
+    Nested,
+    OptionalNested,
+    VecNested,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,6 +108,20 @@ fn impl_extract(input: &DeriveInput) -> syn::Result<TokenStream2> {
             return Err(syn::Error::new(
                 fi.name.span(),
                 "llm_fallback is not supported for Vec<T> fields",
+            ));
+        }
+        if matches!(
+            fi.kind,
+            FieldKind::Nested | FieldKind::OptionalNested | FieldKind::VecNested
+        ) && (fi.args.attr.is_some()
+            || fi.args.re.is_some()
+            || fi.args.llm_fallback.is_some()
+            || fi.args.default_val.is_some()
+            || fi.args.transform.is_some())
+        {
+            return Err(syn::Error::new(
+                fi.name.span(),
+                "nested Extract fields only support css; remove attr, re, default, transform, and llm_fallback",
             ));
         }
     }
@@ -171,6 +188,7 @@ fn impl_extract(input: &DeriveInput) -> syn::Result<TokenStream2> {
                         .and_then(|__el| (#valued_for_element))
                         #transform_expr;
                 },
+                FieldKind::Nested | FieldKind::OptionalNested | FieldKind::VecNested => quote! {},
             }
         })
         .collect();
@@ -333,6 +351,57 @@ fn impl_extract(input: &DeriveInput) -> syn::Result<TokenStream2> {
                             .collect::<::std::result::Result<_, ::kumo::error::KumoError>>()?
                     }
                 }
+                FieldKind::Nested => {
+                    let css = &fi.args.css;
+                    let ty = &fi.ty;
+                    quote! {
+                        #field_name: {
+                            let __nested_elements = element.css(#css);
+                            let __nested = __nested_elements
+                                .first()
+                                .ok_or_else(|| ::kumo::error::KumoError::parse_msg(
+                                    ::std::format!(
+                                        "missing required nested field `{}`",
+                                        ::std::stringify!(#field_name),
+                                    )
+                                ))?;
+                            <#ty as ::kumo::extract::Extract>::extract_from(__nested, llm).await?
+                        }
+                    }
+                }
+                FieldKind::OptionalNested => {
+                    let css = &fi.args.css;
+                    let inner_ty = container_inner_type(&fi.ty);
+                    quote! {
+                        #field_name: {
+                            let __nested_elements = element.css(#css);
+                            match __nested_elements.first() {
+                            ::std::option::Option::Some(__nested) => {
+                                ::std::option::Option::Some(
+                                    <#inner_ty as ::kumo::extract::Extract>::extract_from(__nested, llm).await?
+                                )
+                            }
+                            ::std::option::Option::None => ::std::option::Option::None,
+                            }
+                        }
+                    }
+                }
+                FieldKind::VecNested => {
+                    let css = &fi.args.css;
+                    let inner_ty = container_inner_type(&fi.ty);
+                    quote! {
+                        #field_name: {
+                            let mut __nested_items = ::std::vec::Vec::new();
+                            let __nested_elements = element.css(#css);
+                            for __nested in __nested_elements.iter() {
+                                __nested_items.push(
+                                    <#inner_ty as ::kumo::extract::Extract>::extract_from(__nested, llm).await?
+                                );
+                            }
+                            __nested_items
+                        }
+                    }
+                }
             }
         })
         .collect();
@@ -462,6 +531,17 @@ fn field_kind(ty: &Type) -> syn::Result<FieldKind> {
     {
         return Ok(FieldKind::Optional(kind));
     }
+    if let Some(inner) = container_inner(
+        ty,
+        &[
+            &["Option"],
+            &["std", "option", "Option"],
+            &["core", "option", "Option"],
+        ],
+    ) && is_nested_extract_type(inner)
+    {
+        return Ok(FieldKind::OptionalNested);
+    }
 
     if let Some(inner) = container_inner(
         ty,
@@ -470,10 +550,21 @@ fn field_kind(ty: &Type) -> syn::Result<FieldKind> {
     {
         return Ok(FieldKind::Vec(kind));
     }
+    if let Some(inner) = container_inner(
+        ty,
+        &[&["Vec"], &["std", "vec", "Vec"], &["alloc", "vec", "Vec"]],
+    ) && is_nested_extract_type(inner)
+    {
+        return Ok(FieldKind::VecNested);
+    }
+
+    if is_nested_extract_type(ty) {
+        return Ok(FieldKind::Nested);
+    }
 
     Err(syn::Error::new_spanned(
         ty,
-        "unsupported field type; #[derive(Extract)] supports String, bool, numeric primitives, Option<T>, and Vec<T> using Rust prelude or canonical std/core/alloc paths; nested and custom types are not supported",
+        "unsupported field type; #[derive(Extract)] supports String, bool, numeric primitives, nested Extract structs, Option<T>, and Vec<T> using Rust prelude or canonical std/core/alloc paths",
     ))
 }
 
@@ -556,6 +647,51 @@ fn container_inner<'a>(ty: &'a Type, paths: &[&[&str]]) -> Option<&'a Type> {
     }
 }
 
+fn is_nested_extract_type(ty: &Type) -> bool {
+    let Type::Path(tp) = ty else {
+        return false;
+    };
+    if tp.qself.is_some()
+        || !tp
+            .path
+            .segments
+            .iter()
+            .all(|seg| matches!(seg.arguments, PathArguments::None))
+    {
+        return false;
+    }
+    let Some(last) = tp.path.segments.last() else {
+        return false;
+    };
+    if let Some(first) = tp.path.segments.first()
+        && matches!(first.ident.to_string().as_str(), "std" | "core" | "alloc")
+    {
+        return false;
+    }
+    !matches!(
+        last.ident.to_string().as_str(),
+        "String"
+            | "str"
+            | "bool"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "usize"
+            | "f32"
+            | "f64"
+            | "Option"
+            | "Vec"
+    )
+}
+
 fn is_primitive_path(path: &Path, name: &str) -> bool {
     path_has_segments(path, &[name])
         || path_has_segments(path, &["std", "primitive", name])
@@ -607,4 +743,16 @@ fn type_argument_name(ty: &Type, container: &str) -> Option<String> {
         return Some(type_name(inner));
     }
     None
+}
+
+fn container_inner_type(ty: &Type) -> &Type {
+    if let Type::Path(tp) = ty
+        && let Some(seg) = tp.path.segments.last()
+        && let PathArguments::AngleBracketed(args) = &seg.arguments
+        && args.args.len() == 1
+        && let Some(GenericArgument::Type(inner)) = args.args.first()
+    {
+        return inner;
+    }
+    ty
 }

@@ -34,6 +34,26 @@ struct ProductLists {
 }
 
 #[derive(Extract, Debug)]
+struct SellerInfo {
+    #[extract(css = ".seller-name", transform = "trim")]
+    name: String,
+    #[extract(css = ".seller-score", re = r"\d+")]
+    score: u32,
+}
+
+#[derive(Extract, Debug)]
+struct ProductWithNestedSeller {
+    #[extract(css = ".title", transform = "trim")]
+    title: String,
+    #[extract(css = ".seller")]
+    seller: SellerInfo,
+    #[extract(css = ".backup-seller")]
+    backup: Option<SellerInfo>,
+    #[extract(css = ".seller")]
+    sellers: Vec<SellerInfo>,
+}
+
+#[derive(Extract, Debug)]
 #[allow(dead_code)]
 struct InvalidScalar {
     #[extract(css = ".stock")]
@@ -114,6 +134,41 @@ async fn derive_extracts_vec_fields_from_all_matching_elements() {
 
     assert_eq!(extracted.tags, ["rust", "scraping"]);
     assert_eq!(extracted.scores, [10, 42]);
+}
+
+#[tokio::test]
+async fn derive_extracts_nested_struct_fields() {
+    let response = Response::from_parts(
+        "https://example.com",
+        200,
+        r#"
+        <article>
+            <h1 class="title"> Widget </h1>
+            <section class="seller">
+                <span class="seller-name"> Primary Seller </span>
+                <span class="seller-score">98 points</span>
+            </section>
+            <section class="seller">
+                <span class="seller-name"> Second Seller </span>
+                <span class="seller-score">77 points</span>
+            </section>
+        </article>
+        "#,
+    );
+    let elements = response.css("article");
+    let element = elements.first().unwrap();
+
+    let extracted = ProductWithNestedSeller::extract_from(element, None)
+        .await
+        .unwrap();
+
+    assert_eq!(extracted.title, "Widget");
+    assert_eq!(extracted.seller.name, "Primary Seller");
+    assert_eq!(extracted.seller.score, 98);
+    assert!(extracted.backup.is_none());
+    assert_eq!(extracted.sellers.len(), 2);
+    assert_eq!(extracted.sellers[1].name, "Second Seller");
+    assert_eq!(extracted.sellers[1].score, 77);
 }
 
 #[tokio::test]
