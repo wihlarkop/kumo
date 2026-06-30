@@ -139,6 +139,41 @@ let book = Book::extract_from(&el, Some(&client)).await?;
 fields and cannot be combined with `default`; fallback chains are not
 supported.
 
+### Nested structs
+
+Nested fields can point at another type that also derives or implements
+`Extract`. The nested field's `css` selector chooses the sub-element, then Kumo
+runs that nested extractor inside the sub-element:
+
+```rust
+#[derive(Debug, Serialize, Extract)]
+struct Seller {
+    #[extract(css = ".seller-name", transform = "trim")]
+    name: String,
+
+    #[extract(css = ".seller-score", re = r"\d+")]
+    score: u32,
+}
+
+#[derive(Debug, Serialize, Extract)]
+struct Product {
+    #[extract(css = ".title")]
+    title: String,
+
+    #[extract(css = ".seller")]
+    seller: Seller,
+
+    #[extract(css = ".backup-seller")]
+    backup_seller: Option<Seller>,
+
+    #[extract(css = ".seller")]
+    sellers: Vec<Seller>,
+}
+```
+
+Nested fields only support `css` on the outer field. Put `attr`, `re`,
+`default`, `transform`, and `llm_fallback` on the nested struct's own fields.
+
 ## Field Types
 
 | Type | Behaviour when selector finds nothing |
@@ -148,6 +183,9 @@ supported.
 | `bool` | Returns an extraction error unless `default` is set |
 | `Option<T>` | Returns `None` |
 | `Vec<T>` | Returns an empty vector |
+| nested `Extract` struct | Extracts from the first matching sub-element or returns an error when missing |
+| `Option<Nested>` | Extracts from the first matching sub-element or returns `None` |
+| `Vec<Nested>` | Extracts one nested value per matching sub-element |
 
 Supported numeric scalars are `i8`, `i16`, `i32`, `i64`, `i128`, `isize`,
 `u8`, `u16`, `u32`, `u64`, `u128`, `usize`, `f32`, and `f64`. For `Option<T>`
@@ -158,7 +196,8 @@ name, target type, raw value, and parse failure.
 Types may use their Rust prelude spelling or canonical `std`, `core`, and
 `alloc` paths, such as `String`, `std::string::String`, `u32`,
 `core::primitive::u32`, and `std::option::Option<T>`. Custom paths and nested
-containers such as `Option<Vec<T>>` are not supported.
+containers such as `Option<Vec<T>>` are not supported, except for nested
+struct types that implement `Extract`.
 
 ## Combining Options
 

@@ -1,0 +1,5 @@
+error: nested Extract fields only support css; remove attr, re, default, transform, and llm_fallback
+  --> tests/derive/fail/nested_attr.rs:11:5
+   |
+11 |     seller: Seller,
+   |     ^^^^^^

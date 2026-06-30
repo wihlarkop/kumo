@@ -429,6 +429,8 @@ Full release notes are on [GitHub Releases](https://github.com/wihlarkop/kumo/re
 - Added backward-compatible `#[derive(Extract)]` support for numeric scalar
   fields, `bool`, `Option<T>`, and `Vec<T>` where `T` is `String`, `bool`, or a
   supported numeric scalar.
+- Added `#[derive(Extract)]` support for nested `Extract` structs, including
+  required nested fields, `Option<Nested>`, and `Vec<Nested>`.
 - Improved derived scalar parse failures so `KumoError` messages include the
   field name, target type, raw value, and parse error.
 
