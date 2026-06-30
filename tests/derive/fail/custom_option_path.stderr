@@ -1,4 +1,4 @@
-error: unsupported field type; #[derive(Extract)] supports String, bool, numeric primitives, Option<T>, and Vec<T> using Rust prelude or canonical std/core/alloc paths; nested and custom types are not supported
+error: unsupported field type; #[derive(Extract)] supports String, bool, numeric primitives, nested Extract structs, Option<T>, and Vec<T> using Rust prelude or canonical std/core/alloc paths
   --> tests/derive/fail/custom_option_path.rs:10:12
    |
 10 |     stock: custom::Option<u32>,

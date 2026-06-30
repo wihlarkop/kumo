@@ -663,6 +663,11 @@ fn is_nested_extract_type(ty: &Type) -> bool {
     let Some(last) = tp.path.segments.last() else {
         return false;
     };
+    if let Some(first) = tp.path.segments.first()
+        && matches!(first.ident.to_string().as_str(), "std" | "core" | "alloc")
+    {
+        return false;
+    }
     !matches!(
         last.ident.to_string().as_str(),
         "String"
