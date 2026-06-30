@@ -76,23 +76,32 @@ RUST_LOG=kumo=debug,info cargo run --features otel
 ## Production Metrics
 
 When `kumo::otel::init()` is active, Kumo also exports production crawl metrics
-through the same OTLP endpoint. Request, page, item, retry, error, and store
-counters are recorded from the final `CrawlReport` snapshot for each spider.
-Fetch latency is recorded per successful request.
+through the same OTLP endpoint. Request, page, item, retry, error, robots, and
+skip counters are recorded live while the crawl runs. Fetch latency and total
+successful request duration are recorded as histograms per successful request.
+Buffered store summary metrics are recorded from the final `CrawlReport`
+snapshot because the final writer totals are only known after flush.
 
-All metrics include `spider`; multi-spider runs also include `spider.index`.
-Final report counters include `stop.reason` when available. Error counters
-include `error.kind` when the report contains error-kind breakdowns.
+Live request metrics include `spider` and `domain`; multi-spider runs also
+include `spider.index`. Skip counters include `skip.reason`; error counters
+include `error.kind`; item-drop counters include `drop.reason` and include
+`error.kind` for pipeline errors. Final store summary metrics include
+`stop.reason` when available.
 
 | Metric | Type | Source |
 |--------|------|--------|
-| `kumo.requests.scheduled` | Counter | `CrawlReport::scheduled` |
-| `kumo.pages.crawled` | Counter | `CrawlReport::pages_crawled` |
-| `kumo.items.scraped` | Counter | `CrawlReport::items_scraped` |
-| `kumo.errors` | Counter | `CrawlReport::errors` / `error_kinds` |
-| `kumo.retries` | Counter | `CrawlReport::retries` |
-| `kumo.retries.exhausted` | Counter | `CrawlReport::retry_exhausted` |
+| `kumo.requests.scheduled` | Counter | Live scheduler accepts |
+| `kumo.requests.deduped` | Counter | Live duplicate skips |
+| `kumo.requests.skipped` | Counter | Live pre-fetch skips with `skip.reason` |
+| `kumo.pages.crawled` | Counter | Live successful request completions |
+| `kumo.items.scraped` | Counter | Live stored items |
+| `kumo.items.dropped` | Counter | Live pipeline drops with `drop.reason` |
+| `kumo.errors` | Counter | Live permanent request/task failures with `error.kind` |
+| `kumo.retries` | Counter | Live retry attempts scheduled |
+| `kumo.retries.exhausted` | Counter | Live retry-exhausted requests |
+| `kumo.robots.blocked` | Counter | Live robots.txt blocks |
 | `kumo.fetch.latency` | Histogram, seconds | Successful request fetch phase |
+| `kumo.request.duration` | Histogram, seconds | Successful request processing time |
 | `kumo.store.queued` | Counter | `CrawlReport::store.queued` |
 | `kumo.store.written` | Counter | `CrawlReport::store.written` |
 | `kumo.store.failed_writes` | Counter | `CrawlReport::store.failed_writes` |
@@ -102,5 +111,5 @@ include `error.kind` when the report contains error-kind breakdowns.
 | `kumo.store.write` | Histogram, seconds | Average write time per batch attempt |
 
 Store metrics are zero unless `CrawlEngine::store_buffer(...)` is enabled.
-The first metrics slice intentionally uses existing report data, so it avoids
-adding store or scheduler hot-path instrumentation.
+Store queue and write latency histograms currently record final crawl averages,
+not every individual queue wait or backend write attempt.

@@ -103,6 +103,13 @@ async fn process_request(
                 Ok(Some(v)) => current = v,
                 Ok(None) => {
                     timings.pipeline += phase_start.elapsed();
+                    #[cfg(feature = "otel")]
+                    crate::otel::record_item_dropped(
+                        ctx.spider.name(),
+                        ctx.spider_index,
+                        ItemDropReason::PipelineFiltered,
+                        None,
+                    );
                     if observer_enabled {
                         ctx.observer
                             .notify(CrawlEvent::ItemDropped {
@@ -127,6 +134,13 @@ async fn process_request(
                 }
                 Err(e) => {
                     timings.pipeline += phase_start.elapsed();
+                    #[cfg(feature = "otel")]
+                    crate::otel::record_item_dropped(
+                        ctx.spider.name(),
+                        ctx.spider_index,
+                        ItemDropReason::PipelineError,
+                        Some(e.kind()),
+                    );
                     if observer_enabled {
                         ctx.observer
                             .notify(CrawlEvent::ItemDropped {
@@ -177,6 +191,8 @@ async fn process_request(
             });
         }
         item_count += 1;
+        #[cfg(feature = "otel")]
+        crate::otel::record_item_scraped(ctx.spider.name(), ctx.spider_index, domain);
     }
 
     tracing::debug!(
@@ -192,6 +208,10 @@ async fn process_request(
     );
 
     let follows = output.follow.into_iter().map(|r| (r, depth + 1)).collect();
+    let elapsed = started_at.elapsed();
+
+    #[cfg(feature = "otel")]
+    crate::otel::record_request_completed(ctx.spider.name(), ctx.spider_index, domain, elapsed);
 
     ctx.observer
         .notify_with(|| CrawlEvent::RequestCompleted {
@@ -204,7 +224,7 @@ async fn process_request(
             status: response.status(),
             bytes: bytes_downloaded,
             items: item_count,
-            elapsed: started_at.elapsed(),
+            elapsed,
         })
         .await?;
 
